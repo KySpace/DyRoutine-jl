@@ -1,0 +1,47 @@
+# OS and editor noise
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Julia package manager and runtime artifacts
+logs/
+compiled/
+artifacts/
+scratchspaces/
+prefs/
+registries/
+clones/
+downloads/
+environments/
+dev/
+
+# Julia REPL and profiler outputs
+*.jl.cov
+*.jl.mem
+*.ji
+
+# Notebook and analysis outputs
+*.ipynb_checkpoints
+*.csv
+*.tsv
+*.parquet
+*.feather
+*.arrow
+*.h5
+*.hdf5
+
+# Generated reports and figures
+figures/
+plots/
+reports/
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.svg
+
