@@ -1,3 +1,5 @@
+using CairoMakie: CairoMakie, Figure, Axis, axislegend, save, band!, lines!, scatter!, RGBf, RGBAf
+
 function write_number_plot(
     path_plot::AbstractString,
     val_t_hold,
@@ -5,12 +7,6 @@ function write_number_plot(
     err_number::AbstractMatrix,
     val_istp,
 )
-    Base.find_package("CairoMakie") === nothing && throw(
-        ArgumentError("CairoMakie is not installed in the current Julia environment."),
-    )
-
-    @eval using CairoMakie
-
     size(val_number) == size(err_number) || throw(
         ArgumentError("val_number and err_number must have the same size."),
     )
@@ -31,8 +27,11 @@ function write_number_plot(
     color_red_line = color_from_oklch(0.62, 0.18, 25.0, 0.95)
     color_red_fill = color_from_oklch(0.62, 0.18, 25.0, 0.22)
 
-    fig = CairoMakie.Figure(size=(920, 620), backgroundcolor=RGBf(0.98, 0.977, 0.965))
-    ax = CairoMakie.Axis(
+    fig = Figure(
+        size=(920, 620),
+        backgroundcolor=RGBf(0.98, 0.977, 0.965),
+    )
+    ax = Axis(
         fig[1, 1];
         title="Mean Number vs t_hold",
         xlabel="t_hold",
@@ -60,15 +59,15 @@ function write_number_plot(
         "istp = 0",
     )
 
-    CairoMakie.axislegend(ax; position=:rt, framevisible=true)
-    CairoMakie.save(path_plot, fig)
+    axislegend(ax; position=:rt, framevisible=true)
+    save(path_plot, fig)
     return path_plot
 end
 
 function plot_number_series!(ax, val_t, val_mean, val_err, color_line, color_fill, label)
-    CairoMakie.band!(ax, val_t, val_mean .- val_err, val_mean .+ val_err; color=color_fill)
-    CairoMakie.lines!(ax, val_t, val_mean; color=color_line, linewidth=2.6, label=label)
-    CairoMakie.scatter!(ax, val_t, val_mean; color=color_line, markersize=9)
+    band!(ax, val_t, val_mean .- val_err, val_mean .+ val_err; color=color_fill)
+    lines!(ax, val_t, val_mean; color=color_line, linewidth=2.6, label=label)
+    scatter!(ax, val_t, val_mean; color=color_line, markersize=9)
 end
 
 function color_from_oklch(val_l, val_c, val_h_deg, val_alpha)
