@@ -2,11 +2,18 @@
 
 This project uses the following names for experimental variation metadata:
 
+- snake_casing for local variables or function names. For function names: tend to use verb + noun structure.
+- When naming, usually put the type of the thing first, then attributes, like `wh_crop`, `val_t_hold`.
+- use `idx` or `ids` for index or indices, `pos` for positions in an array of indices (second order or higher order indices).
 - `name`: the names of the varying experimental variables.
 - `val`: the possible values for each variable, aligned by index with `name`.
 - `variation`: the full Cartesian variation across all variables.
+- use `wh` or `hw` to refer to image sizes, rather than `size` or `sz` to avoid confusion.
 
-Current example:
+# coding style
+functional style, prefers piping operations when processing data.
+
+# Current example:
 
 ```julia
 name = ["repeat", "t_hold", "istp"]
