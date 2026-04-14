@@ -11,22 +11,22 @@ val = (
 variation = length(val[1]) * length(val[2]) * length(val[3])
 
 h5open(path, "r") do f
-    global od = read(f["/od"])
+    global dens = read(f["/od"])
 end
 
-ndims(od) == 3 || error("Expected /od to have 3 dimensions, got $(ndims(od)).")
-size(od) == (201, 401, variation) || error(
-    "Expected /od size to be (201, 401, $variation), got $(size(od)).",
+ndims(dens) == 3 || error("Expected /od to have 3 dimensions, got $(ndims(dens)).")
+size(dens) == (201, 401, variation) || error(
+    "Expected /od size to be (201, 401, $variation), got $(size(dens)).",
 )
 
-width, height, _ = size(od)
+width, height, _ = size(dens)
 
-od_reshaped = reshape(od, width, height, length(val[3]), length(val[2]), length(val[1]))
-od_by_variation = permutedims(od_reshaped, (5, 4, 3, 2, 1))
+dens_reshaped = reshape(dens, width, height, length(val[3]), length(val[2]), length(val[1]))
+dens_by_variation = permutedims(dens_reshaped, (5, 4, 3, 2, 1))
 
 println("name = ", name)
 println("val = ", val)
 println("variation = ", variation)
-println("raw /od size = ", size(od))
-println("od_by_variation size = ", size(od_by_variation))
-println("Indexing order: od_by_variation[repeat, t_hold, istp, height, width]")
+println("raw /dens size = ", size(dens))
+println("dens_by_variation size = ", size(dens_by_variation))
+println("Indexing order: dens_by_variation[repeat, t_hold, istp, height, width]")
