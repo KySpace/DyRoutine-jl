@@ -1,3 +1,5 @@
+# For Agents
+Ask before looking for references. Ask before if a new technical stack is required and you cannot access for now (like loading a new library), especially due to permission issues.
 # Naming Conventions
 
 This project uses the following names for experimental variation metadata:
@@ -10,8 +12,12 @@ This project uses the following names for experimental variation metadata:
 - `variation`: the full Cartesian variation across all variables.
 - use `wh` or `hw` to refer to image sizes, rather than `size` or `sz` to avoid confusion.
 
-# coding style
+# Coding style
 functional style, prefers piping operations when processing data.
+
+# Data processing
+As long as the processing is not too memory consuming:
+Generate the data first, keep the structure of the data as much as possible (e.g. per-shot data should have the same dimension as the original `dens` other than the image dimensions), then generate visualizations based on the results of the data.
 
 # Current example:
 
