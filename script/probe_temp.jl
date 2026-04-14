@@ -1,7 +1,10 @@
 using HDF5
 include(joinpath(@__DIR__, "..", "src", "pershot.jl"))
+include(joinpath(@__DIR__, "..", "src", "percond.jl"))
+include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
 path = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\2026-03\0324\run64\d0324r64.h5"
+path_plot = joinpath(@__DIR__, "probe_temp_number_vs_t_hold.svg")
 corner_height = 10
 corner_width = 10
 
@@ -30,8 +33,12 @@ size(dens) == (variation, 401, 201) || error(
 
 _, height, width = size(dens)
 
-dens_reshaped = reshape(dens, length(val[3]), length(val[2]), length(val[1]), height, width)
-dens_by_variation = permutedims(dens_reshaped, (3, 2, 1, 4, 5))
+stat_number = dens |> x -> summarize_repeat_number(x, val)
+dens_by_variation = stat_number.dens_by_variation
+val_number = stat_number.val_number
+err_number = stat_number.err_number
+
+write_number_plot(path_plot, val[2], val_number, err_number, val[3])
 
 println("name = ", name)
 println("val = ", val)
@@ -40,3 +47,6 @@ println("permuted /dens size = ", size(dens))
 println("corner subtraction = ", (corner_height, corner_width))
 println("dens_by_variation size = ", size(dens_by_variation))
 println("Indexing order: dens_by_variation[repeat, t_hold, istp, height, width]")
+println("val_number size = ", size(val_number))
+println("err_number size = ", size(err_number))
+println("plot path = ", path_plot)

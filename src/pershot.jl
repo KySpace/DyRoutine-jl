@@ -14,3 +14,7 @@ function subtract_corner_mean(arr::AbstractMatrix, corner_height::Integer, corne
     corner_mean = (sum(tl) + sum(tr) + sum(bl) + sum(br)) / (4 * corner_height * corner_width)
     return arr .- corner_mean
 end
+
+function calc_number(arr::AbstractMatrix)
+    return sum(arr)
+end
