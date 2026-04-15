@@ -13,7 +13,7 @@ end
 function summarize_repeat_number(dens::AbstractArray{<:Real, 3}, val)
     dens_by_variation = dens |> x -> reshape_variation(x, val)
     number_by_repeat = dens_by_variation |>
-                       x -> stack(map(calc_number, eachslice(x; dims=(1, 2, 3))); dims=1) |>
+                       x -> stack(map(sum, eachslice(x; dims=(1, 2, 3))); dims=1) |>
                        x -> reshape(x, size(dens_by_variation, 1), size(dens_by_variation, 2), size(dens_by_variation, 3))
 
     repeat_count = size(number_by_repeat, 1)

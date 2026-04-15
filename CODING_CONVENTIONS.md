@@ -1,5 +1,6 @@
 # For Agents
 Ask before looking for references. Ask before if a new technical stack is required and you cannot access for now (like loading a new library), especially due to permission issues.
+Prefer using well-established functions than custom defined ones.
 # Naming Conventions
 
 This project uses the following names for experimental variation metadata:
