@@ -8,9 +8,11 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 path = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\2026-03\0324\run64\d0324r64.h5"
 path_plot = joinpath(@__DIR__, "probe_temp_number_vs_t_hold.svg")
 path_plot_peak = joinpath(@__DIR__, "probe_temp_avg_density_peak.svg")
+path_plot_duet = joinpath(@__DIR__, "probe_temp_duet.svg")
 corner_height = 10
 corner_width = 10
-smwh_peak = (40, 120)
+smwh_peak = (30, 60)
+duet_color_max = 40.0
 
 name = ["repeat", "t_hold", "istp"]
 val = (
@@ -24,7 +26,7 @@ h5open(path, "r") do f
     global dens = f["/od"] |>
                   read |>
                   x -> permutedims(x, (3, 2, 1)) |>
-                  x -> stack(
+                       x -> stack(
                       map(d -> subtract_corner_mean(d, corner_height, corner_width), eachslice(x; dims=1));
                       dims=1,
                   )
@@ -46,15 +48,17 @@ write_number_plot(path_plot, val[2], val_number, err_number, val[3])
 
 dens_mean = dropdims(mean(dens; dims=1); dims=1)
 cx_peak, cy_peak = find_positive_cluster_center(dens_mean; smwh=smwh_peak)
+xy_peak_px = round.(Int, (cx_peak, cy_peak))
+cropy_mean = crop_center(dens_mean, xy_peak_px, smwh_peak)
 
 smw_peak, smh_peak = smwh_peak
-left_peak = cx_peak - smw_peak
-right_peak = cx_peak + smw_peak
-top_peak = cy_peak - smh_peak
-bottom_peak = cy_peak + smh_peak
+left_peak = xy_peak_px[1] - smw_peak
+right_peak = xy_peak_px[1] + smw_peak
+top_peak = xy_peak_px[2] - smh_peak
+bottom_peak = xy_peak_px[2] + smh_peak
 
-fig_peak = Figure(size=(820, 980))
-ax_peak = Axis(
+fig_peak = Figure(size=(1320, 760))
+ax_peak_full = Axis(
     fig_peak[1, 1];
     title="Average Density with Peak-Finding Window",
     xlabel="x",
@@ -62,17 +66,77 @@ ax_peak = Axis(
     yreversed=true,
     aspect=DataAspect(),
 )
-hm = heatmap!(ax_peak, 1:width, 1:height, dens_mean'; colormap=:viridis)
+hm_full = heatmap!(ax_peak_full, 1:width, 1:height, dens_mean'; colormap=:viridis)
 lines!(
-    ax_peak,
+    ax_peak_full,
     [left_peak, right_peak, right_peak, left_peak, left_peak],
     [top_peak, top_peak, bottom_peak, bottom_peak, top_peak];
     color=:white,
     linewidth=2.5,
 )
-scatter!(ax_peak, [cx_peak], [cy_peak]; color=:tomato, markersize=16)
-Colorbar(fig_peak[1, 2], hm, label="mean density")
+scatter!(ax_peak_full, [cx_peak], [cy_peak]; color=:tomato, markersize=16)
+
+ax_peak_crop = Axis(
+    fig_peak[1, 2];
+    title="Cropped Mean Density",
+    xlabel="x",
+    ylabel="y",
+    yreversed=true,
+    aspect=DataAspect(),
+)
+hm_crop = heatmap!(
+    ax_peak_crop,
+    left_peak:right_peak,
+    top_peak:bottom_peak,
+    Matrix(cropy_mean)';
+    colormap=:viridis,
+)
+scatter!(ax_peak_crop, [cx_peak], [cy_peak]; color=:tomato, markersize=16)
+
+Colorbar(fig_peak[1, 3], hm_full, label="mean density")
 save(path_plot_peak, fig_peak)
+
+duet_a = crop_center(@view(dens_by_variation[1, 1, 1, :, :]), xy_peak_px, smwh_peak)
+duet_b = crop_center(@view(dens_by_variation[1, 1, 2, :, :]), xy_peak_px, smwh_peak)
+
+fig_duet = Figure(size=(1180, 620))
+ax_duet_a = Axis(
+    fig_duet[1, 1];
+    title="Duet Shot 1",
+    xlabel="x",
+    ylabel="y",
+    yreversed=true,
+    aspect=DataAspect(),
+)
+hm_duet_a = heatmap!(
+    ax_duet_a,
+    left_peak:right_peak,
+    top_peak:bottom_peak,
+    Matrix(duet_a)';
+    colormap=:RdPu_9,
+    colorrange=(0, duet_color_max),
+)
+
+ax_duet_b = Axis(
+    fig_duet[1, 2];
+    title="Duet Shot 2",
+    xlabel="x",
+    ylabel="y",
+    yreversed=true,
+    aspect=DataAspect(),
+)
+hm_duet_b = heatmap!(
+    ax_duet_b,
+    left_peak:right_peak,
+    top_peak:bottom_peak,
+    Matrix(duet_b)';
+    colormap=:PuBu_9,
+    colorrange=(0, duet_color_max),
+)
+
+Colorbar(fig_duet[1, 3], hm_duet_a, label="shot 1 density")
+Colorbar(fig_duet[1, 4], hm_duet_b, label="shot 2 density")
+save(path_plot_duet, fig_duet)
 
 println("name = ", name)
 println("val = ", val)
@@ -86,5 +150,10 @@ println("err_number size = ", size(err_number))
 println("plot path = ", path_plot)
 println("mean density size = ", size(dens_mean))
 println("peak center (x, y) = ", (cx_peak, cy_peak))
+println("peak center pixel (x, y) = ", xy_peak_px)
 println("peak crop smwh = ", smwh_peak)
+println("cropped mean density size = ", size(cropy_mean))
 println("peak plot path = ", path_plot_peak)
+println("duet crop sizes = ", (size(duet_a), size(duet_b)))
+println("duet colorrange = ", (0, duet_color_max))
+println("duet plot path = ", path_plot_duet)
