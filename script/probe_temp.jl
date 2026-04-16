@@ -1,6 +1,6 @@
 using HDF5
 using Statistics: mean
-using CairoMakie: Figure, Axis, Colorbar, DataAspect, heatmap!, lines!, scatter!, save
+using CairoMakie: Figure, Axis, Colorbar, DataAspect, heatmap!, lines!, scatter!, save, text!, rowgap!, colgap!
 include(joinpath(@__DIR__, "..", "src", "pershot.jl"))
 include(joinpath(@__DIR__, "..", "src", "percond.jl"))
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
@@ -9,16 +9,19 @@ path = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\2026-03\03
 path_plot = joinpath(@__DIR__, "probe_temp_number_vs_t_hold.svg")
 path_plot_peak = joinpath(@__DIR__, "probe_temp_avg_density_peak.svg")
 path_plot_duet = joinpath(@__DIR__, "probe_temp_duet.svg")
+path_plot_sheet = joinpath(@__DIR__, "probe_temp_contact_sheet.pdf")
 corner_height = 10
 corner_width = 10
 smwh_peak = (30, 60)
 duet_color_max = 40.0
+sheet_color_max = 60.0
+sheet_gap = 6
 
 name = ["repeat", "t_hold", "istp"]
 val = (
     collect(1:3),
     collect(6:2:200),
-    [5, 0],
+    ["162", "164"],
 )
 variation = length(val[1]) * length(val[2]) * length(val[3])
 
@@ -138,6 +141,62 @@ Colorbar(fig_duet[1, 3], hm_duet_a, label="shot 1 density")
 Colorbar(fig_duet[1, 4], hm_duet_b, label="shot 2 density")
 save(path_plot_duet, fig_duet)
 
+sheet_colormaps = Dict(1 => :RdPu_9, 2 => :PuBu_9)
+sheet_labels = Dict(1 => string(val[3][1]), 2 => string(val[3][2]))
+sheet_crop_size = 2 .* collect(reverse(smwh_peak)) .+ 1
+sheet_ncols = length(val[1]) * length(val[3])
+fig_sheet = Figure(
+    size=(
+        round(Int, sheet_ncols * sheet_crop_size[2] * 1.35 + (sheet_ncols - 1) * sheet_gap + 220),
+        round(Int, length(val[2]) * sheet_crop_size[1] * 1.25 + (length(val[2]) - 1) * sheet_gap + 220),
+    ),
+)
+
+for (row_idx, t_hold) in enumerate(val[2])
+    for (col_idx, repeat_val) in enumerate(val[1])
+        for istp_idx in eachindex(val[3])
+            sheet_col_idx = (col_idx - 1) * length(val[3]) + istp_idx
+            cropped_panel = crop_center(@view(dens_by_variation[col_idx, row_idx, istp_idx, :, :]), xy_peak_px, smwh_peak)
+            ax_panel = Axis(
+                fig_sheet[row_idx, sheet_col_idx];
+                xticksvisible=false,
+                yticksvisible=false,
+                xticklabelsvisible=false,
+                yticklabelsvisible=false,
+                xgridvisible=false,
+                ygridvisible=false,
+                topspinevisible=false,
+                rightspinevisible=false,
+                bottomspinevisible=false,
+                leftspinevisible=false,
+                yreversed=true,
+                aspect=DataAspect(),
+            )
+            heatmap!(
+                ax_panel,
+                left_peak:right_peak,
+                top_peak:bottom_peak,
+                Matrix(cropped_panel)';
+                colormap=sheet_colormaps[istp_idx],
+                colorrange=(0, sheet_color_max),
+            )
+            text!(
+                ax_panel,
+                (left_peak + right_peak) / 2,
+                top_peak + 4;
+                text="$(repeat_val) rep | $(t_hold) ms",
+                align=(:center, :top),
+                color=:black,
+                fontsize=10,
+            )
+        end
+    end
+end
+
+rowgap!(fig_sheet.layout, sheet_gap)
+colgap!(fig_sheet.layout, sheet_gap)
+save(path_plot_sheet, fig_sheet)
+
 println("name = ", name)
 println("val = ", val)
 println("variation = ", variation)
@@ -157,3 +216,6 @@ println("peak plot path = ", path_plot_peak)
 println("duet crop sizes = ", (size(duet_a), size(duet_b)))
 println("duet colorrange = ", (0, duet_color_max))
 println("duet plot path = ", path_plot_duet)
+println("sheet colorrange = ", (0, sheet_color_max))
+println("sheet gap = ", sheet_gap)
+println("sheet path = ", path_plot_sheet)

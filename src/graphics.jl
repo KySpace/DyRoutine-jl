@@ -18,10 +18,10 @@ function write_number_plot(
         ArgumentError("istp axis length does not match number statistics."),
     )
 
-    pos_istp_blue = findfirst(==(5), val_istp)
-    pos_istp_red = findfirst(==(0), val_istp)
-    !isnothing(pos_istp_blue) || throw(ArgumentError("Expected istp value 5 in val_istp."))
-    !isnothing(pos_istp_red) || throw(ArgumentError("Expected istp value 0 in val_istp."))
+    pos_istp_blue = findfirst(==("162"), string.(val_istp))
+    pos_istp_red = findfirst(==("164"), string.(val_istp))
+    !isnothing(pos_istp_blue) || throw(ArgumentError("Expected istp value 162 in val_istp."))
+    !isnothing(pos_istp_red) || throw(ArgumentError("Expected istp value 164 in val_istp."))
 
     color_blue_line = RGBAf(Oklch(0.62, 0.18, 255.0), 0.95)
     color_blue_fill = RGBAf(Oklch(0.62, 0.18, 255.0), 0.22)
@@ -48,7 +48,7 @@ function write_number_plot(
         vec(err_number[:, pos_istp_blue]),
         color_blue_line,
         color_blue_fill,
-        "istp = 5",
+        "istp = 162",
     )
     plot_number_series!(
         ax,
@@ -57,7 +57,7 @@ function write_number_plot(
         vec(err_number[:, pos_istp_red]),
         color_red_line,
         color_red_fill,
-        "istp = 0",
+        "istp = 164",
     )
 
     axislegend(ax; position=:rt, framevisible=true)
