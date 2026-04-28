@@ -1,28 +1,29 @@
 using LsqFit: curve_fit
 using NaNStatistics: movmean
 
-function subtract_corner_mean(arr::AbstractMatrix, corner_height::Integer, corner_width::Integer)
-    corner_height > 0 || throw(ArgumentError("corner_height must be positive."))
-    corner_width > 0 || throw(ArgumentError("corner_width must be positive."))
+function subtract_corner_mean(arr::AbstractMatrix, wh_corner::Tuple{<:Integer,<:Integer})
+    (h_corner, w_corner) = wh_corner
+    h_corner > 0 || throw(ArgumentError("corner_height must be positive."))
+    w_corner > 0 || throw(ArgumentError("corner_width must be positive."))
 
-    height, width = size(arr)
-    2 * corner_height <= height || throw(ArgumentError("corner_height is too large for array height $height."))
-    2 * corner_width <= width || throw(ArgumentError("corner_width is too large for array width $width."))
+    h_im, w_im = size(arr)
+    2 * h_corner <= h_im || throw(ArgumentError("corner_height is too large for array height $h_im."))
+    2 * w_corner <= w_im || throw(ArgumentError("corner_width is too large for array width $w_im."))
 
-    tl = @view arr[1:corner_height, 1:corner_width]
-    tr = @view arr[1:corner_height, width-corner_width+1:width]
-    bl = @view arr[height-corner_height+1:height, 1:corner_width]
-    br = @view arr[height-corner_height+1:height, width-corner_width+1:width]
+    tl = @view arr[1:h_corner, 1:w_corner]
+    tr = @view arr[1:h_corner, w_im-w_corner+1:w_im]
+    bl = @view arr[h_im-h_corner+1:h_im, 1:w_corner]
+    br = @view arr[h_im-h_corner+1:h_im, w_im-w_corner+1:w_im]
 
-    corner_mean = (sum(tl) + sum(tr) + sum(bl) + sum(br)) / (4 * corner_height * corner_width)
+    corner_mean = (sum(tl) + sum(tr) + sum(bl) + sum(br)) / (4 * h_corner * w_corner)
     return arr .- corner_mean
 end
 
 function crop_center(
     arr::AbstractMatrix,
-    xy::Tuple{<:Integer, <:Integer},
-    smwh::Tuple{<:Integer, <:Integer},
-)
+    xy::Tuple{<:Integer,<:Integer},
+    smwh::Tuple{<:Integer,<:Integer},
+)::AbstractMatrix{<:Real}
     x, y = xy
     smw, smh = smwh
 
@@ -46,18 +47,22 @@ function crop_center(
     return @view arr[top:bottom, left:right]
 end
 
-function moving_average_with_positions(prfl::AbstractVector, len_avg::Integer)
+function calc_dens_sum(dens::AbstractMatrix{<:Real})
+    return sum(dens; dims=(1, 2))
+end
+
+function moving_average_with_positions(prfl::AbstractVector, len_avg::Integer)::Tuple{AbstractVector{<:Real},AbstractVector{<:Real}}
     len_avg > 0 || throw(ArgumentError("len_avg must be positive."))
     n = length(prfl)
     len_avg <= n || throw(ArgumentError("len_avg=$len_avg exceeds profile length $n."))
 
     prfl_avg = movmean(Float64.(prfl), len_avg)
-    pos_avg = collect((len_avg + 1) / 2:(n - (len_avg - 1) / 2))
+    pos_avg = collect((len_avg+1)/2:(n-(len_avg-1)/2))
 
     return prfl_avg, pos_avg
 end
 
-function find_peak_position_moving(prfl::AbstractVector; len_avg::Integer=10)
+function find_peak_position_moving(prfl::AbstractVector; len_avg::Integer=10)::Integer
     prfl_avg, pos_avg = moving_average_with_positions(prfl, len_avg)
     return round(Int, pos_avg[argmax(prfl_avg)])
 end
@@ -86,8 +91,8 @@ end
 function find_positive_cluster_center(
     arr::AbstractMatrix;
     len_avg::Integer=10,
-    smwh::Tuple{Integer, Integer}=(),
-)
+    smwh::Tuple{Integer,Integer}=(),
+)::Tuple{<:Real,<:Real}
     smw, smh = smwh
     cx_coarse = find_peak_position_moving(vec(sum(arr; dims=1)); len_avg=len_avg)
     cy_coarse = find_peak_position_moving(vec(sum(arr; dims=2)); len_avg=len_avg)
