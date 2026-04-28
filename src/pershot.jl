@@ -1,5 +1,7 @@
 using LsqFit: curve_fit
 using NaNStatistics: movmean
+using FFTW
+using DSP.Windows: hanning
 
 function subtract_corner_mean(arr::AbstractMatrix, wh_corner::Tuple{<:Integer,<:Integer})
     (h_corner, w_corner) = wh_corner
@@ -17,6 +19,12 @@ function subtract_corner_mean(arr::AbstractMatrix, wh_corner::Tuple{<:Integer,<:
 
     corner_mean = (sum(tl) + sum(tr) + sum(bl) + sum(br)) / (4 * h_corner * w_corner)
     return arr .- corner_mean
+end
+
+function fold_symmetric(arr::AbstractVector)::AbstractVector{<:Real}
+    len = length(arr)
+    tail_left, head_right = isodd(len) ? ((len + 1) / 2, (len + 1) / 2) : (len / 2, len / 2 + 1)
+    return (arr[1:Int(tail_left)] .+ arr[end:-1:Int(head_right)]) / 2
 end
 
 function crop_center(
@@ -105,4 +113,27 @@ function find_positive_cluster_center(
     cy_local = gaussian_fit_center_1d(vec(sum(cropped; dims=2)))
 
     return left - 1 + cx_local, top - 1 + cy_local
+end
+
+function gen_win_hann_2d(smwh::Tuple{<:Real,<:Real})
+    smw, smh = smwh
+    win_x = hanning(2 * smw + 1)
+    win_y = hanning(2 * smh + 1)
+    win = win_y * win_x'
+    size(win) == (2 * smh + 1, 2 * smw + 1) || throw(DimensionMismatch("Window size $(size(win)) does not match smwh $smwh"))
+    return win
+end
+
+struct SoloEssentials
+    dens2d::AbstractMatrix
+    modl2d::AbstractMatrix
+    prfl_modl::AbstractVector
+end
+
+function calc_modulation_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smwh::Tuple{<:Real,<:Real}, smw_modl::Integer)
+    dens_roi = crop_center(dens, cent, smwh)
+    x_cent = smwh[2] + 1
+    modl_roi = dens_roi .* gen_win_hann_2d(smwh)  |> fft |> fftshift |> abs
+    prfl_modl = modl_roi[:, x_cent-smw_modl : x_cent+smw_modl] |> m -> sum(m, dims=2) ./ (smw_modl * 2 + 1) |> vec
+    return SoloEssentials(dens_roi, modl_roi, prfl_modl, prfl_modl)
 end
