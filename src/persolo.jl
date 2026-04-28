@@ -1,3 +1,6 @@
+# Analysis per-solo image
+# When each shot contains one image, it is per-shot
+# can also be applied to composite images from multiple solos, like stacked images 
 using LsqFit: curve_fit
 using NaNStatistics: movmean
 using FFTW

@@ -2,7 +2,7 @@ using HDF5
 using CairoMakie: Figure, Axis, Colorbar, DataAspect, heatmap!, lines!, scatter!, save, text!, rowgap!, colgap!
 using GLMakie
 GLMakie.activate!()
-include(joinpath(@__DIR__, "..", "src", "pershot.jl"))
+include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "percond.jl"))
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
