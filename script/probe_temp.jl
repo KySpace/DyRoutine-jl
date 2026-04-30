@@ -6,7 +6,7 @@ include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "percond.jl"))
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
-path = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\2026-03\0325\run50\d0325r50.h5"
+path = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\2026-03\0325\run52\d0325r52.h5"
 path_plot = joinpath(@__DIR__, "probe_temp_number_vs_t_hold.svg")
 path_plot_peak = joinpath(@__DIR__, "probe_temp_avg_density_peak.svg")
 path_plot_duet = joinpath(@__DIR__, "probe_temp_duet.svg")
@@ -18,6 +18,8 @@ smw_peak, smh_peak = smwh_peak
 duet_color_max = 40.0
 sheet_color_max = 40.0
 sheet_gap = 6
+
+px_in_um = 6.5 / 22.06
 
 name = ["repeat", "t_hold", "istp"]
 val = (
@@ -47,6 +49,7 @@ dens_full_fmt = dens |>
                 ds -> mapslices(d -> crop_center(d, xy_peak_px, smwh_peak), ds; dims=(2, 3)) |>
                       ds -> reshape(ds, (reverse(n_dim_vars)..., reverse(wh_peak)...)) |>
                             ds -> permutedims(ds, (3, 2, 1, 4, 5))
+
 
 # Statistics on number sum
 num_fmt = dens_full_fmt |> ds -> mapslices(calc_dens_sum, ds; dims=(4, 5)) |> n -> dropdims(n; dims=(4, 5));

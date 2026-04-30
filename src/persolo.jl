@@ -1,10 +1,12 @@
 # Analysis per-solo image
 # When each shot contains one image, it is per-shot
-# can also be applied to composite images from multiple solos, like stacked images 
+# can also be applied to composite images from multiple solos, like stacked images
 using LsqFit: curve_fit
 using NaNStatistics: movmean
 using FFTW
 using DSP.Windows: hanning
+using Printf
+using Colors: Oklch
 
 function subtract_corner_mean(arr::AbstractMatrix, wh_corner::Tuple{<:Integer,<:Integer})
     (h_corner, w_corner) = wh_corner
@@ -27,7 +29,7 @@ end
 function fold_symmetric(arr::AbstractVector)::AbstractVector{<:Real}
     len = length(arr)
     tail_left, head_right = isodd(len) ? ((len + 1) / 2, (len + 1) / 2) : (len / 2, len / 2 + 1)
-    return (arr[1:Int(tail_left)] .+ arr[end:-1:Int(head_right)]) / 2
+    return (arr[1:Int(tail_left)] .+ arr[end:-1:Int(head_right)]) |> a -> a ./ 2 |> reverse
 end
 
 function crop_center(
@@ -131,12 +133,47 @@ struct SoloEssentials
     dens2d::AbstractMatrix
     modl2d::AbstractMatrix
     prfl_modl::AbstractVector
+    prfl_modl_norm_px::AbstractVector
+    smwh::Tuple{<:Real,<:Real}
+    smw_modl::Integer
+    step_posi::Real
+    step_modl::Real
 end
 
-function calc_modulation_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smwh::Tuple{<:Real,<:Real}, smw_modl::Integer)
+function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smwh::Tuple{<:Real,<:Real}, smw_modl::Integer, px_in_um::Real)
     dens_roi = crop_center(dens, cent, smwh)
-    x_cent = smwh[2] + 1
-    modl_roi = dens_roi .* gen_win_hann_2d(smwh)  |> fft |> fftshift |> abs
-    prfl_modl = modl_roi[:, x_cent-smw_modl : x_cent+smw_modl] |> m -> sum(m, dims=2) ./ (smw_modl * 2 + 1) |> vec
-    return SoloEssentials(dens_roi, modl_roi, prfl_modl, prfl_modl)
+    x_cent = smwh[1] + 1
+    step_posi = px_in_um
+    step_modl = 1 / (2 * smwh[2] * px_in_um)
+    modl_roi = dens_roi .* gen_win_hann_2d(smwh) |> fft |> fftshift |> c -> abs.(c)
+    prfl_modl = modl_roi[:, x_cent-smw_modl:x_cent+smw_modl] |> m -> sum(m, dims=2) ./ (smw_modl * 2 + 1) |> vec
+    prfl_modl_norm_px = prfl_modl ./ (sum(prfl_modl) * step_modl / 2)
+    return SoloEssentials(dens_roi, modl_roi, prfl_modl, prfl_modl_norm_px, smwh, smw_modl, step_posi, step_modl)
+end
+
+function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo)
+    foreach(empty!, values(axs))
+    modl2d_norm = essn.modl2d |> m -> m ./ (sum(m) * (essn.step_modl / 2)^2)
+    x, y = essn.smwh |> s -> map(u -> (-u:1:u), s)
+    x_posi, y_posi = (x, y) .* essn.step_posi
+    x_modl, y_modl = (x, y) .* essn.step_modl
+    y_modl_sm = (0:1:essn.smwh[2]) * essn.step_modl
+    clrmap = gen_clrmap_solo(hue_theme_istp[info_solo["istp"]])
+    heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, 16.0), colormap=clrmap)
+    heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, 16.0), colormap=:binary)
+    axs["dens"].aspect = DataAspect()
+    # axs["modl"].aspect = DataAspect()
+    ylims!(axs["prfl_ft"], 0, 2.5)
+    xlims!(axs["prfl_ft"], 0, 0.8)
+    xlims!(axs["modl"], 0, 0.8)
+    ylims!(axs["modl"], -0.5, 0.5)
+    axs["prfl_ft"].yticksvisible = false
+    axs["prfl_ft"].yticklabelsvisible = false
+    axs["modl"] |> hidedecorations!
+    # axs["dens"] |> hidedecorations!
+    lines!(axs["prfl_ft"], y_modl_sm, essn.prfl_modl_norm_px |> fold_symmetric; color=:black)
+    vlines!(axs["prfl_ft"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
+    vlines!(axs["modl"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
+    hlines!(axs["modl"], [-10.5, 10.5] .* essn.step_modl; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
+    text!(axs["dens"], 0, 14; text=@sprintf("%i ms | rep %i", info_solo["t_hold"], info_solo["repeat"]), color=:black, fontsize=24, align=(:center, :bottom))
 end
