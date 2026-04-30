@@ -160,7 +160,7 @@ function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_s
     y_modl_sm = (0:1:essn.smwh[2]) * essn.step_modl
     clrmap = gen_clrmap_solo(hue_theme_istp[info_solo["istp"]])
     heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, 16.0), colormap=clrmap)
-    heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, 16.0), colormap=:binary)
+    heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, 10.0), colormap=:binary)
     axs["dens"].aspect = DataAspect()
     # axs["modl"].aspect = DataAspect()
     ylims!(axs["prfl_ft"], 0, 2.5)

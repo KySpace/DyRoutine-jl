@@ -6,7 +6,7 @@ include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "percond.jl"))
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
-path = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\2026-03\0325\run52\d0325r52.h5"
+path = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\2026-03\0325\run80\d0325r80.h5"
 path_plot = joinpath(@__DIR__, "probe_temp_number_vs_t_hold.svg")
 path_plot_peak = joinpath(@__DIR__, "probe_temp_avg_density_peak.svg")
 path_plot_duet = joinpath(@__DIR__, "probe_temp_duet.svg")
@@ -50,13 +50,35 @@ dens_full_fmt = dens |>
                       ds -> reshape(ds, (reverse(n_dim_vars)..., reverse(wh_peak)...)) |>
                             ds -> permutedims(ds, (3, 2, 1, 4, 5))
 
-
 # Statistics on number sum
 num_fmt = dens_full_fmt |> ds -> mapslices(calc_dens_sum, ds; dims=(4, 5)) |> n -> dropdims(n; dims=(4, 5));
 stat_n_fmt = num_fmt |> a -> mapslices(calc_mean_std, a; dims=(1))
 
 fig_num, ax_num = set_axis!("number vs t hold")
 for (i, istp) in enumerate(val[3])
-plot_num_stat_evo!(ax_num, val[2], stat_n_fmt[1,:,i], val[3][i])
+    plot_num_stat_evo!(ax_num, val[2], stat_n_fmt[1, :, i], val[3][i])
 end
 display(fig_num)
+
+fig_live = Figure()
+gl = GridLayout()
+fig_live[1, 1] = gl
+dens_fmt_sample = dens_full_fmt[1, 3, 1, :, :];
+essn_sample = calc_solo_essn_2d(dens_fmt_sample, smwh_peak .+ 1, smwh_peak, 10, 6.5 / 22.);
+info_sample = Dict("istp" => val[3][1], "t_hold" => val[2][3], "repeat" => val[1][1])
+axs_live = set_panel_solo_essn_2d!(gl);
+draw_solo_essn_2d!(axs_live, essn_sample, info_sample);
+fig_live |> display
+
+essn_2d_fmt = dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, 10, 6.5 / 22.), ds; dims=(4, 5)) |> e -> dropdims(e; dims=(4, 5));
+info_fmt = [Dict("istp" => val[3][i], "t_hold" => val[2][t], "repeat" => val[1][r]) for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]]
+fig_full, axs_solo = set_axis_full(n_dim_vars)
+for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+    info = info_fmt[r, t, i]
+    print("\rplotting for rep $i, $(info["t_hold"]) ms, $(info["istp"])")
+    draw_solo_essn_2d!(axs_solo[r, t, i], essn_2d_fmt[r, t, i], info)
+    draw_solo_essn_2d!(axs_live, essn_2d_fmt[r, t, i], info)
+end
+resize_to_layout!(fig_full)
+
+fig_full |> f -> save(joinpath(@__DIR__, "full_essn_CFNM_5.318.pdf"), f; backend=CairoMakie)

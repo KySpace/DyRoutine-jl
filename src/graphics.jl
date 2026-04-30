@@ -40,14 +40,22 @@ function plot_num_stat_evo!(
     # return path_plot
 end
 
-# function set_axis_full(n_dim_vars::AbstractVector{<:Integer, 3})
-#     CairoMakie.activate!()
-#     fig = Figure()
-#     n_row = n_dim_vars[2]
-#     n_col = n_dim_vars[1] * n_dim_vars[3]
-#     axs_solo = Array{Axis}(undef, (n_dim_vars..., 3))
-
-# end
+function set_axis_full(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer})
+    CairoMakie.activate!()
+    n_row = n_dim_vars[2]
+    n_col = n_dim_vars[1] * n_dim_vars[3]
+    CairoMakie.activate!()
+    fig = Figure()
+    axs_solo = Array{Dict}(undef, n_dim_vars)
+    for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+        print("\rbuilding axis for rep $i, $t")
+        gl = GridLayout()
+        # fig[1, 1][t, (r-1)*n_dim_vars[3]+i] = gl
+        fig[1, 1][t, r+(i-1)*n_dim_vars[1]] = gl
+        axs_solo[r, t, i] = set_panel_solo_essn_2d!(gl)
+    end
+    return fig, axs_solo
+end
 
 function set_panel_solo_essn_2d!(gl::GridLayout)
     for obj in contents(gl)
@@ -59,7 +67,7 @@ function set_panel_solo_essn_2d!(gl::GridLayout)
     ax_prfl_ft = Axis(gl[2, 2])
     colsize!(gl, 1, Fixed(200))
     colsize!(gl, 2, Fixed(300))
-    rowsize!(gl, 1, Relative(0.7))
-    rowsize!(gl, 2, Relative(0.3))
+    rowsize!(gl, 1, Fixed(200))
+    rowsize!(gl, 2, Fixed(100))
     return Dict("dens" => ax_dens, "modl" => ax_modl, "prfl_ft" => ax_prfl_ft)
 end
