@@ -5,6 +5,16 @@
 ## Packaging
 for now, some codes are not packaged, just included. Do package them in the future to decouple function calls from the environment by using `module`
 
+## For Agents
+Please summarize completed work in `Agent-Log.md`. Use one entry per finished task, and prefer this style:
+
+```
+- Request: Compact but faithful summary of what the user asked for, preserving important constraints and omitting incidental examples that could confuse future work.
+  Brief: Compact but specific summary of what changed, major design choices, files/functions touched, and verification status or blockers.
+```
+
+While a task is still in progress, mostly edit the latest relevant log entry instead of adding new entries. Add a new entry only when a task is finished or when the user clearly starts a separate task. If you have doubt, ask before writing to `Agent-Log.md`.
+
 ## Code Style and Conventions
 - Prefer Julia functions with clear, narrow responsibilities. Keep processing logic in `src/` and script-specific orchestration in `script/`.
 - Use `snake_case` for variables and functions. Function names usually read as verb + noun, such as `calc_dens_sum`, `crop_center`, `find_peak_position_moving`, or `set_axis_full`.

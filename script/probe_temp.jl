@@ -5,6 +5,7 @@ GLMakie.activate!()
 include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "percond.jl"))
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
+include(joinpath(@__DIR__, "..", "src", "corr.jl"))
 
 path = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\2026-03\0325\run80\d0325r80.h5"
 path_plot = joinpath(@__DIR__, "probe_temp_number_vs_t_hold.svg")
@@ -72,6 +73,7 @@ display(fig_num)
 
 essn_2d_fmt = dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, 10, 6.5 / 22.), ds; dims=(4, 5)) |> e -> dropdims(e; dims=(4, 5));
 info_fmt = [Dict("istp" => val[3][i], "t_hold" => val[2][t], "repeat" => val[1][r]) for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]]
+modes_pca_modl2d = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |> m -> fit_pca_modes(16, m)
 # fig_full, axs_solo = set_axis_full(n_dim_vars)
 # for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
 #     info = info_fmt[r, t, i]
