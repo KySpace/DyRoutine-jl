@@ -151,6 +151,33 @@ function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smw
     return SoloEssentials(dens_roi, modl_roi, prfl_modl, prfl_modl_norm_px, smwh, smw_modl, step_posi, step_modl)
 end
 
+function draw_solo_modl!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo)
+    foreach(empty!, values(axs))
+    modl2d_norm = essn.modl2d |> m -> m ./ (sum(m) * (essn.step_modl / 2)^2)
+    x, y = essn.smwh |> s -> map(u -> (-u:1:u), s)
+    x_posi, y_posi = (x, y) .* essn.step_posi
+    x_modl, y_modl = (x, y) .* essn.step_modl
+    y_modl_sm = (0:1:essn.smwh[2]) * essn.step_modl
+    clrmap = gen_clrmap_solo(hue_theme_istp[info_solo["istp"]])
+    heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, 10.0), colormap=clrmap)
+    lines!(axs["upright"], y_modl_sm, essn.prfl_modl_norm_px[essn.smwh[2]+1:end], color=:black, linewidth=1)
+    lines!(axs["sideway"], essn.prfl_modl_norm_px[essn.smwh[2]+1:end], y_modl_sm, color=:black, linewidth=1)
+    axs["sideway"] |> hidedecorations!
+    axs["modl"] |> hidedecorations!
+    axs["upright"].yticklabelsvisible = false
+    axs["upright"].xticklabelsvisible = false
+    xlims!(axs["upright"], 0, 0.8)
+    xlims!(axs["modl"], 0, 0.8)
+    ylims!(axs["upright"], 0, 2.0)
+    ylims!(axs["modl"], (-10.5, 10.5) .* essn.step_modl)
+    ylims!(axs["sideway"], 0.2, 0.5)
+    xlims!(axs["sideway"], 0.0, 2.0)
+    vlines!(axs["modl"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
+    vlines!(axs["upright"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
+    hlines!(axs["sideway"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
+    text!(axs["modl"], 0.55, 0.16; text=@sprintf("%i ms | rep %i", info_solo["t_hold"], info_solo["repeat"]), color=:black, fontsize=16, align=(:center, :bottom))
+end
+
 function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo)
     foreach(empty!, values(axs))
     modl2d_norm = essn.modl2d |> m -> m ./ (sum(m) * (essn.step_modl / 2)^2)

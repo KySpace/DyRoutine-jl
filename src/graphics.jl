@@ -40,26 +40,39 @@ function plot_num_stat_evo!(
     # return path_plot
 end
 
-function set_axis_full(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer})
+function set_axis_full(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer}, panel_setter::Function)
     CairoMakie.activate!()
     CairoMakie.activate!()
     fig = Figure()
+    length(n_dim_vars) == 3 || throw(ArgumentError("n_dim_vars must be a 3-tuple"))
     axs_solo = Array{Dict}(undef, n_dim_vars)
+    axs_stacked = Array{Dict}(undef, n_dim_vars[2:end])
     for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
-        print("\rbuilding axis for rep $i, $t")
+        print("\rbuilding solo axis for rep $r, $t")
         gl = GridLayout()
         # fig[1, 1][t, (r-1)*n_dim_vars[3]+i] = gl
-        fig[1, 1][t, r+(i-1)*n_dim_vars[1]] = gl
-        axs_solo[r, t, i] = set_panel_solo_essn_2d!(gl)
+        fig[1, 3*(i-1)+1][t, r] = gl
+        axs_solo[r, t, i] = panel_setter(gl)
     end
-    return fig, axs_solo
+    for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+        print("\rbuilding stack axis for $t")
+        gl = GridLayout()
+        fig[1, 3*(i-1)+2][t, 1] = gl
+        axs_stacked[t, i] = panel_setter(gl)
+    end
+    colsize!(fig.layout, 3, Fixed(2))
+    return fig, axs_solo, axs_stacked
 end
 
-function set_panel_solo_essn_2d!(gl::GridLayout)
+function clean_gridlayout!(gl::GridLayout)
     for obj in contents(gl)
         obj isa Axis && delete!(obj)
     end
     trim!(gl)
+end
+
+function set_panel_solo_essn_2d!(gl::GridLayout)
+    gl |> clean_gridlayout!
     ax_dens = Axis(gl[1:2, 1])
     ax_modl = Axis(gl[1, 2])
     ax_prfl_ft = Axis(gl[2, 2])
@@ -68,6 +81,18 @@ function set_panel_solo_essn_2d!(gl::GridLayout)
     rowsize!(gl, 1, Fixed(200))
     rowsize!(gl, 2, Fixed(100))
     return Dict("dens" => ax_dens, "modl" => ax_modl, "prfl_ft" => ax_prfl_ft)
+end
+
+function set_panel_solo_modl!(gl::GridLayout)
+    gl |> clean_gridlayout!
+    ax_modl = Axis(gl[1, 2])
+    ax_prfl_ft_upright = Axis(gl[1, 3])
+    ax_prfl_ft_sideway = Axis(gl[1, 1])
+    colsize!(gl, 1, Fixed(100))
+    colsize!(gl, 2, Fixed(160))
+    colsize!(gl, 3, Fixed(160))
+    rowsize!(gl, 1, Fixed(80))
+    return Dict("modl" => ax_modl, "upright" => ax_prfl_ft_upright, "sideway" => ax_prfl_ft_sideway)
 end
 
 function set_axis_pca_4x4!()
@@ -88,19 +113,17 @@ function set_axis_pca_dual_4x2!()
         gl = GridLayout()
         fig[1, 1][r, c] = gl
         axs_mode[1, (r-1)*4+c] = set_panel_pca_solo!(gl)
-        Box(fig[2, 1], color = :black)
+        Box(fig[2, 1], color=:black)
         gl = GridLayout()
         fig[3, 1][r, c] = gl
         axs_mode[2, (r-1)*4+c] = set_panel_pca_solo!(gl)
     end
+    rowsize!(fig.layout, 2, Fixed(2))
     return fig, axs_mode
 end
 
 function set_panel_pca_duet!(gl::GridLayout)
-    for obj in contents(gl)
-        obj isa Axis && delete!(obj)
-    end
-    trim!(gl)
+    gl |> clean_gridlayout!
     ax_l = Axis(gl[1:2, 1])
     ax_r = Axis(gl[1:2, 2])
     ax_evol = Axis(gl[1, 3])

@@ -22,6 +22,7 @@ wh_corner = (10, 10)
 smwh_peak = (30, 60)
 wh_peak = smwh_peak .* 2 .+ 1
 smw_peak, smh_peak = smwh_peak
+smw_ft = 10
 px_in_um = 6.5 / 22.06
 
 name = ["repeat", "t_hold", "istp"]
@@ -63,22 +64,18 @@ dens_full_fmt = dens |>
 # end
 # display(fig_num)
 
-# fig_live = Figure()
-# gl = GridLayout()
-# fig_live[1, 1] = gl
-# dens_fmt_sample = dens_full_fmt[1, 3, 1, :, :];
-# essn_sample = calc_solo_essn_2d(dens_fmt_sample, smwh_peak .+ 1, smwh_peak, 10, 6.5 / 22.);
-# info_sample = Dict("istp" => val[3][1], "t_hold" => val[2][3], "repeat" => val[1][1])
-# axs_live = set_panel_solo_essn_2d!(gl);
-# draw_solo_essn_2d!(axs_live, essn_sample, info_sample);
-# fig_live |> display
+fig_live = Figure()
+gl = GridLayout()
+fig_live[1, 1] = gl
+axs_live = set_panel_solo_modl!(gl);
+fig_live |> display
 
-essn_2d_fmt = dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, 10, 6.5 / 22.), ds; dims=(4, 5)) |> e -> dropdims(e; dims=(4, 5));
+essn_2d_fmt = dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, smw_ft, px_in_um), ds; dims=(4, 5)) |> e -> dropdims(e; dims=(4, 5));
 info_fmt = [Dict("istp" => val[3][i], "t_hold" => val[2][t], "repeat" => val[1][r]) for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]]
 
 modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
                                   m ->
-    map(a -> a[smwh_peak[2]+1+8:smwh_peak[2]+1+15, smwh_peak[1]+1-10:smwh_peak[1]+1+10], m) |>
+    map(a -> a[smwh_peak[2]+1+8:smwh_peak[2]+1+15, smwh_peak[1]+1-smw_ft:smwh_peak[1]+1+smw_ft], m) |>
     # d -> [permutedims(stack(@view d[i, j, :]), (3, 1, 2))
     #     for i in axes(d, 1), j in axes(d, 2)];
     d -> d
@@ -90,13 +87,14 @@ for idx_mode in 1:8, istp in 1:n_istp
 end
 resize_to_layout!(fig_pca)
 display(fig_pca)
-# fig_full, axs_solo = set_axis_full(n_dim_vars)
-# for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
-#     info = info_fmt[r, t, i]
-#     print("\rplotting for rep $i, $(info["t_hold"]) ms, $(info["istp"])")
-#     draw_solo_essn_2d!(axs_solo[r, t, i], essn_2d_fmt[r, t, i], info)
-#     draw_solo_essn_2d!(axs_live, essn_2d_fmt[r, t, i], info)
-# end
-# resize_to_layout!(fig_full)
+# fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_essn_2d!)
+fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_modl!)
+for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+    info = info_fmt[r, t, i]
+    print("\rplotting for rep $i, $(info["t_hold"]) ms, $(info["istp"])")
+    draw_solo_modl!(axs_solo[r, t, i], essn_2d_fmt[r, t, i], info)
+    draw_solo_modl!(axs_live, essn_2d_fmt[r, t, i], info)
+end
+resize_to_layout!(fig_full)
 
-# fig_full |> f -> save(joinpath(@__DIR__, "full_essn_CFNM_5.318.pdf"), f; backend=CairoMakie)
+fig_full |> f -> save(joinpath(dir_output, "full_essn_CFNM_5.318.pdf"), f; backend=CairoMakie)
