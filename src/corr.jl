@@ -53,7 +53,7 @@ function fit_pca_modes(n_mode::Integer, samples::AbstractArray{<:AbstractArray{<
     ]
 end
 
-function plot_mode_evol_freq_duet(axs::Dict{String,Axis}, mode::ModeWeight, val_t::AbstractVector)
+function plot_mode_evol_freq_duet!(axs::Dict{String,Axis}, mode::ModeWeight, val_t::AbstractVector)
     ndims(mode.profile) == 3 && size(mode.profile, 1) == 2 || throw(ArgumentError("mode.profile must be a 3D array with size[1]==2."))
     clrmap = gen_clrmap_posneg(0.60 * 360, 0.96 * 360)
     c = maximum(abs, mode.profile)
@@ -68,11 +68,11 @@ function plot_mode_evol_freq_duet(axs::Dict{String,Axis}, mode::ModeWeight, val_
     end
 end
 
-function plot_mode_evol_freq_solo(axs::Dict{String,Axis}, mode::ModeWeight, val_t::AbstractVector)
+function plot_mode_evol_freq_solo!(axs::Dict{String,Axis}, mode::ModeWeight, val_t::AbstractVector)
     ndims(mode.profile) == 2 || throw(ArgumentError("mode.profile must be a 2D array. "))
     clrmap = gen_clrmap_posneg(0.60 * 360, 0.96 * 360)
     c = maximum(abs, mode.profile)
-    heatmap!(axs["l"], mode.profile[1, :, :]'; colormap=clrmap, colorrange=(-c, c))
+    heatmap!(axs["mode"], mode.profile[:, :]; colormap=clrmap, colorrange=(-c, c))
     axs["mode"].aspect = DataAspect()
     axs["mode"] |> hidedecorations!
     for rep = 1:size(mode.weight, 1)

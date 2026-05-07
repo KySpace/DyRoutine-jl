@@ -72,7 +72,7 @@ end
 
 function set_axis_pca_4x4!()
     fig = Figure()
-    axs_mode = Array{Dict}(undef, n_dim_vars)
+    axs_mode = Array{Dict}(undef, 16)
     for r in 1:4, c in 1:4
         gl = GridLayout()
         fig[r, c] = gl
@@ -83,13 +83,14 @@ end
 
 function set_axis_pca_dual_4x2!()
     fig = Figure()
-    axs_mode = Array{Dict}(undef, n_dim_vars)
+    axs_mode = Array{Dict}(undef, (2, 8))
     for r in 1:2, c in 1:4
         gl = GridLayout()
         fig[1, 1][r, c] = gl
         axs_mode[1, (r-1)*4+c] = set_panel_pca_solo!(gl)
+        Box(fig[2, 1], color = :black)
         gl = GridLayout()
-        fig[2, 1][r, c] = gl
+        fig[3, 1][r, c] = gl
         axs_mode[2, (r-1)*4+c] = set_panel_pca_solo!(gl)
     end
     return fig, axs_mode
@@ -122,7 +123,7 @@ function set_panel_pca_solo!(gl::GridLayout)
     ax_freq = Axis(gl[2, 2])
     colsize!(gl, 1, Fixed(100))
     colsize!(gl, 2, Fixed(200))
-    rowsize!(gl, 1, Fixed(150))
-    rowsize!(gl, 2, Fixed(150))
+    rowsize!(gl, 1, Fixed(120))
+    rowsize!(gl, 2, Fixed(120))
     return Dict("mode" => ax_mode, "evol" => ax_evol, "freq" => ax_freq)
 end
