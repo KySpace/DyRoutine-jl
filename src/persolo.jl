@@ -159,7 +159,7 @@ function draw_solo_modl!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo
     x_modl, y_modl = (x, y) .* essn.step_modl
     y_modl_sm = (0:1:essn.smwh[2]) * essn.step_modl
     clrmap = gen_clrmap_solo(hue_theme_istp[info_solo["istp"]])
-    heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, 10.0), colormap=clrmap)
+    heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, 10.0), colormap=clrmap, rasterize=true)
     lines!(axs["upright"], y_modl_sm, essn.prfl_modl_norm_px[essn.smwh[2]+1:end], color=:black, linewidth=1)
     lines!(axs["sideway"], essn.prfl_modl_norm_px[essn.smwh[2]+1:end], y_modl_sm, color=:black, linewidth=1)
     axs["sideway"] |> hidedecorations!
