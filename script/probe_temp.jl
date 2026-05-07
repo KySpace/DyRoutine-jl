@@ -74,15 +74,17 @@ dens_full_fmt = dens |>
 essn_2d_fmt = dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, 10, 6.5 / 22.), ds; dims=(4, 5)) |> e -> dropdims(e; dims=(4, 5));
 info_fmt = [Dict("istp" => val[3][i], "t_hold" => val[2][t], "repeat" => val[1][r]) for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]]
 
-modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |> 
-        m -> map(a -> a[smwh_peak[2]+1+8:smwh_peak[2]+1+15, smwh_peak[1]+1-10:smwh_peak[1]+1+10], m) |> 
-            d -> [permutedims(stack(@view d[i, j, :]), (3, 1, 2))
-                for i in axes(d, 1), j in axes(d, 2)];
-modes_pca_modl2d = modl2d_side |> m -> fit_pca_modes(16, m)
+modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
+                                  m ->
+    map(a -> a[smwh_peak[2]+1+8:smwh_peak[2]+1+15, smwh_peak[1]+1-10:smwh_peak[1]+1+10], m) |>
+    # d -> [permutedims(stack(@view d[i, j, :]), (3, 1, 2))
+    #     for i in axes(d, 1), j in axes(d, 2)];
+    d -> d
+modes_pca_modl2d = [modl2d_side[:, :, i] |> m -> fit_pca_modes(8, m) for i in 1:n_istp]
 
-fig_pca, axs_pca = set_axis_pca_4x4!()
-for idx_mode in 1:length(modes_pca_modl2d)
-    plot_mode_evol_freq(axs_pca[idx_mode], modes_pca_modl2d[idx_mode], val[2])
+fig_pca, axs_pca = set_axis_pca_dual_4x2!()
+for idx_mode in 1:length(modes_pca_modl2d), istp in 1:n_istp
+    plot_mode_evol_freq_solo(axs_pca[istp, idx_mode], modes_pca_modl2d[istp][idx_mode], val[2])
 end
 resize_to_layout!(fig_pca)
 display(fig_pca)

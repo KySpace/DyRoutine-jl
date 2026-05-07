@@ -81,6 +81,20 @@ function set_axis_pca_4x4!()
     return fig, axs_mode
 end
 
+function set_axis_pca_dual_4x2!()
+    fig = Figure()
+    axs_mode = Array{Dict}(undef, n_dim_vars)
+    for r in 1:2, c in 1:4
+        gl = GridLayout()
+        fig[1, 1][r, c] = gl
+        axs_mode[1, (r-1)*4+c] = set_panel_pca_solo!(gl)
+        gl = GridLayout()
+        fig[2, 1][r, c] = gl
+        axs_mode[2, (r-1)*4+c] = set_panel_pca_solo!(gl)
+    end
+    return fig, axs_mode
+end
+
 function set_panel_pca_duet!(gl::GridLayout)
     for obj in contents(gl)
         obj isa Axis && delete!(obj)
@@ -96,4 +110,19 @@ function set_panel_pca_duet!(gl::GridLayout)
     rowsize!(gl, 1, Fixed(150))
     rowsize!(gl, 2, Fixed(150))
     return Dict("l" => ax_l, "r" => ax_r, "evol" => ax_evol, "freq" => ax_freq)
+end
+
+function set_panel_pca_solo!(gl::GridLayout)
+    for obj in contents(gl)
+        obj isa Axis && delete!(obj)
+    end
+    trim!(gl)
+    ax_mode = Axis(gl[1:2, 1])
+    ax_evol = Axis(gl[1, 2])
+    ax_freq = Axis(gl[2, 2])
+    colsize!(gl, 1, Fixed(100))
+    colsize!(gl, 2, Fixed(200))
+    rowsize!(gl, 1, Fixed(150))
+    rowsize!(gl, 2, Fixed(150))
+    return Dict("mode" => ax_mode, "evol" => ax_evol, "freq" => ax_freq)
 end
