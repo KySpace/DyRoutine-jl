@@ -57,6 +57,18 @@ dens_full_fmt = dens |>
                       ds -> reshape(ds, (reverse(n_dim_vars)..., reverse(wh_peak)...)) |>
                             ds -> permutedims(ds, (3, 2, 1, 4, 5))
 
+# A lite version for tests
+rng_lite = 1:50;
+val = (
+    collect(1:3),
+    collect(6:2:200)[rng_lite],
+    ["162", "164"],
+)
+n_variation = length(val[1]) * length(val[2]) * length(val[3])
+n_dim_vars = map(length, val);
+n_rep, n_main, n_istp = n_dim_vars
+dens_full_fmt = dens_full_fmt[:,rng_lite,:,:,:]
+
 # Statistics on number sum
 # num_fmt = dens_full_fmt |> ds -> mapslices(calc_dens_sum, ds; dims=(4, 5)) |> n -> dropdims(n; dims=(4, 5));
 # stat_n_fmt = num_fmt |> a -> mapslices(calc_mean_std, a; dims=(1))
@@ -75,6 +87,14 @@ fig_live |> display
 
 essn_2d_fmt = dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, smw_ft, px_in_um), ds; dims=(4, 5)) |> e -> dropdims(e; dims=(4, 5));
 info_fmt = [Dict("istp" => val[3][i], "t_hold" => val[2][t], "repeat" => val[1][r]) for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]]
+essn_stacked_over_rep = [
+    calc_stacked_essn(@view essn_2d_fmt[:, t, i])
+    for t in axes(essn_2d_fmt, 2), i in axes(essn_2d_fmt, 3)
+]
+essn_stacked_over_rep_t = [
+    calc_stacked_essn((@view essn_2d_fmt[:, :, i]) |> vec)
+    for i in axes(essn_2d_fmt, 3)
+]
 
 modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
                                   m ->
@@ -97,6 +117,12 @@ for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
     print("\rplotting for rep $r, $(info["t_hold"]) ms, $(info["istp"])")
     draw_solo_modl!(axs_solo[r, t, i], essn_2d_fmt[r, t, i], info)
     draw_solo_modl!(axs_live, essn_2d_fmt[r, t, i], info)
+end
+for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+    info = info_fmt[1, t, i] |> d -> merge(d, Dict("repeat" => "stacked"))
+    print("\rplotting for stacked $(info["t_hold"]) ms, $(info["istp"])")
+    draw_solo_modl!(axs_stacked[t, i], essn_stacked_over_rep[t, i], info)
+    draw_solo_modl!(axs_live[t, i], essn_stacked_over_rep[t, i], info)
 end
 resize_to_layout!(fig_full)
 
