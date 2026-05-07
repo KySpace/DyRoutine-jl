@@ -2,24 +2,26 @@ using HDF5
 using CairoMakie: Figure, Axis, Colorbar, DataAspect, heatmap!, lines!, scatter!, save, text!, rowgap!, colgap!
 using GLMakie
 GLMakie.activate!()
+include(joinpath(@__DIR__, "..", "src", "helper.jl"))
 include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "percond.jl"))
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "corr.jl"))
 
-path = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\2026-03\0325\run80\d0325r80.h5"
-path_plot = joinpath(@__DIR__, "probe_temp_number_vs_t_hold.svg")
-path_plot_peak = joinpath(@__DIR__, "probe_temp_avg_density_peak.svg")
-path_plot_duet = joinpath(@__DIR__, "probe_temp_duet.svg")
-path_plot_sheet = joinpath(@__DIR__, "probe_temp_contact_sheet.pdf")
+year_test = 2026
+path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
+title_anlz = "DevTest"
+
+date, runid = "0325", 80
+dir_test = gen_date_path(date, year_test)
+file_data = gen_h5name(date, runid)
+path_input = joinpath(path_root, dir_test, @sprintf("run%02d", runid), file_data)
+dir_output = joinpath(path_root, dir_test, "AnlzRoutine", title_anlz);
+
 wh_corner = (10, 10)
 smwh_peak = (30, 60)
 wh_peak = smwh_peak .* 2 .+ 1
 smw_peak, smh_peak = smwh_peak
-duet_color_max = 40.0
-sheet_color_max = 40.0
-sheet_gap = 6
-
 px_in_um = 6.5 / 22.06
 
 name = ["repeat", "t_hold", "istp"]
@@ -31,7 +33,7 @@ val = (
 n_variation = length(val[1]) * length(val[2]) * length(val[3])
 n_dim_vars = map(length, val);
 n_rep, n_main, n_istp = n_dim_vars
-h5open(path, "r") do f
+h5open(path_input, "r") do f
     global dens = f["/od"] |>
                   read |>
                   x -> permutedims(x, (3, 2, 1)) |>
