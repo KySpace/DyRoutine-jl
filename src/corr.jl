@@ -1,11 +1,18 @@
 using MultivariateStats: PCA, fit, predict, projection
+using CairoMakie: Axis
+using Colors: Oklch
 
 struct ModeWeight{TProfile<:AbstractArray,TWeight<:AbstractArray}
     profile::TProfile
     weight::TWeight
 end
 
+function gen_clrmap_posneg(hue_pos, hue_neg)
+    return [Oklch(1 - abs(t), 0.24 * abs(t), t > 0 ? hue_pos : hue_neg) |> c -> RGBAf(c) for t in range(-1, 1; length=256)]
+end
+
 function build_pca_matrix(samples::AbstractArray{<:AbstractArray{<:Real}})
+
     n_sample = length(samples)
     n_sample > 0 || throw(ArgumentError("samples must contain at least one sample array."))
 
@@ -44,4 +51,19 @@ function fit_pca_modes(n_mode::Integer, samples::AbstractArray{<:AbstractArray{<
         )
         for idx_mode in 1:n_mode_int
     ]
+end
+
+function plot_mode_evol_freq(axs::Dict{String,Axis}, mode::ModeWeight, val_t::AbstractVector)
+    ndims(mode.profile) == 3 && size(mode.profile, 1) == 2 || throw(ArgumentError("mode.profile must be a 3D array with size[1]==2."))
+    clrmap = gen_clrmap_posneg(0.60 * 360, 0.96 * 360)
+    c = maximum(abs, mode.profile)
+    heatmap!(axs["l"], mode.profile[1, :, :]'; colormap=clrmap, colorrange=(-c, c))
+    heatmap!(axs["r"], mode.profile[2, :, :]'; colormap=clrmap, colorrange=(-c, c))
+    axs["l"].aspect = DataAspect()
+    axs["r"].aspect = DataAspect()
+    axs["l"] |> hidedecorations!
+    axs["r"] |> hidedecorations!
+    for rep = 1:size(mode.weight, 1)
+        lines!(axs["evol"], val_t, mode.weight[rep, :]; color=(:black, 0.2))
+    end
 end

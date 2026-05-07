@@ -42,8 +42,6 @@ end
 
 function set_axis_full(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer})
     CairoMakie.activate!()
-    n_row = n_dim_vars[2]
-    n_col = n_dim_vars[1] * n_dim_vars[3]
     CairoMakie.activate!()
     fig = Figure()
     axs_solo = Array{Dict}(undef, n_dim_vars)
@@ -70,4 +68,32 @@ function set_panel_solo_essn_2d!(gl::GridLayout)
     rowsize!(gl, 1, Fixed(200))
     rowsize!(gl, 2, Fixed(100))
     return Dict("dens" => ax_dens, "modl" => ax_modl, "prfl_ft" => ax_prfl_ft)
+end
+
+function set_axis_pca_4x4!()
+    fig = Figure()
+    axs_mode = Array{Dict}(undef, n_dim_vars)
+    for r in 1:4, c in 1:4
+        gl = GridLayout()
+        fig[r, c] = gl
+        axs_mode[(r-1)*4+c] = set_panel_pca_duet!(gl)
+    end
+    return fig, axs_mode
+end
+
+function set_panel_pca_duet!(gl::GridLayout)
+    for obj in contents(gl)
+        obj isa Axis && delete!(obj)
+    end
+    trim!(gl)
+    ax_l = Axis(gl[1:2, 1])
+    ax_r = Axis(gl[1:2, 2])
+    ax_evol = Axis(gl[1, 3])
+    ax_freq = Axis(gl[2, 3])
+    colsize!(gl, 1, Fixed(100))
+    colsize!(gl, 2, Fixed(100))
+    colsize!(gl, 3, Fixed(200))
+    rowsize!(gl, 1, Fixed(150))
+    rowsize!(gl, 2, Fixed(150))
+    return Dict("l" => ax_l, "r" => ax_r, "evol" => ax_evol, "freq" => ax_freq)
 end
