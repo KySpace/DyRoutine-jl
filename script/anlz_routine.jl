@@ -122,8 +122,8 @@ for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
     info = info_fmt[1, t, i] |> d -> merge(d, Dict("repeat" => "stacked"))
     print("\rplotting for stacked $(info["t_hold"]) ms, $(info["istp"])")
     draw_solo_modl!(axs_stacked[t, i], essn_stacked_over_rep[t, i], info)
-    draw_solo_modl!(axs_live[t, i], essn_stacked_over_rep[t, i], info)
+    draw_solo_modl!(axs_live, essn_stacked_over_rep[t, i], info)
 end
 resize_to_layout!(fig_full)
 
-fig_full |> f -> save(joinpath(dir_output, "full_essn_CFNM_5.318_rastr.pdf"), f; backend=CairoMakie)
+fig_full |> f -> save(joinpath(path_output, "full_essn_CFNM_5.318_rastr.pdf"), f; backend=CairoMakie)

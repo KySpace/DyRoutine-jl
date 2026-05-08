@@ -140,6 +140,12 @@ struct SoloEssentials
     step_modl::Real
 end
 
+struct SoloExtract
+    essentials::SoloEssentials
+    info_solo::Dict{String,Any}
+    prfl_modl_norm_net_px::AbstractVector
+end
+
 function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smwh::Tuple{<:Real,<:Real}, smw_modl::Integer, px_in_um::Real)
     dens_roi = crop_center(dens, cent, smwh)
     x_cent = smwh[1] + 1
@@ -175,7 +181,7 @@ function draw_solo_modl!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo
     vlines!(axs["modl"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
     vlines!(axs["upright"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
     hlines!(axs["sideway"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
-    text!(axs["modl"], 0.55, 0.16; text=@sprintf("%i ms | rep %i", info_solo["t_hold"], info_solo["repeat"]), color=:black, fontsize=16, align=(:center, :bottom))
+    text!(axs["modl"], 0.55, 0.16; text="$(info_solo["t_hold"]) ms | rep $(info_solo["repeat"])", color=:black, fontsize=16, align=(:center, :bottom))
 end
 
 function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo)
@@ -203,4 +209,13 @@ function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_s
     vlines!(axs["modl"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
     hlines!(axs["modl"], [-10.5, 10.5] .* essn.step_modl; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
     text!(axs["dens"], 0, 14; text=@sprintf("%i ms | rep %i", info_solo["t_hold"], info_solo["repeat"]), color=:black, fontsize=24, align=(:center, :bottom))
+end
+
+function fit_prfl_modl_1d(coor, prfl)
+    # parameters: [MainPeak.Height MainPeak.Width SidePeak.Height SidePeak.Width SidePeak.Pos Decay.Height Decay.Length]
+    model(k, p) = p[1] .* exp.(-k .^ 2 ./ (2 .* p[2] .^ 2)) .+ p[3] .* exp.(-(k .- p[5]) .^ 2 ./ (2 .* p[4] .^ 2)) .+ p[6] .* exp.(-abs.(k) ./ p[7])
+    p_init = [3.0, 0.1, 0.5, 0.05, 0.3, 0.5, 0.8]
+    p_upper = [Inf, 0.3, 2.0, 0.100, 0.37, Inf, 5.0]
+    p_lower = [2.0, 0.0, 0.0, 0.018, 0.23, 0.0, 0.5]
+    fit = curve_fit(model, coor, prfl, p_init; lower=p_lower, upper=p_upper)
 end
