@@ -40,9 +40,9 @@ n_rep, n_main, n_istp = n_dim_vars
 h5open(path_input, "r") do f
     global dens = f["/od"] |>
                   read |>
-                  x -> permutedims(x, (3, 2, 1)) |>
-                       x -> stack(
-                      map(d -> subtract_corner_mean(d, wh_corner), eachslice(x; dims=1));
+                  x_vec -> permutedims(x_vec, (3, 2, 1)) |>
+                           x_vec -> stack(
+                      map(d -> subtract_corner_mean(d, wh_corner), eachslice(x_vec; dims=1));
                       dims=1,
                   )
     ndims(dens) == 3 || error("Expected /od to have 3 dimensions, got $(ndims(dens)).")
@@ -67,7 +67,7 @@ val = (
 n_variation = length(val[1]) * length(val[2]) * length(val[3])
 n_dim_vars = map(length, val);
 n_rep, n_main, n_istp = n_dim_vars
-dens_full_fmt = dens_full_fmt[:,rng_lite,:,:,:]
+dens_full_fmt = dens_full_fmt[:, rng_lite, :, :, :]
 
 # Statistics on number sum
 # num_fmt = dens_full_fmt |> ds -> mapslices(calc_dens_sum, ds; dims=(4, 5)) |> n -> dropdims(n; dims=(4, 5));
@@ -85,6 +85,11 @@ fig_live[1, 1] = gl
 axs_live = set_panel_solo_modl!(gl);
 fig_live |> display
 
+step_posi = px_in_um
+step_modl = 1 / (2 * smwh_peak[2] * px_in_um)
+x_vec, y_vec = smwh_peak |> s -> map(u -> (-u:1:u), s)
+x_posi, y_posi = (x_vec, y_vec) .* step_posi
+x_modl, y_modl = (x_vec, y_vec) .* step_modl
 essn_2d_fmt = dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, smw_ft, px_in_um), ds; dims=(4, 5)) |> e -> dropdims(e; dims=(4, 5));
 info_fmt = [Dict("istp" => val[3][i], "t_hold" => val[2][t], "repeat" => val[1][r]) for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]]
 essn_stacked_over_rep = [
@@ -94,6 +99,11 @@ essn_stacked_over_rep = [
 essn_stacked_over_rep_t = [
     calc_stacked_essn((@view essn_2d_fmt[:, :, i]) |> vec)
     for i in axes(essn_2d_fmt, 3)
+]
+fit_prfl_modl_over_rep_t_1d = [
+    essn_stacked_over_rep_t[istp] |>
+    e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl_norm_px |> fold_symmetric)
+    for istp in axes(essn_stacked_over_rep_t, 3)
 ]
 
 modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>

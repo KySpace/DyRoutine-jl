@@ -143,7 +143,7 @@ end
 struct SoloExtract
     essentials::SoloEssentials
     info_solo::Dict{String,Any}
-    prfl_modl_norm_net_px::AbstractVector
+    prfl_modl_norm_tailess_px::AbstractVector
 end
 
 function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smwh::Tuple{<:Real,<:Real}, smw_modl::Integer, px_in_um::Real)
@@ -155,6 +155,10 @@ function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smw
     prfl_modl = modl_roi[:, x_cent-smw_modl:x_cent+smw_modl] |> m -> sum(m, dims=2) ./ (smw_modl * 2 + 1) |> vec
     prfl_modl_norm_px = prfl_modl ./ (sum(prfl_modl) * step_modl / 2)
     return SoloEssentials(dens_roi, modl_roi, prfl_modl, prfl_modl_norm_px, smwh, smw_modl, step_posi, step_modl)
+end
+
+function calc_solo_extr(essn::SoloEssentials, fit_stack::LsqFit.LsqFitResult)
+
 end
 
 function draw_solo_modl!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo)
