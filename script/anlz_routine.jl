@@ -102,10 +102,17 @@ essn_stacked_over_rep_t = [
 ]
 fit_prfl_modl_over_rep_t_1d = [
     essn_stacked_over_rep_t[istp] |>
-    e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl_norm_px |> fold_symmetric)
-    for istp in axes(essn_stacked_over_rep_t, 3)
+    e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl_norm_px, (y_modl .> 0.02) .& (y_modl .< 0.2))
+    for istp in axes(essn_stacked_over_rep_t, 1)
 ]
-
+extr_fmt = [
+    essn_2d_fmt[r, t, i] |> e -> calc_solo_extr(e, fit_prfl_modl_over_rep_t_1d[i])
+    for r in axes(essn_2d_fmt, 1), t in axes(essn_2d_fmt, 2), i in axes(essn_2d_fmt, 3)
+]
+extr_stacked_over_rep = [
+    essn_stacked_over_rep[t, i] |> e -> calc_solo_extr(e, fit_prfl_modl_over_rep_t_1d[i])
+    for t in axes(essn_stacked_over_rep, 1), i in axes(essn_stacked_over_rep, 2)
+]
 modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
                                   m ->
     map(a -> a[smwh_peak[2]+1+8:smwh_peak[2]+1+15, smwh_peak[1]+1-smw_ft:smwh_peak[1]+1+smw_ft], m) |>
@@ -125,15 +132,15 @@ fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_modl!
 for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
     info = info_fmt[r, t, i]
     print("\rplotting for rep $r, $(info["t_hold"]) ms, $(info["istp"])")
-    draw_solo_modl!(axs_solo[r, t, i], essn_2d_fmt[r, t, i], info)
-    draw_solo_modl!(axs_live, essn_2d_fmt[r, t, i], info)
+    draw_solo_modl!(axs_solo[r, t, i], extr_fmt[r, t, i], info)
+    draw_solo_modl!(axs_live, extr_fmt[r, t, i], info)
 end
 for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
     info = info_fmt[1, t, i] |> d -> merge(d, Dict("repeat" => "stacked"))
     print("\rplotting for stacked $(info["t_hold"]) ms, $(info["istp"])")
-    draw_solo_modl!(axs_stacked[t, i], essn_stacked_over_rep[t, i], info)
-    draw_solo_modl!(axs_live, essn_stacked_over_rep[t, i], info)
+    draw_solo_modl!(axs_stacked[t, i], extr_stacked_over_rep[t, i], info)
+    draw_solo_modl!(axs_live, extr_stacked_over_rep[t, i], info)
 end
 resize_to_layout!(fig_full)
 
-fig_full |> f -> save(joinpath(path_output, "full_essn_CFNM_5.318_rastr.pdf"), f; backend=CairoMakie)
+fig_full |> f -> save(joinpath(path_output, "full_essn_CFNM_5.318_excerpt_rastr.pdf"), f; backend=CairoMakie)

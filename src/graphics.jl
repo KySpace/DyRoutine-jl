@@ -85,14 +85,17 @@ end
 
 function set_panel_solo_modl!(gl::GridLayout)
     gl |> clean_gridlayout!
-    ax_modl = Axis(gl[1, 2])
-    ax_prfl_ft_upright = Axis(gl[1, 3])
+    ax_modl = Axis(gl[1, 3])
+    ax_dens = Axis(gl[1, 2])
+    ax_prfl_ft_upright = Axis(gl[1, 4])
     ax_prfl_ft_sideway = Axis(gl[1, 1])
     colsize!(gl, 1, Fixed(100))
-    colsize!(gl, 2, Fixed(160))
-    colsize!(gl, 3, Fixed(160))
+    colsize!(gl, 2, Fixed(40))
+    colsize!(gl, 3, Fixed(120))
+    colsize!(gl, 4, Fixed(120))
+    colgap!(gl, 5)
     rowsize!(gl, 1, Fixed(80))
-    return Dict("modl" => ax_modl, "upright" => ax_prfl_ft_upright, "sideway" => ax_prfl_ft_sideway)
+    return Dict("dens" => ax_dens, "modl" => ax_modl, "upright" => ax_prfl_ft_upright, "sideway" => ax_prfl_ft_sideway)
 end
 
 function set_axis_pca_4x4!()
