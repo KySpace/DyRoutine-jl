@@ -211,11 +211,33 @@ function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_s
     text!(axs["dens"], 0, 14; text=@sprintf("%i ms | rep %i", info_solo["t_hold"], info_solo["repeat"]), color=:black, fontsize=24, align=(:center, :bottom))
 end
 
-function fit_prfl_modl_1d(coor, prfl)
+function fit_prfl_modl_twinpeak_decay_1d(coor, prfl)
     # parameters: [MainPeak.Height MainPeak.Width SidePeak.Height SidePeak.Width SidePeak.Pos Decay.Height Decay.Length]
     model(k, p) = p[1] .* exp.(-k .^ 2 ./ (2 .* p[2] .^ 2)) .+ p[3] .* exp.(-(k .- p[5]) .^ 2 ./ (2 .* p[4] .^ 2)) .+ p[6] .* exp.(-abs.(k) ./ p[7])
     p_init = [3.0, 0.1, 0.5, 0.05, 0.3, 0.5, 0.8]
     p_upper = [Inf, 0.3, 2.0, 0.100, 0.37, Inf, 5.0]
     p_lower = [2.0, 0.0, 0.0, 0.018, 0.23, 0.0, 0.5]
     fit = curve_fit(model, coor, prfl, p_init; lower=p_lower, upper=p_upper)
+    params_fit = coef(fit)
+    return Dict(
+        "fit" => fit,
+        "model" => model,
+        "params" => params_fit,
+        "tail" => k -> params_fit[6] .* exp.(-abs.(k) ./ params_fit[7])
+    )
+end
+
+function fit_prfl_modl_twinpeak_1d(coor, prfl)
+    # parameters: [MainPeak.Height MainPeak.Width SidePeak.Height SidePeak.Width SidePeak.Pos Decay.Height Decay.Length]
+    model(k, p) = p[1] .* exp.(-k .^ 2 ./ (2 .* p[2] .^ 2)) .+ p[3] .* exp.(-(k .- p[5]) .^ 2 ./ (2 .* p[4] .^ 2))
+    p_init = [3.0, 0.1, 0.5, 0.05, 0.3]
+    p_upper = [Inf, 0.3, 2.0, 0.100, 0.37]
+    p_lower = [2.0, 0.0, 0.0, 0.018, 0.23]
+    fit = curve_fit(model, coor, prfl, p_init; lower=p_lower, upper=p_upper)
+    params_fit = coef(fit)
+    return Dict(
+        "fit" => fit,
+        "model" => model,
+        "params" => params_fit,
+    )
 end
