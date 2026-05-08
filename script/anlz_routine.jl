@@ -1,6 +1,8 @@
 using HDF5
 using CairoMakie: Figure, Axis, Colorbar, DataAspect, heatmap!, lines!, scatter!, save, text!, rowgap!, colgap!
 using GLMakie
+using JLD2
+using Printf
 GLMakie.activate!()
 include(joinpath(@__DIR__, "..", "src", "helper.jl"))
 include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
@@ -10,9 +12,9 @@ include(joinpath(@__DIR__, "..", "src", "corr.jl"))
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
-title_anlz = "DevTest"
+title_anlz = "31.[DevTest]"
 
-date, runid = "0325", 80
+date, runid, tag = "0325", 80, "CFNM_5.318"
 dir_test = gen_date_path(date, year_test)
 file_data = gen_h5name(date, runid)
 path_input = joinpath(path_root, dir_test, @sprintf("run%02d", runid), file_data)
@@ -58,16 +60,16 @@ dens_full_fmt = dens |>
                             ds -> permutedims(ds, (3, 2, 1, 4, 5))
 
 # A lite version for tests
-rng_lite = 1:50;
-val = (
-    collect(1:3),
-    collect(6:2:200)[rng_lite],
-    ["162", "164"],
-)
-n_variation = length(val[1]) * length(val[2]) * length(val[3])
-n_dim_vars = map(length, val);
-n_rep, n_main, n_istp = n_dim_vars
-dens_full_fmt = dens_full_fmt[:, rng_lite, :, :, :]
+# rng_lite = 1:50;
+# val = (
+#     collect(1:3),
+#     collect(6:2:200)[rng_lite],
+#     ["162", "164"],
+# )
+# n_variation = length(val[1]) * length(val[2]) * length(val[3])
+# n_dim_vars = map(length, val);
+# n_rep, n_main, n_istp = n_dim_vars
+# dens_full_fmt = dens_full_fmt[:, rng_lite, :, :, :]
 
 # Statistics on number sum
 # num_fmt = dens_full_fmt |> ds -> mapslices(calc_dens_sum, ds; dims=(4, 5)) |> n -> dropdims(n; dims=(4, 5));
@@ -120,6 +122,22 @@ modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
     #     for i in axes(d, 1), j in axes(d, 2)];
     d -> d
 modes_pca_modl2d = [modl2d_side[:, :, i] |> m -> fit_pca_modes(8, m) for i in 1:n_istp]
+##
+
+@save joinpath(path_output, @sprintf("%s_data.jld2", tag)) 
+    # val
+    # essn_2d_fmt
+    # info_fmt
+    # essn_stacked_over_rep
+    # essn_stacked_over_rep_t
+    # fit_prfl_modl_over_rep_t_1d
+    extr_fmt[1,1,1].fit_tailess
+    # extr_stacked_over_rep
+    # modl2d_side
+    # modes_pca_modl2d
+
+
+##
 
 fig_pca, axs_pca = set_axis_pca_dual_4x2!()
 for idx_mode in 1:8, istp in 1:n_istp
@@ -143,4 +161,4 @@ for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
 end
 resize_to_layout!(fig_full)
 
-fig_full |> f -> save(joinpath(path_output, "full_essn_CFNM_5.318_excerpt_rastr.pdf"), f; backend=CairoMakie)
+fig_full |> f -> save(joinpath(path_output, sprintf("%s_essn_table.pdf", tag)), f; backend=CairoMakie)
