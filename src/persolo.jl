@@ -146,7 +146,7 @@ struct SoloExtract
     prfl_modl_norm_tailess_px::AbstractVector
     sidepeak::Dict{String,Real}
     fit_tailess::Dict
-    moments::Tuple{<:Real,<:Real,<:Real,<:Real}
+    moments::Dict{String,Real}
 end
 
 function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smwh::Tuple{<:Real,<:Real}, smw_modl::Integer, px_in_um::Real)
@@ -185,7 +185,12 @@ function calc_prfl_moment(coor, prfl)
     height = weight / (coor[end] - coor[1])
     expval = coor .* prfl |> ntgr_over_coor |> u -> u ./ weight
     var = (coor .- expval) .^ 2 .* prfl |> ntgr_over_coor |> sqrt |> u -> u ./ weight
-    return weight, expval, var, height
+    return Dict(
+        "weight" => weight,
+        "wavenum" => expval,
+        "width" => var,
+        "height" => height,
+    )
 end
 
 function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
@@ -230,11 +235,11 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     vlines!(axs["upright"], extr.sidepeak["wavenum"]; color=(:mediumspringgreen, 1.0))
     vlines!(axs["sideway"], extr.sidepeak["height"]; color=(:mediumspringgreen, 1.0))
     mmt = extr.moments
-    errorbars!(axs["upright"], [mmt[2]], [1.5], [mmt[3] / 2], [mmt[3] / 2]; direction=:x, color=:sienna2, whiskerwidth=8)
-    lines!(axs["sideway"], [mmt[4], mmt[4]], [0.2, 0.4]; color=(:sienna2, 1.0))
-    band!(axs["sideway"], [0, mmt[4]], [0.2, 0.2], [0.4, 0.4]; color=(:sienna2, 0.2))
+    errorbars!(axs["upright"], [mmt["wavenum"]], [1.5], [mmt["width"] / 2], [mmt["width"] / 2]; direction=:x, color=:sienna2, whiskerwidth=8)
+    lines!(axs["sideway"], [mmt["height"], mmt["height"]], [0.2, 0.4]; color=(:sienna2, 1.0))
+    band!(axs["sideway"], [0, mmt["height"]], [0.2, 0.2], [0.4, 0.4]; color=(:sienna2, 0.2))
 
-    text!(axs["modl"], 0.35, -0.16; text="$(info_solo["t_hold"]) ms | rep $(info_solo["repeat"])", color=:black, strokewidth=1.5, strokecolor=:white, fontsize=16, align=(:center, :top))
+    text!(axs["modl"], 0.35, -0.16; text="$(info_solo["t_hold"]) ms | rep $(info_solo["repeat"])", color=:black, strokewidth=0.5, strokecolor=:white, fontsize=16, align=(:center, :top))
 end
 
 function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo)

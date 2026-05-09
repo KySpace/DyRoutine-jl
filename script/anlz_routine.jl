@@ -12,7 +12,7 @@ include(joinpath(@__DIR__, "..", "src", "corr.jl"))
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
-title_anlz = "31.[DevTest]"
+title_anlz = "32.[smw=10]"
 
 date, runid, tag = "0325", 80, "CFNM_5.318"
 dir_test = gen_date_path(date, year_test)
@@ -122,21 +122,34 @@ modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
     #     for i in axes(d, 1), j in axes(d, 2)];
     d -> d
 modes_pca_modl2d = [modl2d_side[:, :, i] |> m -> fit_pca_modes(8, m) for i in 1:n_istp]
-##
 
-@save joinpath(path_output, @sprintf("%s_data.jld2", tag)) 
-    # val
-    # essn_2d_fmt
-    # info_fmt
-    # essn_stacked_over_rep
-    # essn_stacked_over_rep_t
-    # fit_prfl_modl_over_rep_t_1d
-    extr_fmt[1,1,1].fit_tailess
-    # extr_stacked_over_rep
-    # modl2d_side
-    # modes_pca_modl2d
+trend_sidepeak = [
+    extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val[2], e, t -> 25 .< t .< 75, 1:1:100)
+    for r in axes(extr_fmt, 1), i in axes(extr_fmt, 3)
+]
+##  saving data, still problematic
 
+# @save joinpath(path_output, @sprintf("%s_data.jld2", tag))
+# val
+# essn_2d_fmt
+# info_fmt
+# essn_stacked_over_rep
+# essn_stacked_over_rep_t
+# fit_prfl_modl_over_rep_t_1d
+# extr_fmt[1,1,1].fit_tailess
+# extr_stacked_over_rep
+# modl2d_side
+# modes_pca_modl2d
 
+## Overall plots
+fig_trend, axs_trend = set_axis_sidepeak!(n_dim_vars, set_panel_trend_sidepeak!)
+for i in 1:n_istp
+    trend = trend_sidepeak[:, i]
+    istp = val[3][i]
+    plot_trend_sidepeak!(axs_trend, trend, istp)
+    resize_to_layout!(fig_trend)
+    fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.pdf", tag, istp)), f; backend=CairoMakie)
+end
 ##
 
 fig_pca, axs_pca = set_axis_pca_dual_4x2!()

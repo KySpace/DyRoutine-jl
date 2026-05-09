@@ -64,6 +64,26 @@ function set_axis_full(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer}, panel_s
     return fig, axs_solo, axs_stacked
 end
 
+function set_axis_sidepeak!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer}, panel_setter::Function)
+    length(n_dim_vars) == 3 || throw(ArgumentError("n_dim_vars must be a 3-tuple"))
+    fig = Figure()
+    axs_repeats = Array{Dict}(undef, n_dim_vars[1])
+    for r in 1:n_dim_vars[1]
+        print("\rbuilding axis for side peak trend for repeat $r")
+        gl = GridLayout()
+        fig[1, r] = gl
+        axs_repeats[r] = panel_setter(gl)
+    end
+    fig[1, n_dim_vars[1]+1] |> Box
+    gl = GridLayout()
+    fig[1, n_dim_vars[1]+2] = gl
+    axs_stacked = panel_setter(gl)
+    gl = GridLayout()
+    fig[1, n_dim_vars[1]+3] = gl
+    axs_all = panel_setter(gl)
+    return fig, Dict("repeats" => axs_repeats, "stacked" => axs_stacked, "all" => axs_all)
+end
+
 function clean_gridlayout!(gl::GridLayout)
     for obj in contents(gl)
         obj isa Axis && delete!(obj)
@@ -140,10 +160,7 @@ function set_panel_pca_duet!(gl::GridLayout)
 end
 
 function set_panel_pca_solo!(gl::GridLayout)
-    for obj in contents(gl)
-        obj isa Axis && delete!(obj)
-    end
-    trim!(gl)
+    gl |> clean_gridlayout!
     ax_mode = Axis(gl[1:2, 1])
     ax_evol = Axis(gl[1, 2])
     ax_freq = Axis(gl[2, 2])
@@ -152,4 +169,34 @@ function set_panel_pca_solo!(gl::GridLayout)
     rowsize!(gl, 1, Fixed(120))
     rowsize!(gl, 2, Fixed(120))
     return Dict("mode" => ax_mode, "evol" => ax_evol, "freq" => ax_freq)
+end
+
+function set_panel_trend_sidepeak!(gl::GridLayout)
+    gl |> clean_gridlayout!
+    ax_evol_weight = Axis(gl[1, 1])
+    ax_evol_height = Axis(gl[2, 1])
+    ax_evol_width = Axis(gl[3, 1])
+    ax_evol_wavenum = Axis(gl[4, 1])
+    ax_freq_weight = Axis(gl[1, 2])
+    ax_freq_height = Axis(gl[2, 2])
+    ax_freq_width = Axis(gl[3, 2])
+    ax_freq_wavenum = Axis(gl[4, 2])
+    colsize!(gl, 1, Fixed(400))
+    colsize!(gl, 2, Fixed(400))
+    rowsize!(gl, 1, Fixed(200))
+    rowsize!(gl, 2, Fixed(200))
+    rowsize!(gl, 3, Fixed(200))
+    rowsize!(gl, 4, Fixed(200))
+    rowgap!(gl, 8)
+    rowgap!(gl, 20)
+    return Dict(
+        "evol-weight" => ax_evol_weight,
+        "evol-height" => ax_evol_height,
+        "evol-width" => ax_evol_width,
+        "evol-wavenum" => ax_evol_wavenum,
+        "freq-weight" => ax_freq_weight,
+        "freq-height" => ax_freq_height,
+        "freq-width" => ax_freq_width,
+        "freq-wavenum" => ax_freq_wavenum,
+    )
 end
