@@ -214,6 +214,8 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     y_modl_sm = (0:1:essn.smwh[2]) * essn.step_modl
     hue_theme = hue_theme_istp[info_solo["istp"]]
     clrmap = gen_clrmap_solo(hue_theme)
+    clr_mark_nvlp = RGBAf(Oklch(0.75, 0.11, hue_theme + 90), 1.0)
+    clr_moments = Oklch(0.76, 0.11, hue_theme + 90)
 
     nvlp = extr.envelope
     shade_mainpeak = extr.fit_tailess["fitfn_main"](y_modl_sm)
@@ -221,7 +223,6 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     band!(axs["upright"], y_modl_sm, 0, shade_mainpeak, color=(:gray, 0.1))
     band!(axs["upright"], y_modl_sm, shade_mainpeak, shade_peaks, color=(:darkseagreen1, 0.5))
 
-    clr_mark_nvlp = RGBAf(Oklch(0.7, 0.24, hue_theme + 60), 1.0)
     heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, 16.0), colormap=clrmap, rasterize=true)
     draw_rotated_ellipse_corners!(axs["dens"], nvlp["cent"], nvlp["size"], nvlp["rotation"]; color=clr_mark_nvlp)
 
@@ -251,9 +252,9 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     vlines!(axs["upright"], extr.sidepeak["wavenum"]; color=(:mediumspringgreen, 1.0))
     vlines!(axs["sideway"], extr.sidepeak["height"]; color=(:mediumspringgreen, 1.0))
     mmt = extr.moments_modl
-    errorbars!(axs["upright"], [mmt["wavenum"]], [1.5], [mmt["width"] / 2], [mmt["width"] / 2]; direction=:x, color=:sienna2, whiskerwidth=8)
-    lines!(axs["sideway"], [mmt["height"], mmt["height"]], [0.2, 0.4]; color=(:sienna2, 1.0))
-    band!(axs["sideway"], [0, mmt["height"]], [0.2, 0.2], [0.4, 0.4]; color=(:sienna2, 0.2))
+    errorbars!(axs["upright"], [mmt["wavenum"]], [1.5], [mmt["width"] / 2], [mmt["width"] / 2]; direction=:x, color=clr_moments, whiskerwidth=8)
+    lines!(axs["sideway"], [mmt["height"], mmt["height"]], [0.2, 0.4]; color=(clr_moments, 1.0))
+    band!(axs["sideway"], [0, mmt["height"]], [0.2, 0.2], [0.4, 0.4]; color=(clr_moments, 0.2))
 
     text!(axs["modl"], 0.35, -0.16; text="$(info_solo["t_hold"]) ms | rep $(info_solo["repeat"])", color=:black, strokewidth=0.5, strokecolor=:white, fontsize=16, align=(:center, :top))
 end
