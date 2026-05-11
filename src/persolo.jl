@@ -146,7 +146,7 @@ struct SoloExtract
     prfl_modl_norm_tailess_px::AbstractVector
     sidepeak::Dict{String,Real}
     fit_tailess::Dict
-    moments_modl::Dict{String,Real}
+    moments_modl::Dict{String}
     fit_dens_2d::Dict
     envelope::Dict{String}
 end
@@ -166,15 +166,17 @@ function calc_solo_extr(essn::SoloEssentials, fit_stack::Dict)
     x, y = essn.smwh |> s -> map(u -> (-u:1:u), s)
     x_modl, y_modl = (x, y) .* essn.step_modl
     x_posi, y_posi = (x, y) .* essn.step_posi
-    sel_moment = y -> (y .> 0.2) .& (y .< 0.4)
+    sel_moment = y -> (y .> 0.10) .& (y .< 0.50)
+    sel_sidepeak = (y_modl .> 0.1) .& (y_modl .< 0.5)
     mask_mmt = sel_moment(y_modl)
     prfl_tailess = essn.prfl_modl_norm_px - fit_stack["tail"](y_modl)
-    fit_tailess = fit_prfl_modl_twinpeak_1d(y_modl, prfl_tailess, (y_modl .> 0.1) .& (y_modl .< 0.5))
+    fit_tailess = fit_prfl_modl_twinpeak_1d(y_modl, prfl_tailess, sel_sidepeak)
     sidepeak = Dict(
         "height" => fit_tailess["params"][3],
         "width" => fit_tailess["params"][4],
         "wavenum" => fit_tailess["params"][5],
-        "weight" => sqrt(2 * pi) * fit_tailess["params"][3] * fit_tailess["params"][4]
+        "weight" => sqrt(2 * pi) * fit_tailess["params"][3] * fit_tailess["params"][4],
+        "rel. residue" => fit_tailess["rss_rel"]
     )
     moments = calc_prfl_moment(y_modl[mask_mmt], prfl_tailess[mask_mmt])
     fit_dens = fit_dens2d_gaussian_elliptic_disk(x_posi, y_posi, essn.dens2d, :)
@@ -183,7 +185,7 @@ function calc_solo_extr(essn::SoloEssentials, fit_stack::Dict)
         "cent" => (fit_dens["params"][2], fit_dens["params"][3]),
         "size" => (fit_dens["params"][4], fit_dens["params"][5]),
         "rotation" => fit_dens["params"][6],
-        "rel. residue" => (fit_dens["fit"] |> residuals |> r -> sqrt(sum(abs2, r))) / (essn.dens2d |> d -> sqrt(sum(abs2, d)))
+        "rel. residue" => fit_dens["rss_rel"]
     )
     return SoloExtract(essn, prfl_tailess, sidepeak, fit_tailess, moments, fit_dens, envelope)
 end
@@ -195,12 +197,13 @@ function calc_prfl_moment(coor, prfl)
     weight = prfl |> ntgr_over_coor
     height = weight / (coor[end] - coor[1])
     expval = coor .* prfl |> ntgr_over_coor |> u -> u ./ weight
-    var = (coor .- expval) .^ 2 .* prfl |> ntgr_over_coor |> sqrt |> u -> u ./ weight
+    var = (coor .- expval) .^ 2 .* prfl |> ntgr_over_coor |> sqrt |> u -> u / sqrt(weight)
     return Dict(
         "weight" => weight,
         "wavenum" => expval,
         "width" => var,
         "height" => height,
+        "coor" => coor
     )
 end
 
@@ -254,17 +257,21 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     vlines!(axs["sideway"], extr.sidepeak["height"]; color=(:mediumspringgreen, 1.0))
     mmt = extr.moments_modl
     sp = extr.sidepeak
+    mmt_coor_min = mmt["coor"] |> minimum
+    mmt_coor_max = mmt["coor"] |> maximum
     errorbars!(axs["upright"], [mmt["wavenum"]], [1.7], [mmt["width"]], [mmt["width"]]; direction=:x, color=clr_moments, whiskerwidth=8)
-    lines!(axs["sideway"], [mmt["height"], mmt["height"]], [0.2, 0.4]; color=(clr_moments, 1.0))
-    band!(axs["sideway"], [0, mmt["height"]], [0.2, 0.2], [0.4, 0.4]; color=(clr_moments, 0.1))
+    lines!(axs["sideway"], [mmt["height"], mmt["height"]], [mmt_coor_min, mmt_coor_max]; color=(clr_moments, 1.0))
+    band!(axs["sideway"], [0, mmt["height"]], mmt_coor_min |> a -> [a, a], mmt_coor_max |> a -> [a, a]; color=(clr_moments, 0.1))
 
     sprint2f = (x) -> @sprintf("%.2f", x)
     text!(axs["modl"], 0.35, -0.16; text="$(info_solo["t_hold"]) ms | rep $(info_solo["repeat"])", color=:black, strokewidth=1.0, strokecolor=:white, fontsize=24, align=(:center, :top))
     text!(axs["dens"], -4.8, 9.8; text="[$(nvlp["size"][1] |> sprint2f), $(nvlp["size"][2] |> sprint2f)] μm \nrss/sum: $(nvlp["rel. residue"] |> sprint2f)", color=clr_mark_nvlp, strokewidth=0.7, strokecolor=:white, font=:bold, fontsize=11, align=(:left, :top))
-    text!(axs["sideway"], 1.45, 0.44; text="fit: $(sp["height"] |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
-    text!(axs["sideway"], 1.45, 0.41; text="mmt 0: $(mmt["height"] |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
-    text!(axs["upright"], 0.58, 1.3; text="fit: $(sp["wavenum"] |> sprint2f) ± $(sp["width"] |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
-    text!(axs["upright"], 0.58, 1.5; text="mmt 1/2 : $(mmt["wavenum"] |> sprint2f) ± $(mmt["width"] |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
+    text!(axs["sideway"], 1.45, 0.44; text="fit: $(sp["height"] |> sprint2f), $(sp["weight"] |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
+    text!(axs["sideway"], 1.45, 0.41; text="μ₀: $(mmt["height"] |> sprint2f), $(mmt["weight"] |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
+    text!(axs["sideway"], 1.45, 0.38; text="$(mmt_coor_min |> sprint2f)-$(mmt_coor_max |> sprint2f) μm⁻¹", color=clr_moments, fontsize=14, align=(:right, :top))
+    text!(axs["upright"], 0.58, 1.4; text="fit: $(sp["wavenum"] |> sprint2f) ± $(sp["width"] |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
+    text!(axs["upright"], 0.58, 1.2; text="rss/sum: $(sp["rel. residue"] |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
+    text!(axs["upright"], 0.58, 1.6; text="μ₁, μ₂: $(mmt["wavenum"] |> sprint2f) ± $(mmt["width"] |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
 end
 
 function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo)
@@ -302,11 +309,13 @@ function fit_prfl_modl_twinpeak_decay_1d(coor, prfl, mask)
     p_lower = [2.0, 0.02, 0.0, 0.018, 0.23, 0.0, 0.5]
     fit = curve_fit(model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
     params_fit = coef(fit)
+    rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (prfl[mask] |> d -> sqrt(sum(abs2, d)))
     return Dict(
         "fit" => fit,
         "model" => model,
         "params" => params_fit,
-        "tail" => k -> params_fit[6] .* exp.(-abs.(k) ./ params_fit[7])
+        "tail" => k -> params_fit[6] .* exp.(-abs.(k) ./ params_fit[7]),
+        "rss_rel" => rss_rel,
     )
 end
 
@@ -338,11 +347,13 @@ function fit_dens2d_gaussian_elliptic_disk(xs, ys, dens, mask)
     )
     params_fit = coef(fit)
     fitfn(coords) = model(coords, params_fit)
+    rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (dens[mask] |> d -> sqrt(sum(abs2, d)))
     return Dict(
         "fit" => fit,
         "model" => model,
         "params" => params_fit,
-        "fitfn" => fitfn
+        "fitfn" => fitfn,
+        "rss_rel" => rss_rel,
     )
 end
 
@@ -356,11 +367,13 @@ function fit_prfl_modl_twinpeak_1d(coor, prfl, mask)
     params_fit = coef(fit)
     fitfn_main(k) = params_fit |> p -> (@. p[1] * exp(-k^2 / (2 * p[2]^2)))
     fitfn(k) = model(k, params_fit)
+    rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (prfl[mask] |> d -> sqrt(sum(abs2, d)))
     return Dict(
         "fit" => fit,
         "model" => model,
         "params" => params_fit,
         "fitfn_main" => fitfn_main,
         "fitfn" => fitfn,
+        "rss_rel" => rss_rel,
     )
 end

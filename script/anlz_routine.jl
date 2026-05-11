@@ -12,9 +12,9 @@ include(joinpath(@__DIR__, "..", "src", "corr.jl"))
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
-title_anlz = "32.[smw=10]"
+title_anlz = "[05.12].34.[smw=10].WithNvlp"
 
-date, runid, tag = "0325", 80, "CFNM_5.318"
+date, runid, tag = "0325", 51, "CFNM_5.333_r51_excerpt"
 dir_test = gen_date_path(date, year_test)
 file_data = gen_h5name(date, runid)
 path_input = joinpath(path_root, dir_test, @sprintf("run%02d", runid), file_data)
@@ -60,16 +60,16 @@ dens_full_fmt = dens |>
                             ds -> permutedims(ds, (3, 2, 1, 4, 5))
 
 # A lite version for tests
-# rng_lite = 1:50;
-# val = (
-#     collect(1:3),
-#     collect(6:2:200)[rng_lite],
-#     ["162", "164"],
-# )
-# n_variation = length(val[1]) * length(val[2]) * length(val[3])
-# n_dim_vars = map(length, val);
-# n_rep, n_main, n_istp = n_dim_vars
-# dens_full_fmt = dens_full_fmt[:, rng_lite, :, :, :]
+rng_lite = 1:50;
+val = (
+    collect(1:3),
+    collect(6:2:200)[rng_lite],
+    ["162", "164"],
+)
+n_variation = length(val[1]) * length(val[2]) * length(val[3])
+n_dim_vars = map(length, val);
+n_rep, n_main, n_istp = n_dim_vars
+dens_full_fmt = dens_full_fmt[:, rng_lite, :, :, :]
 
 # Statistics on number sum
 # num_fmt = dens_full_fmt |> ds -> mapslices(calc_dens_sum, ds; dims=(4, 5)) |> n -> dropdims(n; dims=(4, 5));
@@ -175,4 +175,4 @@ for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
 end
 resize_to_layout!(fig_full)
 
-fig_full |> f -> save(joinpath(path_output, sprintf("%s_essn_table.pdf", tag)), f; backend=CairoMakie)
+fig_full |> f -> save(joinpath(path_output, @sprintf("%s_essn_table.pdf", tag)), f; backend=CairoMakie)
