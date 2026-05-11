@@ -183,7 +183,7 @@ function calc_solo_extr(essn::SoloEssentials, fit_stack::Dict)
         "cent" => (fit_dens["params"][2], fit_dens["params"][3]),
         "size" => (fit_dens["params"][4], fit_dens["params"][5]),
         "rotation" => fit_dens["params"][6],
-        # "bg" => fit_dens["params"][7]
+        "rel. residue" => (fit_dens["fit"] |> residuals |> r -> sqrt(sum(abs2, r))) / (essn.dens2d |> d -> sqrt(sum(abs2, d)))
     )
     return SoloExtract(essn, prfl_tailess, sidepeak, fit_tailess, moments, fit_dens, envelope)
 end
@@ -214,8 +214,8 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     y_modl_sm = (0:1:essn.smwh[2]) * essn.step_modl
     hue_theme = hue_theme_istp[info_solo["istp"]]
     clrmap = gen_clrmap_solo(hue_theme)
-    clr_mark_nvlp = RGBAf(Oklch(0.75, 0.11, hue_theme + 90), 1.0)
-    clr_moments = Oklch(0.76, 0.11, hue_theme + 90)
+    clr_mark_nvlp = RGBAf(Oklch(0.52, 0.10, hue_theme + 90), 1.0)
+    clr_moments = Oklch(0.52, 0.14, hue_theme)
 
     nvlp = extr.envelope
     shade_mainpeak = extr.fit_tailess["fitfn_main"](y_modl_sm)
@@ -224,7 +224,8 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     band!(axs["upright"], y_modl_sm, shade_mainpeak, shade_peaks, color=(:darkseagreen1, 0.5))
 
     heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, 16.0), colormap=clrmap, rasterize=true)
-    draw_rotated_ellipse_corners!(axs["dens"], nvlp["cent"], nvlp["size"], nvlp["rotation"]; color=clr_mark_nvlp)
+    draw_rotated_ellipse_corners!(axs["dens"], nvlp["cent"], nvlp["size"], nvlp["rotation"]; color=:white, linewidth=4)
+    draw_rotated_ellipse_corners!(axs["dens"], nvlp["cent"], nvlp["size"], nvlp["rotation"]; color=clr_mark_nvlp, linewidth=2)
 
     heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, 10.0), colormap=clrmap, rasterize=true)
     lines!(axs["upright"], y_modl_sm, essn.prfl_modl_norm_px[essn.smwh[2]+1:end], color=(:black, 0.4), linewidth=1)
@@ -252,11 +253,18 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     vlines!(axs["upright"], extr.sidepeak["wavenum"]; color=(:mediumspringgreen, 1.0))
     vlines!(axs["sideway"], extr.sidepeak["height"]; color=(:mediumspringgreen, 1.0))
     mmt = extr.moments_modl
-    errorbars!(axs["upright"], [mmt["wavenum"]], [1.5], [mmt["width"] / 2], [mmt["width"] / 2]; direction=:x, color=clr_moments, whiskerwidth=8)
+    sp = extr.sidepeak
+    errorbars!(axs["upright"], [mmt["wavenum"]], [1.7], [mmt["width"]], [mmt["width"]]; direction=:x, color=clr_moments, whiskerwidth=8)
     lines!(axs["sideway"], [mmt["height"], mmt["height"]], [0.2, 0.4]; color=(clr_moments, 1.0))
-    band!(axs["sideway"], [0, mmt["height"]], [0.2, 0.2], [0.4, 0.4]; color=(clr_moments, 0.2))
+    band!(axs["sideway"], [0, mmt["height"]], [0.2, 0.2], [0.4, 0.4]; color=(clr_moments, 0.1))
 
-    text!(axs["modl"], 0.35, -0.16; text="$(info_solo["t_hold"]) ms | rep $(info_solo["repeat"])", color=:black, strokewidth=0.5, strokecolor=:white, fontsize=16, align=(:center, :top))
+    sprint2f = (x) -> @sprintf("%.2f", x)
+    text!(axs["modl"], 0.35, -0.16; text="$(info_solo["t_hold"]) ms | rep $(info_solo["repeat"])", color=:black, strokewidth=1.0, strokecolor=:white, fontsize=24, align=(:center, :top))
+    text!(axs["dens"], -4.8, 9.8; text="[$(nvlp["size"][1] |> sprint2f), $(nvlp["size"][2] |> sprint2f)] μm \nrss/sum: $(nvlp["rel. residue"] |> sprint2f)", color=clr_mark_nvlp, strokewidth=0.7, strokecolor=:white, font=:bold, fontsize=11, align=(:left, :top))
+    text!(axs["sideway"], 1.45, 0.44; text="fit: $(sp["height"] |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
+    text!(axs["sideway"], 1.45, 0.41; text="mmt 0: $(mmt["height"] |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
+    text!(axs["upright"], 0.58, 1.3; text="fit: $(sp["wavenum"] |> sprint2f) ± $(sp["width"] |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
+    text!(axs["upright"], 0.58, 1.5; text="mmt 1/2 : $(mmt["wavenum"] |> sprint2f) ± $(mmt["width"] |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
 end
 
 function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo)

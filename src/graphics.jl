@@ -109,12 +109,12 @@ function set_panel_solo_modl!(gl::GridLayout)
     ax_dens = Axis(gl[1, 2])
     ax_prfl_ft_upright = Axis(gl[1, 4])
     ax_prfl_ft_sideway = Axis(gl[1, 1])
-    colsize!(gl, 1, Fixed(100))
-    colsize!(gl, 2, Fixed(40))
-    colsize!(gl, 3, Fixed(120))
-    colsize!(gl, 4, Fixed(120))
+    colsize!(gl, 1, Fixed(200))
+    colsize!(gl, 2, Fixed(80))
+    colsize!(gl, 3, Fixed(240))
+    colsize!(gl, 4, Fixed(240))
     colgap!(gl, 5)
-    rowsize!(gl, 1, Fixed(80))
+    rowsize!(gl, 1, Fixed(160))
     return Dict("dens" => ax_dens, "modl" => ax_modl, "upright" => ax_prfl_ft_upright, "sideway" => ax_prfl_ft_sideway)
 end
 
@@ -227,7 +227,6 @@ function draw_rotated_ellipse_corners!(
     center::Tuple{<:Real,<:Real},
     radii::Tuple{<:Real,<:Real},
     angle::Real;
-    n=200,
     kwargs...
 )
     x0, y0 = center
@@ -237,18 +236,21 @@ function draw_rotated_ellipse_corners!(
     rot = (x, y) -> (x * c - y * s, x * s + y * c)
 
     l = minimum([rx, ry]) / 2
-    points = [
-        begin
-            rxuv, ryuv = rot(u * rx, v * ry)
-            _, ryuvl = rot(u * rx, v * (ry - l))
-            rxuvl, _ = rot(u * (rx - l), v * ry)
-            [
-                Point2f(x0 + rxuv, y0 + ryuv), Point2f(x0 + rxuv, y0 + ryuvl),
-                Point2f(x0 + rxuv, y0 + ryuv), Point2f(x0 + rxuvl, y0 + ryuv)
-            ]
-        end
-        for u in [+1, -1], v in [+1 -1]
-    ] |> ps -> reduce(vcat, ps)
-    obj = linesegments!(ax, points; kwargs...)
+    vtx_x = []
+    vtx_y = []
+    for u in [+1, -1], v in [+1 -1]
+        rxuv, ryuv = rot(u * rx, v * ry)
+        rxuvly, ryuvly = rot(u * rx, v * (ry - l))
+        rxuvlx, ryuvlx = rot(u * (rx - l), v * ry)
+        push!(vtx_x, x0 + rxuvlx)
+        push!(vtx_x, x0 + rxuv)
+        push!(vtx_x, x0 + rxuvly)
+        push!(vtx_x, NaN)
+        push!(vtx_y, y0 + ryuvlx)
+        push!(vtx_y, y0 + ryuv)
+        push!(vtx_y, y0 + ryuvly)
+        push!(vtx_y, NaN)
+    end
+    obj = lines!(ax, vtx_x, vtx_y; kwargs...)
     return obj
 end
