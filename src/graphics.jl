@@ -236,7 +236,7 @@ function draw_rotated_ellipse_corners!(
     s = sin(angle)
     rot = (x, y) -> (x * c - y * s, x * s + y * c)
 
-    l = minimum([rx, ry]) / 3
+    l = minimum([rx, ry]) / 2
     points = [
         begin
             rxuv, ryuv = rot(u * rx, v * ry)

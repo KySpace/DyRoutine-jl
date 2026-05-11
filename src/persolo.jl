@@ -182,7 +182,8 @@ function calc_solo_extr(essn::SoloEssentials, fit_stack::Dict)
         "max" => fit_dens["params"][1],
         "cent" => (fit_dens["params"][2], fit_dens["params"][3]),
         "size" => (fit_dens["params"][4], fit_dens["params"][5]),
-        "rotation" => fit_dens["params"][6]
+        "rotation" => fit_dens["params"][6],
+        # "bg" => fit_dens["params"][7]
     )
     return SoloExtract(essn, prfl_tailess, sidepeak, fit_tailess, moments, fit_dens, envelope)
 end
@@ -220,7 +221,7 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     band!(axs["upright"], y_modl_sm, 0, shade_mainpeak, color=(:gray, 0.1))
     band!(axs["upright"], y_modl_sm, shade_mainpeak, shade_peaks, color=(:darkseagreen1, 0.5))
 
-    clr_mark_nvlp = RGBAf(Oklch(0.5, 0.3, hue_theme - 180), 1.0)
+    clr_mark_nvlp = RGBAf(Oklch(0.7, 0.24, hue_theme + 60), 1.0)
     heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, 16.0), colormap=clrmap, rasterize=true)
     draw_rotated_ellipse_corners!(axs["dens"], nvlp["cent"], nvlp["size"], nvlp["rotation"]; color=clr_mark_nvlp)
 
@@ -315,11 +316,11 @@ function fit_dens2d_gaussian_elliptic_disk(xs, ys, dens, mask)
         dy = y .- y0
         xp = c .* dx .+ s .* dy
         yp = (-s) .* dx .+ c .* dy
-        return A .* exp.(-(xp .^ 2 ./ (2σx^2) .+ yp .^ 2 ./ (2σy^2)))
+        return @. A * exp.(-(xp^2 / (2σx^2) + yp^2 / (2σy^2)))
     end
-    params_init = Float64[10, 0, 0, 2, 5, 15/180*π]
-    params_upper = Float64[25, 5, 10, 10, 20, 45/180*π]
-    params_lower = Float64[0, -5, -10, 1, 2, 0/180*π]
+    params_init = Float64[10, 0, 0, 2, 5, 10/180*π]
+    params_upper = Float64[25, 5, 10, 4, 20, 20/180*π]
+    params_lower = Float64[0, -5, -10, 1, 2, -10/180*π]
     fit = curve_fit(
         model, xydata, zdata,
         params_init;
