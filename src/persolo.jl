@@ -148,7 +148,7 @@ struct SoloExtract
     fit_tailess::Dict
     moments_modl::Dict{String,Real}
     fit_dens_2d::Dict
-    envelope::Dict{String,Real}
+    envelope::Dict{String}
 end
 
 function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smwh::Tuple{<:Real,<:Real}, smw_modl::Integer, px_in_um::Real)
@@ -307,15 +307,17 @@ function fit_dens2d_gaussian_elliptic_disk(xs, ys, dens, mask)
         x = coords[:, 1]
         y = coords[:, 2]
         A, x0, y0, σx, σy, θ = p
-        c = cos(θ); s = sin(θ)
-        dx = x .- x0; dy = y .- y0
+        c = cos(θ)
+        s = sin(θ)
+        dx = x .- x0
+        dy = y .- y0
         xp = c .* dx .+ s .* dy
         yp = (-s) .* dx .+ c .* dy
-        return A .* exp.(-(xp.^2 ./ (2σx^2) .+ yp.^2 ./ (2σy^2)))
+        return A .* exp.(-(xp .^ 2 ./ (2σx^2) .+ yp .^ 2 ./ (2σy^2)))
     end
-    params_init = Float64[10, 0, 0, 2, 5, -15 / 180 * π]
-    params_upper = Float64[25, 5, 10, 10, 20, 45 / 180 * π]
-    params_lower = Float64[0, -5, -10, 1, 2, -45 / 180 * π]
+    params_init = Float64[10, 0, 0, 2, 5, -15/180*π]
+    params_upper = Float64[25, 5, 10, 10, 20, 45/180*π]
+    params_lower = Float64[0, -5, -10, 1, 2, -45/180*π]
     fit = curve_fit(
         model, xydata, zdata,
         params_init;

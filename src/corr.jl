@@ -91,10 +91,10 @@ function anlz_trend_from_extr(t_vec::AbstractVector{<:Real}, extr::AbstractVecto
     evo_fit_height = extr |> e -> map(t -> t.sidepeak["height"], e)
     evo_fit_wavenum = extr |> e -> map(t -> t.sidepeak["wavenum"], e)
     evo_fit_width = extr |> e -> map(t -> t.sidepeak["width"], e)
-    evo_moment_weight = extr |> e -> map(t -> t.moments["weight"], e)
-    evo_moment_height = extr |> e -> map(t -> t.moments["height"], e)
-    evo_moment_wavenum = extr |> e -> map(t -> t.moments["wavenum"], e)
-    evo_moment_width = extr |> e -> map(t -> t.moments["width"], e)
+    evo_moment_weight = extr |> e -> map(t -> t.moments_modl["weight"], e)
+    evo_moment_height = extr |> e -> map(t -> t.moments_modl["height"], e)
+    evo_moment_wavenum = extr |> e -> map(t -> t.moments_modl["wavenum"], e)
+    evo_moment_width = extr |> e -> map(t -> t.moments_modl["width"], e)
 
     ft_fit_weight = evo_fit_weight |> query_weight_sel
     ft_fit_height = evo_fit_height |> query_weight_sel
