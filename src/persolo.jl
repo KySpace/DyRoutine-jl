@@ -146,7 +146,9 @@ struct SoloExtract
     prfl_modl_norm_tailess_px::AbstractVector
     sidepeak::Dict{String,Real}
     fit_tailess::Dict
-    moments::Dict{String,Real}
+    moments_modl::Dict{String,Real}
+    fit_dens_2d::Dict
+    envelope::Dict{String,Real}
 end
 
 function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smwh::Tuple{<:Real,<:Real}, smw_modl::Integer, px_in_um::Real)
@@ -163,6 +165,7 @@ end
 function calc_solo_extr(essn::SoloEssentials, fit_stack::Dict)
     x, y = essn.smwh |> s -> map(u -> (-u:1:u), s)
     x_modl, y_modl = (x, y) .* essn.step_modl
+    x_posi, y_posi = (x, y) .* essn.step_posi
     sel_moment = y -> (y .> 0.2) .& (y .< 0.4)
     mask_mmt = sel_moment(y_modl)
     prfl_tailess = essn.prfl_modl_norm_px - fit_stack["tail"](y_modl)
@@ -174,7 +177,14 @@ function calc_solo_extr(essn::SoloEssentials, fit_stack::Dict)
         "weight" => sqrt(2 * pi) * fit_tailess["params"][3] * fit_tailess["params"][4]
     )
     moments = calc_prfl_moment(y_modl[mask_mmt], prfl_tailess[mask_mmt])
-    return SoloExtract(essn, prfl_tailess, sidepeak, fit_tailess, moments)
+    fit_dens = fit_dens2d_gaussian_elliptic_disk(x_posi, y_posi, essn.dens2d, :)
+    envelope = Dict(
+        "max" => fit_dens["params"][1],
+        "cent" => (fit_dens["params"][2], fit_dens["params"][3]),
+        "size" => (fit_dens["params"][4], fit_dens["params"][5]),
+        "rotation" => fit_dens["params"][6]
+    )
+    return SoloExtract(essn, prfl_tailess, sidepeak, fit_tailess, moments, fit_dens, envelope)
 end
 
 function calc_prfl_moment(coor, prfl)
@@ -203,12 +213,15 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     y_modl_sm = (0:1:essn.smwh[2]) * essn.step_modl
     clrmap = gen_clrmap_solo(hue_theme_istp[info_solo["istp"]])
 
+    nvlp = extr.envelope
     shade_mainpeak = extr.fit_tailess["fitfn_main"](y_modl_sm)
     shade_peaks = extr.fit_tailess["fitfn"](y_modl_sm)
     band!(axs["upright"], y_modl_sm, 0, shade_mainpeak, color=(:gray, 0.1))
     band!(axs["upright"], y_modl_sm, shade_mainpeak, shade_peaks, color=(:darkseagreen1, 0.5))
 
     heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, 16.0), colormap=clrmap, rasterize=true)
+    draw_rotated_ellipse!(axs["dens"], nvlp["cent"], nvlp["size"], nvlp["rotation"]; color=(:darkseagreen1, 0.5))
+
     heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, 10.0), colormap=clrmap, rasterize=true)
     lines!(axs["upright"], y_modl_sm, essn.prfl_modl_norm_px[essn.smwh[2]+1:end], color=(:black, 0.4), linewidth=1)
     lines!(axs["sideway"], essn.prfl_modl_norm_px[essn.smwh[2]+1:end], y_modl_sm, color=(:black, 0.4), linewidth=1)
@@ -234,7 +247,7 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     hlines!(axs["upright"], 0.0; color=(:darkseagreen1, 0.5))
     vlines!(axs["upright"], extr.sidepeak["wavenum"]; color=(:mediumspringgreen, 1.0))
     vlines!(axs["sideway"], extr.sidepeak["height"]; color=(:mediumspringgreen, 1.0))
-    mmt = extr.moments
+    mmt = extr.moments_modl
     errorbars!(axs["upright"], [mmt["wavenum"]], [1.5], [mmt["width"] / 2], [mmt["width"] / 2]; direction=:x, color=:sienna2, whiskerwidth=8)
     lines!(axs["sideway"], [mmt["height"], mmt["height"]], [0.2, 0.4]; color=(:sienna2, 1.0))
     band!(axs["sideway"], [0, mmt["height"]], [0.2, 0.2], [0.4, 0.4]; color=(:sienna2, 0.2))
@@ -282,6 +295,30 @@ function fit_prfl_modl_twinpeak_decay_1d(coor, prfl, mask)
         "model" => model,
         "params" => params_fit,
         "tail" => k -> params_fit[6] .* exp.(-abs.(k) ./ params_fit[7])
+    )
+end
+
+function fit_dens2d_gaussian_elliptic_disk(xs, ys, dens, mask)
+    X = [x for y in ys, x in xs]
+    Y = [y for y in ys, x in xs]
+    model(coords, p) = begin
+        x, y = coords
+        A, x0, y0, σx, σy, θ = p
+        xp = @. cos(θ) * (x - x0) + sin(θ) * (y - y0)
+        yp = @. -sin(θ) * (x - x0) + cos(θ) * (y - y0)
+        @. A * exp(-((xp - x0)^2 / (2 * σx^2) + (yp - y0)^2 / (2 * σy^2)))
+    end
+    params_init = [10, 0, 0, 2., 5., -15 / 180 * π]
+    params_upper = [25, 5, 10, 10, 20, 45 / 180 * π]
+    params_lower = [0, -5, -10, 1, 2, -45 / 180 * π]
+    fit = curve_fit(model, (X[mask], Y[mask]), dens[mask], params_init; lower=params_lower, upper=params_upper)
+    params_fit = coef(fit)
+    fitfn(coords) = model(coords, params_fit)
+    return Dict(
+        "fit" => fit,
+        "model" => model,
+        "params" => params_fit,
+        "fitfn" => fitfn
     )
 end
 

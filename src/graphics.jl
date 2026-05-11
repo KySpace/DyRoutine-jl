@@ -200,3 +200,24 @@ function set_panel_trend_sidepeak!(gl::GridLayout)
         "freq-wavenum" => ax_freq_wavenum,
     )
 end
+
+function draw_rotated_ellipse!(
+    ax,
+    center::Tuple{<:Real,<:Real},
+    radii::Tuple{<:Real,<:Real},
+    angle::Real;
+    n=200,
+    kwargs...
+)
+    x0, y0 = center
+    rx, ry = radii
+    φ = angle
+
+    θ = range(0, 2π, length=n)
+
+    x = x0 .+ rx .* cos.(θ) .* cos(φ) .- ry .* sin.(θ) .* sin(φ)
+    y = y0 .+ rx .* cos.(θ) .* sin(φ) .+ ry .* sin.(θ) .* cos(φ)
+
+    obj = lines!(ax, x, y; kwargs...)
+    return obj
+end
