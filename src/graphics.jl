@@ -221,3 +221,34 @@ function draw_rotated_ellipse!(
     obj = lines!(ax, x, y; kwargs...)
     return obj
 end
+
+function draw_rotated_ellipse_corners!(
+    ax,
+    center::Tuple{<:Real,<:Real},
+    radii::Tuple{<:Real,<:Real},
+    angle::Real;
+    n=200,
+    kwargs...
+)
+    x0, y0 = center
+    rx, ry = radii
+    c = cos(angle)
+    s = sin(angle)
+    rot = (x, y) -> (x * c - y * s, x * s + y * c)
+
+    l = minimum([rx, ry]) / 3
+    points = [
+        begin
+            rxuv, ryuv = rot(u * rx, v * ry)
+            _, ryuvl = rot(u * rx, v * (ry - l))
+            rxuvl, _ = rot(u * (rx - l), v * ry)
+            [
+                Point2f(x0 + rxuv, y0 + ryuv), Point2f(x0 + rxuv, y0 + ryuvl),
+                Point2f(x0 + rxuv, y0 + ryuv), Point2f(x0 + rxuvl, y0 + ryuv)
+            ]
+        end
+        for u in [+1, -1], v in [+1 -1]
+    ] |> ps -> reduce(vcat, ps)
+    obj = linesegments!(ax, points; kwargs...)
+    return obj
+end

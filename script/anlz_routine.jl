@@ -81,12 +81,6 @@ dens_full_fmt = dens |>
 # end
 # display(fig_num)
 
-fig_live = Figure()
-gl = GridLayout()
-fig_live[1, 1] = gl
-axs_live = set_panel_solo_modl!(gl);
-fig_live |> display
-
 step_posi = px_in_um
 step_modl = 1 / (2 * smwh_peak[2] * px_in_um)
 x_vec, y_vec = smwh_peak |> s -> map(u -> (-u:1:u), s)
@@ -158,6 +152,13 @@ for idx_mode in 1:8, istp in 1:n_istp
 end
 resize_to_layout!(fig_pca)
 display(fig_pca)
+
+fig_live = Figure()
+gl = GridLayout()
+fig_live[1, 1] = gl
+axs_live = set_panel_solo_modl!(gl);
+fig_live |> display
+
 # fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_essn_2d!)
 fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_modl!)
 for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]

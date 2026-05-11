@@ -211,7 +211,8 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     x_posi, y_posi = (x, y) .* essn.step_posi
     x_modl, y_modl = (x, y) .* essn.step_modl
     y_modl_sm = (0:1:essn.smwh[2]) * essn.step_modl
-    clrmap = gen_clrmap_solo(hue_theme_istp[info_solo["istp"]])
+    hue_theme = hue_theme_istp[info_solo["istp"]]
+    clrmap = gen_clrmap_solo(hue_theme)
 
     nvlp = extr.envelope
     shade_mainpeak = extr.fit_tailess["fitfn_main"](y_modl_sm)
@@ -219,8 +220,9 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     band!(axs["upright"], y_modl_sm, 0, shade_mainpeak, color=(:gray, 0.1))
     band!(axs["upright"], y_modl_sm, shade_mainpeak, shade_peaks, color=(:darkseagreen1, 0.5))
 
+    clr_mark_nvlp = RGBAf(Oklch(0.5, 0.3, hue_theme - 180), 1.0)
     heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, 16.0), colormap=clrmap, rasterize=true)
-    draw_rotated_ellipse!(axs["dens"], nvlp["cent"], nvlp["size"], nvlp["rotation"]; color=(:darkseagreen1, 0.5))
+    draw_rotated_ellipse_corners!(axs["dens"], nvlp["cent"], nvlp["size"], nvlp["rotation"]; color=clr_mark_nvlp)
 
     heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, 10.0), colormap=clrmap, rasterize=true)
     lines!(axs["upright"], y_modl_sm, essn.prfl_modl_norm_px[essn.smwh[2]+1:end], color=(:black, 0.4), linewidth=1)
@@ -315,9 +317,9 @@ function fit_dens2d_gaussian_elliptic_disk(xs, ys, dens, mask)
         yp = (-s) .* dx .+ c .* dy
         return A .* exp.(-(xp .^ 2 ./ (2σx^2) .+ yp .^ 2 ./ (2σy^2)))
     end
-    params_init = Float64[10, 0, 0, 2, 5, -15/180*π]
+    params_init = Float64[10, 0, 0, 2, 5, 15/180*π]
     params_upper = Float64[25, 5, 10, 10, 20, 45/180*π]
-    params_lower = Float64[0, -5, -10, 1, 2, -45/180*π]
+    params_lower = Float64[0, -5, -10, 1, 2, 0/180*π]
     fit = curve_fit(
         model, xydata, zdata,
         params_init;
