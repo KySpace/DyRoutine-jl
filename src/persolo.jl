@@ -301,17 +301,27 @@ end
 function fit_dens2d_gaussian_elliptic_disk(xs, ys, dens, mask)
     X = [x for y in ys, x in xs]
     Y = [y for y in ys, x in xs]
+    xydata = hcat(vec(X[mask]), vec(Y[mask]))
+    zdata = vec(dens[mask])
     model(coords, p) = begin
-        x, y = coords
+        x = coords[:, 1]
+        y = coords[:, 2]
         A, x0, y0, σx, σy, θ = p
-        xp = @. cos(θ) * (x - x0) + sin(θ) * (y - y0)
-        yp = @. -sin(θ) * (x - x0) + cos(θ) * (y - y0)
-        @. A * exp(-((xp - x0)^2 / (2 * σx^2) + (yp - y0)^2 / (2 * σy^2)))
+        c = cos(θ); s = sin(θ)
+        dx = x .- x0; dy = y .- y0
+        xp = c .* dx .+ s .* dy
+        yp = (-s) .* dx .+ c .* dy
+        return A .* exp.(-(xp.^2 ./ (2σx^2) .+ yp.^2 ./ (2σy^2)))
     end
-    params_init = [10, 0, 0, 2., 5., -15 / 180 * π]
-    params_upper = [25, 5, 10, 10, 20, 45 / 180 * π]
-    params_lower = [0, -5, -10, 1, 2, -45 / 180 * π]
-    fit = curve_fit(model, (X[mask], Y[mask]), dens[mask], params_init; lower=params_lower, upper=params_upper)
+    params_init = Float64[10, 0, 0, 2, 5, -15 / 180 * π]
+    params_upper = Float64[25, 5, 10, 10, 20, 45 / 180 * π]
+    params_lower = Float64[0, -5, -10, 1, 2, -45 / 180 * π]
+    fit = curve_fit(
+        model, xydata, zdata,
+        params_init;
+        lower=params_lower,
+        upper=params_upper,
+    )
     params_fit = coef(fit)
     fitfn(coords) = model(coords, params_fit)
     return Dict(
