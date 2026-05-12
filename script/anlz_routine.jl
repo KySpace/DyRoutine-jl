@@ -1,35 +1,35 @@
-# using HDF5
-# using CairoMakie: Figure, Axis, Colorbar, DataAspect, heatmap!, lines!, scatter!, save, text!, rowgap!, colgap!
-# using GLMakie
-# using JLD2
-# using Printf
-# GLMakie.activate!()
-# include(joinpath(@__DIR__, "..", "src", "helper.jl"))
-# include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
-# include(joinpath(@__DIR__, "..", "src", "percond.jl"))
-# include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
-# include(joinpath(@__DIR__, "..", "src", "corr.jl"))
+using HDF5
+using CairoMakie: Figure, Axis, Colorbar, DataAspect, heatmap!, lines!, scatter!, save, text!, rowgap!, colgap!
+using GLMakie
+using JLD2
+using Printf
+GLMakie.activate!()
+include(joinpath(@__DIR__, "..", "src", "helper.jl"))
+include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
+include(joinpath(@__DIR__, "..", "src", "percond.jl"))
+include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
+include(joinpath(@__DIR__, "..", "src", "corr.jl"))
 
-# year_test = 2026
-# path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
-# runinfos = [
-#     (date="0325", runid=95, IB=5.311, tag_head="CFNM"),
-#     (date="0325", runid=82, IB=5.313, tag_head="CFNM"),
-#     (date="0325", runid=52, IB=5.316, tag_head="CFNM"),
-#     (date="0325", runid=80, IB=5.318, tag_head="CFNM"),
-#     (date="0325", runid=96, IB=5.321, tag_head="CFNM"),
-#     (date="0325", runid=67, IB=5.322, tag_head="CFNM"),
-#     (date="0325", runid=68, IB=5.328, tag_head="CFNM"),
-#     (date="0325", runid=50, IB=5.328, tag_head="CFNM"),
-#     (date="0325", runid=81, IB=5.332, tag_head="CFNM"),
-#     (date="0325", runid=51, IB=5.333, tag_head="CFNM"),
-#     (date="0325", runid=79, IB=5.336, tag_head="CFNM"),
-#     (date="0325", runid=53, IB=5.338, tag_head="CFNM"),
-# ]
+year_test = 2026
+path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
+runinfos = [
+    (date="0325", runid=95, IB=5.311, tag_head="CFNM"),
+    (date="0325", runid=82, IB=5.313, tag_head="CFNM"),
+    (date="0325", runid=52, IB=5.316, tag_head="CFNM"),
+    (date="0325", runid=80, IB=5.318, tag_head="CFNM"),
+    (date="0325", runid=96, IB=5.321, tag_head="CFNM"),
+    (date="0325", runid=67, IB=5.322, tag_head="CFNM"),
+    (date="0325", runid=68, IB=5.328, tag_head="CFNM"),
+    (date="0325", runid=50, IB=5.328, tag_head="CFNM"),
+    (date="0325", runid=81, IB=5.332, tag_head="CFNM"),
+    (date="0325", runid=51, IB=5.333, tag_head="CFNM"),
+    (date="0325", runid=79, IB=5.336, tag_head="CFNM"),
+    (date="0325", runid=53, IB=5.338, tag_head="CFNM"),
+]
 
 
-# title_anlz = "[05.12].35.[smw=5].WithNvlp"
-# runinfo = runinfos[10]
+title_anlz = "[05.12].36.Correlations"
+runinfo = runinfos[10]
 date, runid, tag = runinfo.date, runinfo.runid, @sprintf("%s_%.3f_r%02d", runinfo.tag_head, runinfo.IB, runinfo.runid)
 dir_test = gen_date_path(date, year_test)
 file_data = gen_h5name(date, runid)
@@ -133,7 +133,7 @@ modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
     d -> d
 modes_pca_modl2d = [modl2d_side[:, :, i] |> m -> fit_pca_modes(8, m) for i in 1:n_istp]
 
-trend_sidepeak = [
+trend_sidepeak_nvlp = [
     extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak=t -> 25 .< t .< 75, selector_t_envelope=t -> 0 .< t .< 75)
     for r in axes(extr_fmt, 1), i in axes(extr_fmt, 3)
 ]
@@ -152,16 +152,16 @@ trend_sidepeak = [
 # modes_pca_modl2d
 
 ## Overall plots
-fig_trend, axs_trend = set_axis_sidepeak!(n_dim_vars, set_panel_trend_sidepeak!)
+fig_trend, axs_trend = set_axis_sidepeak!(n_dim_vars, set_panel_trend_sidepeak_nvlp!)
 for i in 1:n_istp
-    trend = trend_sidepeak[:, i]
+    trend = trend_sidepeak_nvlp[:, i]
     istp = val[3][i]
-    plot_trend_sidepeak!(axs_trend, trend, istp)
+    plot_trend_all!(axs_trend, trend, istp)
     resize_to_layout!(fig_trend)
     fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.pdf", tag, istp)), f; backend=CairoMakie)
 end
-
-fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_trend.pdf", tag)), f; backend=CairoMakie)
+fig_trend |> display
+# fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_trend.pdf", tag)), f; backend=CairoMakie)
 ##
 
 fig_pca, axs_pca = set_axis_pca_dual_4x2!()
@@ -171,26 +171,23 @@ end
 resize_to_layout!(fig_pca)
 display(fig_pca)
 
-fig_live = Figure()
-gl = GridLayout()
-fig_live[1, 1] = gl
-axs_live = set_panel_solo_modl!(gl);
-fig_live |> display
+
+## Large file generation for all shots
 
 # fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_essn_2d!)
-fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_modl!)
-for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
-    info = info_fmt[r, t, i]
-    print("\rplotting for rep $r, $(info["t_hold"]) ms, $(info["istp"])")
-    draw_solo_modl!(axs_solo[r, t, i], extr_fmt[r, t, i], info)
-    draw_solo_modl!(axs_live, extr_fmt[r, t, i], info)
-end
-for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
-    info = info_fmt[1, t, i] |> d -> merge(d, Dict("repeat" => "stacked"))
-    print("\rplotting for stacked $(info["t_hold"]) ms, $(info["istp"])")
-    draw_solo_modl!(axs_stacked[t, i], extr_stacked_over_rep[t, i], info)
-    draw_solo_modl!(axs_live, extr_stacked_over_rep[t, i], info)
-end
-resize_to_layout!(fig_full)
+# fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_modl!)
+# for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+#     info = info_fmt[r, t, i]
+#     print("\rplotting for rep $r, $(info["t_hold"]) ms, $(info["istp"])")
+#     draw_solo_modl!(axs_solo[r, t, i], extr_fmt[r, t, i], info)
+#     draw_solo_modl!(axs_live, extr_fmt[r, t, i], info)
+# end
+# for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+#     info = info_fmt[1, t, i] |> d -> merge(d, Dict("repeat" => "stacked"))
+#     print("\rplotting for stacked $(info["t_hold"]) ms, $(info["istp"])")
+#     draw_solo_modl!(axs_stacked[t, i], extr_stacked_over_rep[t, i], info)
+#     draw_solo_modl!(axs_live, extr_stacked_over_rep[t, i], info)
+# end
+# resize_to_layout!(fig_full)
 
-fig_full |> f -> save(joinpath(path_output, @sprintf("%s_essn_table.pdf", tag)), f; backend=CairoMakie)
+# fig_full |> f -> save(joinpath(path_output, @sprintf("%s_essn_table.pdf", tag)), f; backend=CairoMakie)

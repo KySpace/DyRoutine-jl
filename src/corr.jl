@@ -140,7 +140,7 @@ function anlz_trend_from_extr(t_vec::AbstractVector{<:Real}, extr::AbstractVecto
     )
 end
 
-function plot_trend_sidepeak!(axs_trend::Dict, trend_sidepeak::AbstractVector, istp)
+function plot_trend_all!(axs_trend::Dict, trend_sidepeak::AbstractVector, istp)
     hue_theme = hue_theme_istp[istp]
     clr_mmt = Oklch(0.52, 0.14, hue_theme)
     clr_fit = (:springgreen3, 1.0)

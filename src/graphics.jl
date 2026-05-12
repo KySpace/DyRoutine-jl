@@ -1,5 +1,6 @@
 using CairoMakie, GLMakie
 using Colors: Oklch
+using LaTeXStrings
 
 hue_theme_istp = Dict("162" => 11.0, "164" => 250.0)
 GLMakie.activate!()
@@ -72,7 +73,7 @@ function set_axis_sidepeak!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer}, pa
         print("\rbuilding axis for side peak trend for repeat $r")
         gl = GridLayout()
         fig[1, r] = gl
-        axs_repeats[r] = panel_setter(gl)
+        axs_repeats[r] = panel_setter(gl, r)
     end
     fig[1, n_dim_vars[1]+1] |> Box
     gl = GridLayout()
@@ -171,39 +172,47 @@ function set_panel_pca_solo!(gl::GridLayout)
     return Dict("mode" => ax_mode, "evol" => ax_evol, "freq" => ax_freq)
 end
 
-function set_panel_trend_sidepeak!(gl::GridLayout)
+function set_panel_trend_sidepeak_nvlp!(gl::GridLayout, col::Int)
     gl |> clean_gridlayout!
-    ax_evol_weight = Axis(gl[1, 1])
-    ax_evol_height = Axis(gl[2, 1])
-    ax_evol_width = Axis(gl[3, 1])
-    ax_evol_wavenum = Axis(gl[4, 1])
-    ax_evol_sizes = Axis(gl[5, 1])
-    ax_freq_weight = Axis(gl[1, 2])
-    ax_freq_height = Axis(gl[2, 2])
-    ax_freq_width = Axis(gl[3, 2])
-    ax_freq_wavenum = Axis(gl[4, 2])
-    ax_freq_sizes = Axis(gl[5, 2])
-    colsize!(gl, 1, Fixed(400))
-    colsize!(gl, 2, Fixed(400))
-    rowsize!(gl, 1, Fixed(200))
-    rowsize!(gl, 2, Fixed(200))
-    rowsize!(gl, 3, Fixed(200))
-    rowsize!(gl, 4, Fixed(200))
-    rowsize!(gl, 5, Fixed(200))
-    rowgap!(gl, 8)
-    rowgap!(gl, 20)
-    return Dict(
+    w, h = (400, 200)
+    ax_evol_weight = Axis(gl[1, 1]; width=w, height=h, ylabel="side peak \nweight")
+    ax_evol_height = Axis(gl[2, 1]; width=w, height=h, ylabel="side peak \nheight")
+    ax_evol_width = Axis(gl[3, 1]; width=w, height=h, ylabel="side peak \nwidth (μm⁻¹)")
+    ax_evol_wavenum = Axis(gl[4, 1]; width=w, height=h, ylabel="side peak \nwavenum (μm⁻¹)")
+    ax_evol_sizes = Axis(gl[5, 1]; width=w, height=h, ylabel="envelope size (μm)")
+    ax_freq_weight = Axis(gl[1, 2]; width=w, height=h)
+    ax_freq_height = Axis(gl[2, 2]; width=w, height=h)
+    ax_freq_width = Axis(gl[3, 2]; width=w, height=h)
+    ax_freq_wavenum = Axis(gl[4, 2]; width=w, height=h)
+    ax_freq_sizes = Axis(gl[5, 2]; width=w, height=h)
+    rowgap!(gl, 4)
+    rowgap!(gl, 4)
+    dict_axs = Dict(
         "evol-weight" => ax_evol_weight,
         "evol-height" => ax_evol_height,
         "evol-width" => ax_evol_width,
         "evol-wavenum" => ax_evol_wavenum,
         "evol-sizes" => ax_evol_sizes,
-        "freq-weight" => ax_evol_weight,
+        "freq-weight" => ax_freq_weight,
         "freq-height" => ax_freq_height,
         "freq-width" => ax_freq_width,
         "freq-wavenum" => ax_freq_wavenum,
         "freq-sizes" => ax_freq_sizes,
     )
+    for ax in values(dict_axs)
+        hideydecorations!(ax; label=true, ticklabels=false, ticks=false, grid=false, minorticks=false, minorgrid=false)
+        hidexdecorations!(ax; label=true, ticklabels=true, ticks=false, grid=false, minorticks=false, minorgrid=false)
+        if col == 1
+            ax.ylabelvisible = true
+        end
+    end
+    ax_evol_sizes.xticklabelsvisible = true
+    ax_freq_sizes.xticklabelsvisible = true
+    ax_evol_sizes.xlabelvisible = true
+    ax_freq_sizes.xlabelvisible = true
+    ax_evol_sizes.xlabel = "t hold (ms)"
+    ax_freq_sizes.xlabel = "freq (Hz)"
+    return dict_axs
 end
 
 function draw_rotated_ellipse!(
