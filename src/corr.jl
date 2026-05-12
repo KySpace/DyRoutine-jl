@@ -80,16 +80,21 @@ function plot_mode_evol_freq_solo!(axs::Dict{String,Axis}, mode::ModeWeight, val
     end
 end
 
+function query_weight(evo, mask, t_vec, freq_query)
+    weight = evo[mask] |> e -> e .- mean(e) |> e -> [
+        sum(@. e * exp(-2im * pi * freq_query[f] * t_vec[mask] / 1000.0))
+        for f in freq_query] |> e -> abs.(e) .^ 2
+    return weight / sum(weight)
+end
+
 function anlz_trend_from_extr(t_vec::AbstractVector{<:Real}, extr::AbstractVector{SoloExtract}, freq_query::AbstractVector{<:Real}; selector_t_sidepeak::Function, selector_t_envelope::Function)
     mask_sel_sp = selector_t_sidepeak(t_vec)
     t_vec_sel_sp = t_vec[mask_sel_sp]
     mask_sel_nvlp = selector_t_envelope(t_vec)
     t_vec_sel_nvlp = t_vec[mask_sel_nvlp]
-    query_weight = (evo, mask) -> evo[mask_sel_sp] |> e -> e .- mean(e) |> e -> [
-        sum(@. e * exp(-2im * pi * freq_query[f] * t_vec[mask_sel_sp] / 1000.0))
-        for f in freq_query] |> e -> abs.(e) .^ 2
-    query_weight_sel_sp = evo -> query_weight(evo, mask_sel_sp)
-    query_weight_sel_nvlp = evo -> query_weight(evo, mask_sel_nvlp)
+
+    query_weight_sel_sp = evo -> query_weight(evo, mask_sel_sp, t_vec, freq_query)
+    query_weight_sel_nvlp = evo -> query_weight(evo, mask_sel_nvlp, t_vec, freq_query)
     evo_fit_weight = extr |> e -> map(t -> t.sidepeak["weight"], e)
     evo_fit_height = extr |> e -> map(t -> t.sidepeak["height"], e)
     evo_fit_wavenum = extr |> e -> map(t -> t.sidepeak["wavenum"], e)
@@ -140,42 +145,53 @@ function anlz_trend_from_extr(t_vec::AbstractVector{<:Real}, extr::AbstractVecto
     )
 end
 
-function plot_trend_all!(axs_trend::Dict, trend_sidepeak::AbstractVector, istp)
+function plot_trend_all!(axs_trend::Dict, trend_reps::AbstractVector, istp)
     hue_theme = hue_theme_istp[istp]
     clr_mmt = Oklch(0.52, 0.14, hue_theme)
     clr_fit = (:springgreen3, 1.0)
     clr_theme1 = Oklch(0.52, 0.14, hue_theme - 20)
     clr_theme2 = Oklch(0.52, 0.14, hue_theme + 20)
-    for r = axes(trend_sidepeak, 1)
-        trend = trend_sidepeak[r]
-        axs = axs_trend["repeats"][r]
-        for (k, obj) in axs
-            obj isa Axis && empty!(obj)
+    for r = axes(trend_reps, 1)
+        trend = trend_reps[r]
+        # plot on both the individual reps and all reps combined
+        for (a, axs) in enumerate([axs_trend["repeats"][r], axs_trend["all"]])
+            if a == 1
+                for (k, obj) in axs
+                    obj isa Axis && empty!(obj)
+                end
+                alpha = 1.0
+            else
+                alpha = 0.5
+            end
+            clr_shade_selected = RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2)
+            # shade the selected time points on all reps combined only once
+            if r == 1 || a == 1
+                vspan!(axs["evol-weight"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
+                vspan!(axs["evol-height"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
+                vspan!(axs["evol-width"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
+                vspan!(axs["evol-wavenum"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
+                vspan!(axs["evol-sizes"], trend["t_vec_sel_nvlp"][1], trend["t_vec_sel_nvlp"][end]; color=clr_shade_selected)
+            end
+            lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-fit-weight"]; color=(clr_fit, alpha))
+            lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-fit-height"]; color=(clr_fit, alpha))
+            lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-fit-width"]; color=(clr_fit, alpha))
+            lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-fit-wavenum"]; color=(clr_fit, alpha))
+            lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-moment-weight"]; color=(clr_mmt, alpha))
+            lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-moment-height"]; color=(clr_mmt, alpha))
+            lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-moment-width"]; color=(clr_mmt, alpha))
+            lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-moment-wavenum"]; color=(clr_mmt, alpha))
+            lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-x"]; color=(clr_theme1, alpha))
+            lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-y"]; color=(clr_theme2, alpha))
+            lines!(axs["freq-weight"], trend["freq_query"], trend["freq-sel-fit-weight"]; color=(clr_fit, alpha))
+            lines!(axs["freq-height"], trend["freq_query"], trend["freq-sel-fit-height"]; color=(clr_fit, alpha))
+            lines!(axs["freq-width"], trend["freq_query"], trend["freq-sel-fit-width"]; color=(clr_fit, alpha))
+            lines!(axs["freq-wavenum"], trend["freq_query"], trend["freq-sel-fit-wavenum"]; color=(clr_fit, alpha))
+            lines!(axs["freq-weight"], trend["freq_query"], trend["freq-sel-moment-weight"]; color=(clr_mmt, alpha))
+            lines!(axs["freq-height"], trend["freq_query"], trend["freq-sel-moment-height"]; color=(clr_mmt, alpha))
+            lines!(axs["freq-width"], trend["freq_query"], trend["freq-sel-moment-width"]; color=(clr_mmt, alpha))
+            lines!(axs["freq-wavenum"], trend["freq_query"], trend["freq-sel-moment-wavenum"]; color=(clr_mmt, alpha))
+            lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-x"]; color=(clr_theme1, alpha))
+            lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-y"]; color=(clr_theme2, alpha))
         end
-        vspan!(axs["evol-weight"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2))
-        vspan!(axs["evol-height"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2))
-        vspan!(axs["evol-width"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2))
-        vspan!(axs["evol-wavenum"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2))
-        vspan!(axs["evol-sizes"], trend["t_vec_sel_nvlp"][1], trend["t_vec_sel_nvlp"][end]; color=RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2))
-        lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-fit-weight"]; color=clr_fit)
-        lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-fit-height"]; color=clr_fit)
-        lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-fit-width"]; color=clr_fit)
-        lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-fit-wavenum"]; color=clr_fit)
-        lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-moment-weight"]; color=clr_mmt)
-        lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-moment-height"]; color=clr_mmt)
-        lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-moment-width"]; color=clr_mmt)
-        lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-moment-wavenum"]; color=clr_mmt)
-        lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-x"]; color=clr_theme1)
-        lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-y"]; color=clr_theme2)
-        lines!(axs["freq-weight"], trend["freq_query"], trend["freq-sel-fit-weight"]; color=clr_fit)
-        lines!(axs["freq-height"], trend["freq_query"], trend["freq-sel-fit-height"]; color=clr_fit)
-        lines!(axs["freq-width"], trend["freq_query"], trend["freq-sel-fit-width"]; color=clr_fit)
-        lines!(axs["freq-wavenum"], trend["freq_query"], trend["freq-sel-fit-wavenum"]; color=clr_fit)
-        lines!(axs["freq-weight"], trend["freq_query"], trend["freq-sel-moment-weight"]; color=clr_mmt)
-        lines!(axs["freq-height"], trend["freq_query"], trend["freq-sel-moment-height"]; color=clr_mmt)
-        lines!(axs["freq-width"], trend["freq_query"], trend["freq-sel-moment-width"]; color=clr_mmt)
-        lines!(axs["freq-wavenum"], trend["freq_query"], trend["freq-sel-moment-wavenum"]; color=clr_mmt)
-        lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-x"]; color=clr_theme1)
-        lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-y"]; color=clr_theme2)
     end
 end
