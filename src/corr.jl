@@ -155,17 +155,13 @@ function plot_trend_all!(axs_trend::Dict, trend_reps::AbstractVector, istp)
         trend = trend_reps[r]
         # plot on both the individual reps and all reps combined
         for (a, axs) in enumerate([axs_trend["repeats"][r], axs_trend["all"]])
-            if a == 1
-                for (k, obj) in axs
-                    obj isa Axis && empty!(obj)
-                end
-                alpha = 1.0
-            else
-                alpha = 0.5
-            end
+            alpha = a == 1 ? 1.0 : 0.5
             clr_shade_selected = RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2)
             # shade the selected time points on all reps combined only once
             if r == 1 || a == 1
+                for (k, obj) in axs
+                    obj isa Axis && empty!(obj)
+                end
                 vspan!(axs["evol-weight"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
                 vspan!(axs["evol-height"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
                 vspan!(axs["evol-width"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
