@@ -179,19 +179,21 @@ end
 function set_panel_trend_sidepeak_nvlp!(gl::GridLayout, col::Int)
     gl |> clean_gridlayout!
     w, h = (400, 200)
-    ax_evol_weight = Axis(gl[1, 1]; width=w, height=h, ylabel="side peak \nweight")
-    ax_evol_height = Axis(gl[2, 1]; width=w, height=h, ylabel="side peak \nheight")
-    ax_evol_width = Axis(gl[3, 1]; width=w, height=h, ylabel="side peak \nwidth (μm⁻¹)")
-    ax_evol_wavenum = Axis(gl[4, 1]; width=w, height=h, ylabel="side peak \nwavenum (μm⁻¹)")
-    ax_evol_sizes = Axis(gl[5, 1]; width=w, height=h, ylabel="envelope size (μm)")
-    ax_freq_weight = Axis(gl[1, 2]; width=w, height=h)
-    ax_freq_height = Axis(gl[2, 2]; width=w, height=h)
-    ax_freq_width = Axis(gl[3, 2]; width=w, height=h)
-    ax_freq_wavenum = Axis(gl[4, 2]; width=w, height=h)
-    ax_freq_sizes = Axis(gl[5, 2]; width=w, height=h)
+    ax_evol_sum_dens = Axis(gl[1, 1]; width=w, height=h, ylabel="density sum")
+    ax_evol_weight = Axis(gl[2, 1]; width=w, height=h, ylabel="side peak \nweight")
+    ax_evol_height = Axis(gl[3, 1]; width=w, height=h, ylabel="side peak \nheight")
+    ax_evol_width = Axis(gl[4, 1]; width=w, height=h, ylabel="side peak \nwidth (μm⁻¹)")
+    ax_evol_wavenum = Axis(gl[5, 1]; width=w, height=h, ylabel="side peak \nwavenum (μm⁻¹)")
+    ax_evol_sizes = Axis(gl[6, 1]; width=w, height=h, ylabel="envelope size (μm)")
+    ax_freq_weight = Axis(gl[2, 2]; width=w, height=h)
+    ax_freq_height = Axis(gl[3, 2]; width=w, height=h)
+    ax_freq_width = Axis(gl[4, 2]; width=w, height=h)
+    ax_freq_wavenum = Axis(gl[5, 2]; width=w, height=h)
+    ax_freq_sizes = Axis(gl[6, 2]; width=w, height=h)
     rowgap!(gl, 4)
     rowgap!(gl, 4)
     dict_axs = Dict(
+        "evol-dens-sum" => ax_evol_sum_dens,
         "evol-weight" => ax_evol_weight,
         "evol-height" => ax_evol_height,
         "evol-width" => ax_evol_width,

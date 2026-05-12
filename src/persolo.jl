@@ -139,6 +139,7 @@ struct SoloEssentials
     smw_modl::Integer
     step_posi::Real
     step_modl::Real
+    sum_dens_full::Real
 end
 
 struct SoloExtract
@@ -153,13 +154,14 @@ end
 
 function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smwh::Tuple{<:Real,<:Real}, smw_modl::Integer, px_in_um::Real)
     dens_roi = crop_center(dens, cent, smwh)
+    sum_dens = sum(dens)
     x_cent = smwh[1] + 1
     step_posi = px_in_um
     step_modl = 1 / (2 * smwh[2] * px_in_um)
     modl_roi = dens_roi .* gen_win_hann_2d(smwh) |> fft |> fftshift |> c -> abs.(c)
     prfl_modl = modl_roi[:, x_cent-smw_modl:x_cent+smw_modl] |> m -> sum(m, dims=2) ./ (smw_modl * 2 + 1) |> vec
     prfl_modl_norm_px = prfl_modl ./ (sum(prfl_modl) * step_modl / 2)
-    return SoloEssentials(dens_roi, modl_roi, prfl_modl, prfl_modl_norm_px, smwh, smw_modl, step_posi, step_modl)
+    return SoloEssentials(dens_roi, modl_roi, prfl_modl, prfl_modl_norm_px, smwh, smw_modl, step_posi, step_modl, sum_dens)
 end
 
 function calc_solo_extr(essn::SoloEssentials, fit_stack::Dict)

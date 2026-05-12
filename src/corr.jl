@@ -95,6 +95,7 @@ function anlz_trend_from_extr(t_vec::AbstractVector{<:Real}, extr::AbstractVecto
 
     query_weight_sel_sp = evo -> query_weight(evo, mask_sel_sp, t_vec, freq_query)
     query_weight_sel_nvlp = evo -> query_weight(evo, mask_sel_nvlp, t_vec, freq_query)
+    evo_dens_sum = extr |> e -> map(t -> t.essentials.sum_dens_full, e)
     evo_fit_weight = extr |> e -> map(t -> t.sidepeak["weight"], e)
     evo_fit_height = extr |> e -> map(t -> t.sidepeak["height"], e)
     evo_fit_wavenum = extr |> e -> map(t -> t.sidepeak["wavenum"], e)
@@ -122,6 +123,7 @@ function anlz_trend_from_extr(t_vec::AbstractVector{<:Real}, extr::AbstractVecto
         "t_vec_sel_nvlp" => t_vec_sel_nvlp,
         "mask_sel" => mask_sel_sp,
         "freq_query" => freq_query,
+        "evol-all-dens-sum" => evo_dens_sum,
         "evol-all-fit-weight" => evo_fit_weight,
         "evol-all-fit-height" => evo_fit_height,
         "evol-all-fit-wavenum" => evo_fit_wavenum,
@@ -149,6 +151,7 @@ function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, i
     hue_theme = hue_theme_istp[istp]
     clr_mmt = Oklch(0.52, 0.14, hue_theme)
     clr_fit = (:springgreen3, 1.0)
+    clr_theme = Oklch(0.52, 0.14, hue_theme)
     clr_theme1 = Oklch(0.52, 0.14, hue_theme - 20)
     clr_theme2 = Oklch(0.52, 0.14, hue_theme + 20)
     clr_shade_selected = RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2)
@@ -162,6 +165,7 @@ function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, i
         vspan!(axs["evol-wavenum"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
         vspan!(axs["evol-sizes"], trend["t_vec_sel_nvlp"][1], trend["t_vec_sel_nvlp"][end]; color=clr_shade_selected)
     end
+    lines!(axs["evol-dens-sum"], trend["t_vec"], trend["evol-all-dens-sum"]; color=(clr_theme, alpha), label="sum")
     lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-fit-weight"]; color=(clr_fit, alpha), label="fit")
     lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-fit-height"]; color=(clr_fit, alpha), label="fit")
     lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-fit-width"]; color=(clr_fit, alpha), label="fit")
@@ -188,6 +192,7 @@ function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, i
     # ylims!(axs["evol-wavenum"], 0, 0)
     # ylims!(axs["evol-sizes"], 0, 0)
     if to_legend
+        axislegend(axs["evol-dens-sum"]; position=:rt, framevisible=false, labelsize=14)
         axislegend(axs["freq-weight"]; position=:lt, framevisible=false, labelsize=14)
         axislegend(axs["freq-sizes"]; position=:lt, framevisible=false, labelsize=14)
     end

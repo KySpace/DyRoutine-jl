@@ -31,5 +31,6 @@ function calc_stacked_essn(essns::AbstractVector{SoloEssentials})::SoloEssential
         essn_ref.smw_modl,
         essn_ref.step_posi,
         essn_ref.step_modl,
+        mean(map(essn -> essn.sum_dens_full, essns)),
     )
 end
