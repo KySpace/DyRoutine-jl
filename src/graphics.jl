@@ -177,16 +177,19 @@ function set_panel_trend_sidepeak!(gl::GridLayout)
     ax_evol_height = Axis(gl[2, 1])
     ax_evol_width = Axis(gl[3, 1])
     ax_evol_wavenum = Axis(gl[4, 1])
+    ax_evol_sizes = Axis(gl[5, 1])
     ax_freq_weight = Axis(gl[1, 2])
     ax_freq_height = Axis(gl[2, 2])
     ax_freq_width = Axis(gl[3, 2])
     ax_freq_wavenum = Axis(gl[4, 2])
+    ax_freq_sizes = Axis(gl[5, 2])
     colsize!(gl, 1, Fixed(400))
     colsize!(gl, 2, Fixed(400))
     rowsize!(gl, 1, Fixed(200))
     rowsize!(gl, 2, Fixed(200))
     rowsize!(gl, 3, Fixed(200))
     rowsize!(gl, 4, Fixed(200))
+    rowsize!(gl, 5, Fixed(200))
     rowgap!(gl, 8)
     rowgap!(gl, 20)
     return Dict(
@@ -194,10 +197,12 @@ function set_panel_trend_sidepeak!(gl::GridLayout)
         "evol-height" => ax_evol_height,
         "evol-width" => ax_evol_width,
         "evol-wavenum" => ax_evol_wavenum,
-        "freq-weight" => ax_freq_weight,
+        "evol-sizes" => ax_evol_sizes,
+        "freq-weight" => ax_evol_weight,
         "freq-height" => ax_freq_height,
         "freq-width" => ax_freq_width,
         "freq-wavenum" => ax_freq_wavenum,
+        "freq-sizes" => ax_freq_sizes,
     )
 end
 

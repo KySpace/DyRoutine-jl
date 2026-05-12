@@ -80,34 +80,42 @@ function plot_mode_evol_freq_solo!(axs::Dict{String,Axis}, mode::ModeWeight, val
     end
 end
 
-function anlz_trend_from_extr(t_vec::AbstractVector{<:Real}, extr::AbstractVector{SoloExtract}, selector_t::Function, freq_query::AbstractVector{<:Real})
-    mask_sel = selector_t(t_vec)
-    t_vec_sel = t_vec[mask_sel]
-    query_weight = (evo, mask) -> evo[mask_sel] |> e -> e .- mean(e) |> e -> [
-        sum(@. e * exp(-2im * pi * freq_query[f] * t_vec[mask_sel] / 1000.0))
+function anlz_trend_from_extr(t_vec::AbstractVector{<:Real}, extr::AbstractVector{SoloExtract}, freq_query::AbstractVector{<:Real}; selector_t_sidepeak::Function, selector_t_envelope::Function)
+    mask_sel_sp = selector_t_sidepeak(t_vec)
+    t_vec_sel_sp = t_vec[mask_sel_sp]
+    mask_sel_nvlp = selector_t_envelope(t_vec)
+    t_vec_sel_nvlp = t_vec[mask_sel_nvlp]
+    query_weight = (evo, mask) -> evo[mask_sel_sp] |> e -> e .- mean(e) |> e -> [
+        sum(@. e * exp(-2im * pi * freq_query[f] * t_vec[mask_sel_sp] / 1000.0))
         for f in freq_query] |> e -> abs.(e) .^ 2
-    query_weight_sel = evo -> query_weight(evo, mask_sel)
+    query_weight_sel_sp = evo -> query_weight(evo, mask_sel_sp)
+    query_weight_sel_nvlp = evo -> query_weight(evo, mask_sel_nvlp)
     evo_fit_weight = extr |> e -> map(t -> t.sidepeak["weight"], e)
     evo_fit_height = extr |> e -> map(t -> t.sidepeak["height"], e)
     evo_fit_wavenum = extr |> e -> map(t -> t.sidepeak["wavenum"], e)
     evo_fit_width = extr |> e -> map(t -> t.sidepeak["width"], e)
+    evo_fit_size_x = extr |> e -> map(t -> t.envelope["size"][1], e)
+    evo_fit_size_y = extr |> e -> map(t -> t.envelope["size"][2], e)
     evo_moment_weight = extr |> e -> map(t -> t.moments_modl["weight"], e)
     evo_moment_height = extr |> e -> map(t -> t.moments_modl["height"], e)
     evo_moment_wavenum = extr |> e -> map(t -> t.moments_modl["wavenum"], e)
     evo_moment_width = extr |> e -> map(t -> t.moments_modl["width"], e)
 
-    ft_fit_weight = evo_fit_weight |> query_weight_sel
-    ft_fit_height = evo_fit_height |> query_weight_sel
-    ft_fit_wavenum = evo_fit_wavenum |> query_weight_sel
-    ft_fit_width = evo_fit_width |> query_weight_sel
-    ft_moment_weight = evo_moment_weight |> query_weight_sel
-    ft_moment_height = evo_moment_height |> query_weight_sel
-    ft_moment_wavenum = evo_moment_wavenum |> query_weight_sel
-    ft_moment_width = evo_moment_width |> query_weight_sel
+    ft_fit_weight = evo_fit_weight |> query_weight_sel_sp
+    ft_fit_height = evo_fit_height |> query_weight_sel_sp
+    ft_fit_wavenum = evo_fit_wavenum |> query_weight_sel_sp
+    ft_fit_width = evo_fit_width |> query_weight_sel_sp
+    ft_moment_weight = evo_moment_weight |> query_weight_sel_sp
+    ft_moment_height = evo_moment_height |> query_weight_sel_sp
+    ft_moment_wavenum = evo_moment_wavenum |> query_weight_sel_sp
+    ft_moment_width = evo_moment_width |> query_weight_sel_sp
+    ft_fit_size_x = evo_fit_size_x |> query_weight_sel_nvlp
+    ft_fit_size_y = evo_fit_size_y |> query_weight_sel_nvlp
     return Dict(
         "t_vec" => t_vec,
-        "t_vec_sel" => t_vec_sel,
-        "mask_sel" => mask_sel,
+        "t_vec_sel_sp" => t_vec_sel_sp,
+        "t_vec_sel_nvlp" => t_vec_sel_nvlp,
+        "mask_sel" => mask_sel_sp,
         "freq_query" => freq_query,
         "evol-all-fit-weight" => evo_fit_weight,
         "evol-all-fit-height" => evo_fit_height,
@@ -117,6 +125,8 @@ function anlz_trend_from_extr(t_vec::AbstractVector{<:Real}, extr::AbstractVecto
         "evol-all-moment-height" => evo_moment_height,
         "evol-all-moment-wavenum" => evo_moment_wavenum,
         "evol-all-moment-width" => evo_moment_width,
+        "evol-all-fit-size-x" => evo_fit_size_x,
+        "evol-all-fit-size-y" => evo_fit_size_y,
         "freq-sel-fit-weight" => ft_fit_weight,
         "freq-sel-fit-height" => ft_fit_height,
         "freq-sel-fit-wavenum" => ft_fit_wavenum,
@@ -125,23 +135,28 @@ function anlz_trend_from_extr(t_vec::AbstractVector{<:Real}, extr::AbstractVecto
         "freq-sel-moment-height" => ft_moment_height,
         "freq-sel-moment-wavenum" => ft_moment_wavenum,
         "freq-sel-moment-width" => ft_moment_width,
+        "freq-sel-fit-size-x" => ft_fit_size_x,
+        "freq-sel-fit-size-y" => ft_fit_size_y,
     )
 end
 
 function plot_trend_sidepeak!(axs_trend::Dict, trend_sidepeak::AbstractVector, istp)
-    hue = hue_theme_istp[istp]
-    clr_fit = (:black, 1.0)
-    clr_mmt = (:seagreen, 1.0)
+    hue_theme = hue_theme_istp[istp]
+    clr_mmt = Oklch(0.52, 0.14, hue_theme)
+    clr_fit = (:springgreen3, 1.0)
+    clr_theme1 = Oklch(0.52, 0.14, hue_theme - 20)
+    clr_theme2 = Oklch(0.52, 0.14, hue_theme + 20)
     for r = axes(trend_sidepeak, 1)
         trend = trend_sidepeak[r]
         axs = axs_trend["repeats"][r]
         for (k, obj) in axs
             obj isa Axis && empty!(obj)
         end
-        vspan!(axs["evol-weight"], trend["t_vec_sel"][1], trend["t_vec_sel"][end]; color=RGBAf(Oklch(0.98, 0.1, hue), 0.2))
-        vspan!(axs["evol-height"], trend["t_vec_sel"][1], trend["t_vec_sel"][end]; color=RGBAf(Oklch(0.98, 0.1, hue), 0.2))
-        vspan!(axs["evol-width"], trend["t_vec_sel"][1], trend["t_vec_sel"][end]; color=RGBAf(Oklch(0.98, 0.1, hue), 0.2))
-        vspan!(axs["evol-wavenum"], trend["t_vec_sel"][1], trend["t_vec_sel"][end]; color=RGBAf(Oklch(0.98, 0.1, hue), 0.2))
+        vspan!(axs["evol-weight"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2))
+        vspan!(axs["evol-height"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2))
+        vspan!(axs["evol-width"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2))
+        vspan!(axs["evol-wavenum"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2))
+        vspan!(axs["evol-sizes"], trend["t_vec_sel_nvlp"][1], trend["t_vec_sel_nvlp"][end]; color=RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2))
         lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-fit-weight"]; color=clr_fit)
         lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-fit-height"]; color=clr_fit)
         lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-fit-width"]; color=clr_fit)
@@ -150,6 +165,8 @@ function plot_trend_sidepeak!(axs_trend::Dict, trend_sidepeak::AbstractVector, i
         lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-moment-height"]; color=clr_mmt)
         lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-moment-width"]; color=clr_mmt)
         lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-moment-wavenum"]; color=clr_mmt)
+        lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-x"]; color=clr_theme1)
+        lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-y"]; color=clr_theme2)
         lines!(axs["freq-weight"], trend["freq_query"], trend["freq-sel-fit-weight"]; color=clr_fit)
         lines!(axs["freq-height"], trend["freq_query"], trend["freq-sel-fit-height"]; color=clr_fit)
         lines!(axs["freq-width"], trend["freq_query"], trend["freq-sel-fit-width"]; color=clr_fit)
@@ -158,5 +175,7 @@ function plot_trend_sidepeak!(axs_trend::Dict, trend_sidepeak::AbstractVector, i
         lines!(axs["freq-height"], trend["freq_query"], trend["freq-sel-moment-height"]; color=clr_mmt)
         lines!(axs["freq-width"], trend["freq_query"], trend["freq-sel-moment-width"]; color=clr_mmt)
         lines!(axs["freq-wavenum"], trend["freq_query"], trend["freq-sel-moment-wavenum"]; color=clr_mmt)
+        lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-x"]; color=clr_theme1)
+        lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-y"]; color=clr_theme2)
     end
 end

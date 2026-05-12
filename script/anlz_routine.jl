@@ -12,9 +12,25 @@ include(joinpath(@__DIR__, "..", "src", "corr.jl"))
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
-title_anlz = "[05.12].34.[smw=10].WithNvlp"
+runinfos = [
+    (date="0325", runid=95, IB=5.311, tag_head="CFNM"),
+    (date="0325", runid=82, IB=5.313, tag_head="CFNM"),
+    (date="0325", runid=52, IB=5.316, tag_head="CFNM"),
+    (date="0325", runid=80, IB=5.318, tag_head="CFNM"),
+    (date="0325", runid=96, IB=5.321, tag_head="CFNM"),
+    (date="0325", runid=67, IB=5.322, tag_head="CFNM"),
+    (date="0325", runid=68, IB=5.328, tag_head="CFNM"),
+    (date="0325", runid=50, IB=5.328, tag_head="CFNM"),
+    (date="0325", runid=81, IB=5.332, tag_head="CFNM"),
+    (date="0325", runid=51, IB=5.333, tag_head="CFNM"),
+    (date="0325", runid=79, IB=5.336, tag_head="CFNM"),
+    (date="0325", runid=53, IB=5.338, tag_head="CFNM"),
+]
 
-date, runid, tag = "0325", 51, "CFNM_5.333_r51_excerpt"
+
+title_anlz = "[05.12].35.[smw=5].WithNvlp"
+runinfo = runinfos[10]
+date, runid, tag = runinfo.date, runinfo.runid, @sprintf("%s_%.3f_r%02d", runinfo.tag_head, runinfo.IB, runinfo.runid)
 dir_test = gen_date_path(date, year_test)
 file_data = gen_h5name(date, runid)
 path_input = joinpath(path_root, dir_test, @sprintf("run%02d", runid), file_data)
@@ -27,7 +43,7 @@ wh_corner = (10, 10)
 smwh_peak = (30, 60)
 wh_peak = smwh_peak .* 2 .+ 1
 smw_peak, smh_peak = smwh_peak
-smw_ft = 10
+smw_ft = 5
 px_in_um = 6.5 / 22.06
 
 name = ["repeat", "t_hold", "istp"]
@@ -60,16 +76,16 @@ dens_full_fmt = dens |>
                             ds -> permutedims(ds, (3, 2, 1, 4, 5))
 
 # A lite version for tests
-rng_lite = 1:50;
-val = (
-    collect(1:3),
-    collect(6:2:200)[rng_lite],
-    ["162", "164"],
-)
-n_variation = length(val[1]) * length(val[2]) * length(val[3])
-n_dim_vars = map(length, val);
-n_rep, n_main, n_istp = n_dim_vars
-dens_full_fmt = dens_full_fmt[:, rng_lite, :, :, :]
+# rng_lite = 1:50;
+# val = (
+#     collect(1:3),
+#     collect(6:2:200)[rng_lite],
+#     ["162", "164"],
+# )
+# n_variation = length(val[1]) * length(val[2]) * length(val[3])
+# n_dim_vars = map(length, val);
+# n_rep, n_main, n_istp = n_dim_vars
+# dens_full_fmt = dens_full_fmt[:, rng_lite, :, :, :]
 
 # Statistics on number sum
 # num_fmt = dens_full_fmt |> ds -> mapslices(calc_dens_sum, ds; dims=(4, 5)) |> n -> dropdims(n; dims=(4, 5));
@@ -118,7 +134,7 @@ modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
 modes_pca_modl2d = [modl2d_side[:, :, i] |> m -> fit_pca_modes(8, m) for i in 1:n_istp]
 
 trend_sidepeak = [
-    extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val[2], e, t -> 25 .< t .< 75, 1:1:100)
+    extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak=t -> 25 .< t .< 75, selector_t_envelope=t -> 0 .< t .< 75)
     for r in axes(extr_fmt, 1), i in axes(extr_fmt, 3)
 ]
 ##  saving data, still problematic
@@ -144,6 +160,8 @@ for i in 1:n_istp
     resize_to_layout!(fig_trend)
     fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.pdf", tag, istp)), f; backend=CairoMakie)
 end
+
+fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_trend.pdf", tag)), f; backend=CairoMakie)
 ##
 
 fig_pca, axs_pca = set_axis_pca_dual_4x2!()
