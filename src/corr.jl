@@ -182,6 +182,11 @@ function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, i
     lines!(axs["freq-wavenum"], trend["freq_query"], trend["freq-sel-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
     lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-x"]; color=(clr_theme1, alpha), label="fit size x")
     lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-y"]; color=(clr_theme2, alpha), label="fit size y")
+    # ylims!(axs["evol-weight"], -0, 0)
+    # ylims!(axs["evol-height"], 0, 0)
+    # ylims!(axs["evol-width"], 0, 0)
+    # ylims!(axs["evol-wavenum"], 0, 0)
+    # ylims!(axs["evol-sizes"], 0, 0)
     if to_legend
         axislegend(axs["freq-weight"]; position=:lt, framevisible=false, labelsize=14)
         axislegend(axs["freq-sizes"]; position=:lt, framevisible=false, labelsize=14)
