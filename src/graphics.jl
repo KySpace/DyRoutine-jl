@@ -78,10 +78,10 @@ function set_axis_sidepeak!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer}, pa
     fig[1, n_dim_vars[1]+1] |> Box
     gl = GridLayout()
     fig[1, n_dim_vars[1]+2] = gl
-    axs_stacked = panel_setter(gl)
+    axs_stacked = panel_setter(gl, 1)
     gl = GridLayout()
     fig[1, n_dim_vars[1]+3] = gl
-    axs_all = panel_setter(gl)
+    axs_all = panel_setter(gl, 1)
     return fig, Dict("repeats" => axs_repeats, "stacked" => axs_stacked, "all" => axs_all)
 end
 

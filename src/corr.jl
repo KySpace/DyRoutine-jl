@@ -168,6 +168,18 @@ function plot_trend_all!(axs_trend::Dict, trend_reps::AbstractVector, istp)
                 vspan!(axs["evol-wavenum"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
                 vspan!(axs["evol-sizes"], trend["t_vec_sel_nvlp"][1], trend["t_vec_sel_nvlp"][end]; color=clr_shade_selected)
             end
+            for ax in [axs["evol-weight"], axs["evol-height"], axs["evol-width"], axs["evol-wavenum"], axs["evol-sizes"]]
+                ax.xticks = 0:50:200
+                ax.xminorticksvisible = true
+                ax.xminorgridvisible = true
+                ax.xminorticks = IntervalsBetween(5)
+            end
+            for ax in [axs["freq-weight"], axs["freq-height"], axs["freq-width"], axs["freq-wavenum"], axs["freq-sizes"]]
+                ax.xticks = 0:10:100
+                ax.xminorticksvisible = true
+                ax.xminorgridvisible = true
+                ax.xminorticks = IntervalsBetween(2)
+            end
             lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-fit-weight"]; color=(clr_fit, alpha))
             lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-fit-height"]; color=(clr_fit, alpha))
             lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-fit-width"]; color=(clr_fit, alpha))
