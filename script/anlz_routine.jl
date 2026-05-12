@@ -152,13 +152,14 @@ trend_sidepeak_nvlp = [
 # modes_pca_modl2d
 
 ## Overall plots
-fig_trend, axs_trend = set_axis_sidepeak!(n_dim_vars, set_panel_trend_sidepeak_nvlp!)
+fig_trend, axs_trend = set_axis_sidepeak_nvlp!(n_dim_vars, set_panel_trend_sidepeak_nvlp!, runinfo)
 for i in 1:n_istp
     trend = trend_sidepeak_nvlp[:, i]
     istp = val[3][i]
     plot_trend_all!(axs_trend, trend, istp)
     resize_to_layout!(fig_trend)
     fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.pdf", tag, istp)), f; backend=CairoMakie)
+    fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.png", tag, istp)), f; backend=CairoMakie)
 end
 fig_trend |> display
 # fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_trend.pdf", tag)), f; backend=CairoMakie)

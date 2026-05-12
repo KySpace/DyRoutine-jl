@@ -65,12 +65,12 @@ function set_axis_full(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer}, panel_s
     return fig, axs_solo, axs_stacked
 end
 
-function set_axis_sidepeak!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer}, panel_setter::Function)
+function set_axis_sidepeak_nvlp!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer}, panel_setter::Function, runinfo)
     length(n_dim_vars) == 3 || throw(ArgumentError("n_dim_vars must be a 3-tuple"))
     fig = Figure()
     axs_repeats = Array{Dict}(undef, n_dim_vars[1])
     for r in 1:n_dim_vars[1]
-        fig[1, r] = Label(fig, text="repeat $r"; tellwidth=false, tellheight=false, halign=:center, valign=:bottom)
+        fig[1, r] = Label(fig, text="$(runinfo.date) $(@sprintf("run%02d", runinfo.runid)) IB=$(@sprintf("%.3f", runinfo.IB))A $(runinfo.tag_head)\nrepeat $r"; tellwidth=false, tellheight=true, halign=:center, valign=:bottom)
         print("\rbuilding axis for side peak trend for repeat $r")
         gl = GridLayout()
         fig[2, r] = gl
