@@ -145,29 +145,58 @@ function anlz_trend_from_extr(t_vec::AbstractVector{<:Real}, extr::AbstractVecto
     )
 end
 
-function plot_trend_all!(axs_trend::Dict, trend_reps::AbstractVector, istp)
+function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, is_stacked=false, to_legend=false)
     hue_theme = hue_theme_istp[istp]
     clr_mmt = Oklch(0.52, 0.14, hue_theme)
     clr_fit = (:springgreen3, 1.0)
     clr_theme1 = Oklch(0.52, 0.14, hue_theme - 20)
     clr_theme2 = Oklch(0.52, 0.14, hue_theme + 20)
+    clr_shade_selected = RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2)
+    if to_clean
+        for (k, obj) in axs
+            obj isa Axis && empty!(obj)
+        end
+        vspan!(axs["evol-weight"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
+        vspan!(axs["evol-height"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
+        vspan!(axs["evol-width"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
+        vspan!(axs["evol-wavenum"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
+        vspan!(axs["evol-sizes"], trend["t_vec_sel_nvlp"][1], trend["t_vec_sel_nvlp"][end]; color=clr_shade_selected)
+    end
+    lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-fit-weight"]; color=(clr_fit, alpha), label="fit")
+    lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-fit-height"]; color=(clr_fit, alpha), label="fit")
+    lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-fit-width"]; color=(clr_fit, alpha), label="fit")
+    lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-fit-wavenum"]; color=(clr_fit, alpha), label="fit")
+    lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-moment-weight"]; color=(clr_mmt, alpha), label="moment")
+    lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-moment-height"]; color=(clr_mmt, alpha), label="moment")
+    lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-moment-width"]; color=(clr_mmt, alpha), label="moment")
+    lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
+    lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-x"]; color=(clr_theme1, alpha), label="fit")
+    lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-y"]; color=(clr_theme2, alpha), label="fit")
+    lines!(axs["freq-weight"], trend["freq_query"], trend["freq-sel-fit-weight"]; color=(clr_fit, alpha), label="fit")
+    lines!(axs["freq-height"], trend["freq_query"], trend["freq-sel-fit-height"]; color=(clr_fit, alpha), label="fit")
+    lines!(axs["freq-width"], trend["freq_query"], trend["freq-sel-fit-width"]; color=(clr_fit, alpha), label="fit")
+    lines!(axs["freq-wavenum"], trend["freq_query"], trend["freq-sel-fit-wavenum"]; color=(clr_fit, alpha), label="fit")
+    lines!(axs["freq-weight"], trend["freq_query"], trend["freq-sel-moment-weight"]; color=(clr_mmt, alpha), label="moment")
+    lines!(axs["freq-height"], trend["freq_query"], trend["freq-sel-moment-height"]; color=(clr_mmt, alpha), label="moment")
+    lines!(axs["freq-width"], trend["freq_query"], trend["freq-sel-moment-width"]; color=(clr_mmt, alpha), label="moment")
+    lines!(axs["freq-wavenum"], trend["freq_query"], trend["freq-sel-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
+    lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-x"]; color=(clr_theme1, alpha), label="fit size x")
+    lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-y"]; color=(clr_theme2, alpha), label="fit size y")
+    if to_legend
+        axislegend(axs["freq-weight"]; position=:lt, framevisible=false, labelsize=14)
+        axislegend(axs["freq-sizes"]; position=:lt, framevisible=false, labelsize=14)
+    end
+end
+
+function plot_trend_all!(axs_trend::Dict, trend_reps::AbstractVector, trend_stacked_over_rep::Dict, istp)
     for r = axes(trend_reps, 1)
         trend = trend_reps[r]
         # plot on both the individual reps and all reps combined
         for (a, axs) in enumerate([axs_trend["repeats"][r], axs_trend["all"]])
-            alpha = a == 1 ? 1.0 : 0.5
-            clr_shade_selected = RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2)
+            alpha = a == 1 ? 1.0 : 0.3
             # shade the selected time points on all reps combined only once
-            if r == 1 || a == 1
-                for (k, obj) in axs
-                    obj isa Axis && empty!(obj)
-                end
-                vspan!(axs["evol-weight"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
-                vspan!(axs["evol-height"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
-                vspan!(axs["evol-width"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
-                vspan!(axs["evol-wavenum"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
-                vspan!(axs["evol-sizes"], trend["t_vec_sel_nvlp"][1], trend["t_vec_sel_nvlp"][end]; color=clr_shade_selected)
-            end
+            to_clean = r == 1 || a == 1
+            to_legend = a == 1
             for ax in [axs["evol-weight"], axs["evol-height"], axs["evol-width"], axs["evol-wavenum"], axs["evol-sizes"]]
                 ax.xticks = 0:50:200
                 ax.xminorticksvisible = true
@@ -180,30 +209,10 @@ function plot_trend_all!(axs_trend::Dict, trend_reps::AbstractVector, istp)
                 ax.xminorgridvisible = true
                 ax.xminorticks = IntervalsBetween(2)
             end
-            lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-fit-weight"]; color=(clr_fit, alpha), label="fit")
-            lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-fit-height"]; color=(clr_fit, alpha), label="fit")
-            lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-fit-width"]; color=(clr_fit, alpha), label="fit")
-            lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-fit-wavenum"]; color=(clr_fit, alpha), label="fit")
-            lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-moment-weight"]; color=(clr_mmt, alpha), label="moment")
-            lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-moment-height"]; color=(clr_mmt, alpha), label="moment")
-            lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-moment-width"]; color=(clr_mmt, alpha), label="moment")
-            lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
-            lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-x"]; color=(clr_theme1, alpha), label="fit")
-            lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-y"]; color=(clr_theme2, alpha), label="fit")
-            lines!(axs["freq-weight"], trend["freq_query"], trend["freq-sel-fit-weight"]; color=(clr_fit, alpha), label="fit")
-            lines!(axs["freq-height"], trend["freq_query"], trend["freq-sel-fit-height"]; color=(clr_fit, alpha), label="fit")
-            lines!(axs["freq-width"], trend["freq_query"], trend["freq-sel-fit-width"]; color=(clr_fit, alpha), label="fit")
-            lines!(axs["freq-wavenum"], trend["freq_query"], trend["freq-sel-fit-wavenum"]; color=(clr_fit, alpha), label="fit")
-            lines!(axs["freq-weight"], trend["freq_query"], trend["freq-sel-moment-weight"]; color=(clr_mmt, alpha), label="moment")
-            lines!(axs["freq-height"], trend["freq_query"], trend["freq-sel-moment-height"]; color=(clr_mmt, alpha), label="moment")
-            lines!(axs["freq-width"], trend["freq_query"], trend["freq-sel-moment-width"]; color=(clr_mmt, alpha), label="moment")
-            lines!(axs["freq-wavenum"], trend["freq_query"], trend["freq-sel-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
-            lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-x"]; color=(clr_theme1, alpha), label="fit size x")
-            lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-y"]; color=(clr_theme2, alpha), label="fit size y")
-            if a == 1
-                axislegend(axs["freq-weight"]; position=:lt, framevisible=false, labelsize=14)
-                axislegend(axs["freq-sizes"]; position=:lt, framevisible=false, labelsize=14)
-            end
+            plot_trends!(axs, trend, istp; to_clean=to_clean, alpha=alpha, to_legend=to_legend)
         end
+        # plot on the stacked axes
+        axs = axs_trend["stacked"]
+        plot_trends!(axs, trend_stacked_over_rep, istp; to_clean=true, alpha=1.0, to_legend=true)
     end
 end

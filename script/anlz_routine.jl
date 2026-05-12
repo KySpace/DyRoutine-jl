@@ -137,6 +137,11 @@ trend_sidepeak_nvlp = [
     extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak=t -> 25 .< t .< 75, selector_t_envelope=t -> 0 .< t .< 75)
     for r in axes(extr_fmt, 1), i in axes(extr_fmt, 3)
 ]
+
+trend_stacked_over_rep = [
+    extr_stacked_over_rep[:, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak=t -> 25 .< t .< 75, selector_t_envelope=t -> 0 .< t .< 75)
+    for i in axes(extr_fmt, 3)
+]
 ##  saving data, still problematic
 
 # @save joinpath(path_output, @sprintf("%s_data.jld2", tag))
@@ -155,8 +160,9 @@ trend_sidepeak_nvlp = [
 fig_trend, axs_trend = set_axis_sidepeak_nvlp!(n_dim_vars, set_panel_trend_sidepeak_nvlp!, runinfo)
 for i in 1:n_istp
     trend = trend_sidepeak_nvlp[:, i]
+    trend_stacked = trend_stacked_over_rep[i]
     istp = val[3][i]
-    plot_trend_all!(axs_trend, trend, istp)
+    plot_trend_all!(axs_trend, trend, trend_stacked, istp)
     resize_to_layout!(fig_trend)
     fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.pdf", tag, istp)), f; backend=CairoMakie)
     fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.png", tag, istp)), f; backend=CairoMakie)
