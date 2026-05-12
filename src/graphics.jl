@@ -70,17 +70,20 @@ function set_axis_sidepeak!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer}, pa
     fig = Figure()
     axs_repeats = Array{Dict}(undef, n_dim_vars[1])
     for r in 1:n_dim_vars[1]
+        fig[1, r] = Label(fig, text="repeat $r"; tellwidth=false, tellheight=false, halign=:center, valign=:bottom)
         print("\rbuilding axis for side peak trend for repeat $r")
         gl = GridLayout()
-        fig[1, r] = gl
+        fig[2, r] = gl
         axs_repeats[r] = panel_setter(gl, r)
     end
-    fig[1, n_dim_vars[1]+1] |> Box
+    fig[2, n_dim_vars[1]+1] |> Box
     gl = GridLayout()
-    fig[1, n_dim_vars[1]+2] = gl
+    fig[1, n_dim_vars[1]+2] = Label(fig, text="Processed after stacked"; tellwidth=false, tellheight=false, halign=:center, valign=:bottom)
+    fig[2, n_dim_vars[1]+2] = gl
     axs_stacked = panel_setter(gl, 1)
     gl = GridLayout()
-    fig[1, n_dim_vars[1]+3] = gl
+    fig[1, n_dim_vars[1]+3] = Label(fig, text="Reps overlayed"; tellwidth=false, tellheight=false, halign=:center, valign=:bottom)
+    fig[2, n_dim_vars[1]+3] = gl
     axs_all = panel_setter(gl, 1)
     return fig, Dict("repeats" => axs_repeats, "stacked" => axs_stacked, "all" => axs_all)
 end
