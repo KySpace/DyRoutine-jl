@@ -159,11 +159,11 @@ function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, i
         for (k, obj) in axs
             obj isa Axis && empty!(obj)
         end
-        vspan!(axs["evol-weight"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
-        vspan!(axs["evol-height"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
-        vspan!(axs["evol-width"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
-        vspan!(axs["evol-wavenum"], trend["t_vec_sel_sp"][1], trend["t_vec_sel_sp"][end]; color=clr_shade_selected)
-        vspan!(axs["evol-sizes"], trend["t_vec_sel_nvlp"][1], trend["t_vec_sel_nvlp"][end]; color=clr_shade_selected)
+        vspan!(axs["evol-weight"], trend["t_vec_sel_sp"][1]-1, trend["t_vec_sel_sp"][end]+1; color=clr_shade_selected)
+        vspan!(axs["evol-height"], trend["t_vec_sel_sp"][1]-1, trend["t_vec_sel_sp"][end]+1; color=clr_shade_selected)
+        vspan!(axs["evol-width"], trend["t_vec_sel_sp"][1]-1, trend["t_vec_sel_sp"][end]+1; color=clr_shade_selected)
+        vspan!(axs["evol-wavenum"], trend["t_vec_sel_sp"][1]-1, trend["t_vec_sel_sp"][end]+1; color=clr_shade_selected)
+        vspan!(axs["evol-sizes"], trend["t_vec_sel_nvlp"][1]-1, trend["t_vec_sel_nvlp"][end]+1; color=clr_shade_selected)
     end
     lines!(axs["evol-dens-sum"], trend["t_vec"], trend["evol-all-dens-sum"]; color=(clr_theme, alpha), label="sum")
     lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-fit-weight"]; color=(clr_fit, alpha), label="fit")
@@ -186,11 +186,11 @@ function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, i
     lines!(axs["freq-wavenum"], trend["freq_query"], trend["freq-sel-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
     lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-x"]; color=(clr_theme1, alpha), label="fit size x")
     lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-y"]; color=(clr_theme2, alpha), label="fit size y")
-    # ylims!(axs["evol-weight"], -0, 0)
-    # ylims!(axs["evol-height"], 0, 0)
-    # ylims!(axs["evol-width"], 0, 0)
-    # ylims!(axs["evol-wavenum"], 0, 0)
-    # ylims!(axs["evol-sizes"], 0, 0)
+    ylims!(axs["evol-weight"], -0.02, 0.22)
+    ylims!(axs["evol-height"], -0.1, 1.1)
+    ylims!(axs["evol-width"], 0.02, 0.13)
+    ylims!(axs["evol-wavenum"], 0.22, 0.38)
+    ylims!(axs["evol-sizes"], 1, 11)
     if to_legend
         axislegend(axs["evol-dens-sum"]; position=:rt, framevisible=false, labelsize=14)
         axislegend(axs["freq-weight"]; position=:lt, framevisible=false, labelsize=14)
@@ -199,30 +199,34 @@ function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, i
 end
 
 function plot_trend_all!(axs_trend::Dict, trend_reps::AbstractVector, trend_stacked_over_rep::Dict, istp)
+    function set_tick_grid!(axs)
+        for ax in [axs["evol-weight"], axs["evol-height"], axs["evol-width"], axs["evol-wavenum"], axs["evol-sizes"]]
+            ax.xticks = 0:50:200
+            ax.xminorticksvisible = true
+            ax.xminorgridvisible = true
+            ax.xminorticks = IntervalsBetween(5)
+        end
+        for ax in [axs["freq-weight"], axs["freq-height"], axs["freq-width"], axs["freq-wavenum"], axs["freq-sizes"]]
+            ax.xticks = 0:10:100
+            ax.xminorticksvisible = true
+            ax.xminorgridvisible = true
+            ax.xminorticks = IntervalsBetween(2)
+        end
+    end
     for r = axes(trend_reps, 1)
         trend = trend_reps[r]
         # plot on both the individual reps and all reps combined
         for (a, axs) in enumerate([axs_trend["repeats"][r], axs_trend["all"]])
-            alpha = a == 1 ? 1.0 : 0.3
+            alpha = a == 1 ? 1.0 : 0.5
             # shade the selected time points on all reps combined only once
             to_clean = r == 1 || a == 1
             to_legend = a == 1
-            for ax in [axs["evol-weight"], axs["evol-height"], axs["evol-width"], axs["evol-wavenum"], axs["evol-sizes"]]
-                ax.xticks = 0:50:200
-                ax.xminorticksvisible = true
-                ax.xminorgridvisible = true
-                ax.xminorticks = IntervalsBetween(5)
-            end
-            for ax in [axs["freq-weight"], axs["freq-height"], axs["freq-width"], axs["freq-wavenum"], axs["freq-sizes"]]
-                ax.xticks = 0:10:100
-                ax.xminorticksvisible = true
-                ax.xminorgridvisible = true
-                ax.xminorticks = IntervalsBetween(2)
-            end
+            axs |> set_tick_grid!
             plot_trends!(axs, trend, istp; to_clean=to_clean, alpha=alpha, to_legend=to_legend)
         end
-        # plot on the stacked axes
-        axs = axs_trend["stacked"]
-        plot_trends!(axs, trend_stacked_over_rep, istp; to_clean=true, alpha=1.0, to_legend=true)
     end
+     # plot on the stacked axes
+    axs = axs_trend["stacked"]
+    plot_trends!(axs, trend_stacked_over_rep, istp; to_clean=true, alpha=1.0, to_legend=true)
+    axs |> set_tick_grid!
 end

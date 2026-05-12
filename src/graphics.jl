@@ -78,6 +78,7 @@ function set_axis_sidepeak_nvlp!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer
         axs_repeats[r] = panel_setter(gl, r)
     end
     fig[2, n_dim_vars[1]+1] |> Box
+    colsize!(fig.layout, n_dim_vars[1]+1, Fixed(2))
     gl = GridLayout()
     fig[1, n_dim_vars[1]+2] = Label(fig, text="Processed after stacked"; tellwidth=false, tellheight=false, halign=:center, valign=:bottom)
     fig[2, n_dim_vars[1]+2] = gl
