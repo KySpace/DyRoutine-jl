@@ -49,14 +49,14 @@ function set_axis_full(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer}, panel_s
     axs_solo = Array{Dict}(undef, n_dim_vars)
     axs_stacked = Array{Dict}(undef, n_dim_vars[2:end])
     for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
-        print("\rbuilding solo axis for rep $r, $t")
+        print("\r\033[2Kbuilding solo axis for rep $r, $t")
         gl = GridLayout()
         # fig[1, 1][t, (r-1)*n_dim_vars[3]+i] = gl
         fig[1, 3*(i-1)+1][t, r] = gl
         axs_solo[r, t, i] = panel_setter(gl)
     end
     for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
-        print("\rbuilding stack axis for $t")
+        print("\r\033[2Kbuilding stack axis for $t")
         gl = GridLayout()
         fig[1, 3*(i-1)+2][t, 1] = gl
         axs_stacked[t, i] = panel_setter(gl)
@@ -72,13 +72,13 @@ function set_axis_sidepeak_nvlp!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer
     fig[0, 1] = Label(fig, text="$(runinfo.date) $(@sprintf("run%02d", runinfo.runid)) IB=$(@sprintf("%.3f", runinfo.IB))A $(runinfo.tag_head)"; tellwidth=false, tellheight=true, halign=:left, valign=:top)
     for r in 1:n_dim_vars[1]
         fig[1, r] = Label(fig, text="repeat $r"; tellwidth=false, tellheight=true, halign=:center, valign=:bottom)
-        print("\rbuilding axis for side peak trend for repeat $r")
+        print("\r\033[2K\rbuilding axis for side peak trend for repeat $r")
         gl = GridLayout()
         fig[2, r] = gl
         axs_repeats[r] = panel_setter(gl, r)
     end
     fig[2, n_dim_vars[1]+1] |> Box
-    colsize!(fig.layout, n_dim_vars[1]+1, Fixed(2))
+    colsize!(fig.layout, n_dim_vars[1] + 1, Fixed(2))
     gl = GridLayout()
     fig[1, n_dim_vars[1]+2] = Label(fig, text="Processed after stacked"; tellwidth=false, tellheight=false, halign=:center, valign=:bottom)
     fig[2, n_dim_vars[1]+2] = gl

@@ -15,10 +15,11 @@ info_fmt = [Dict("istp" => val[3][i], "t_hold" => val[2][t], "repeat" => val[1][
 fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_essn_2d!)
 for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
     info = info_fmt[r, t, i]
-    print("\rplotting for rep $i, $(info["t_hold"]) ms, $(info["istp"])")
+    print("\r\033[2Kplotting for rep $i, $(info["t_hold"]) ms, $(info["istp"])")
     draw_solo_essn_2d!(axs_solo[r, t, i], essn_2d_fmt[r, t, i], info)
     draw_solo_essn_2d!(axs_live, essn_2d_fmt[r, t, i], info)
 end
+println("Full table drawn.")
 resize_to_layout!(fig_full)
 
 fig_full |> f -> save(joinpath(@__DIR__, "full_essn.pdf"), f; backend=CairoMakie)
