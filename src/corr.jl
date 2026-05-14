@@ -147,7 +147,7 @@ function anlz_trend_from_extr(t_vec::AbstractVector{<:Real}, extr::AbstractVecto
     )
 end
 
-function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, is_stacked=false, to_legend=false)
+function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, is_stacked=false, to_legend=false, to_overlay=false)
     hue_theme = hue_theme_istp[istp]
     clr_mmt = Oklch(0.52, 0.14, hue_theme)
     clr_fit = (:springgreen3, 1.0)
@@ -174,6 +174,17 @@ function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, i
     lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-moment-height"]; color=(clr_mmt, alpha), label="moment")
     lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-moment-width"]; color=(clr_mmt, alpha), label="moment")
     lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
+    if to_overlay
+        lines!(axs["evol-extra-weight"], trend["t_vec"], trend["evol-all-moment-weight"]; color=(clr_mmt, alpha), label="moment")
+        lines!(axs["evol-extra-height"], trend["t_vec"], trend["evol-all-moment-height"]; color=(clr_mmt, alpha), label="moment")
+        lines!(axs["evol-extra-width"], trend["t_vec"], trend["evol-all-moment-width"]; color=(clr_mmt, alpha), label="moment")
+        lines!(axs["evol-extra-wavenum"], trend["t_vec"], trend["evol-all-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
+    else
+        lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-moment-weight"]; color=(clr_mmt, alpha), label="moment")
+        lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-moment-height"]; color=(clr_mmt, alpha), label="moment")
+        lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-moment-width"]; color=(clr_mmt, alpha), label="moment")
+        lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
+    end
     lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-x"]; color=(clr_theme1, alpha), label="fit")
     lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-y"]; color=(clr_theme2, alpha), label="fit")
     lines!(axs["freq-weight"], trend["freq_query"], trend["freq-sel-fit-weight"]; color=(clr_fit, alpha), label="fit")
@@ -221,8 +232,9 @@ function plot_trend_all!(axs_trend::Dict, trend_reps::AbstractVector, trend_stac
             # shade the selected time points on all reps combined only once
             to_clean = r == 1 || a == 1
             to_legend = a == 1
+            to_overlay = a > 1
             axs |> set_tick_grid!
-            plot_trends!(axs, trend, istp; to_clean=to_clean, alpha=alpha, to_legend=to_legend)
+            plot_trends!(axs, trend, istp; to_clean, alpha, to_legend, to_overlay)
         end
     end
     # plot on the stacked axes

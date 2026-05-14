@@ -1,3 +1,4 @@
+using CairoMakie: extract_attributes!
 using CairoMakie, GLMakie
 using Colors: Oklch
 using LaTeXStrings
@@ -77,6 +78,7 @@ function set_axis_sidepeak_nvlp!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer
         fig[2, r] = gl
         axs_repeats[r] = panel_setter(gl, r)
     end
+    println("\r\033[2K\raxes built for trends.")
     fig[2, n_dim_vars[1]+1] |> Box
     colsize!(fig.layout, n_dim_vars[1] + 1, Fixed(2))
     gl = GridLayout()
@@ -86,7 +88,7 @@ function set_axis_sidepeak_nvlp!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer
     gl = GridLayout()
     fig[1, n_dim_vars[1]+3] = Label(fig, text="Reps overlayed"; tellwidth=false, tellheight=false, halign=:center, valign=:bottom)
     fig[2, n_dim_vars[1]+3] = gl
-    axs_all = panel_setter(gl, 1)
+    axs_all = panel_setter(gl, 1; extra=true)
     return fig, Dict("repeats" => axs_repeats, "stacked" => axs_stacked, "all" => axs_all)
 end
 
@@ -177,20 +179,27 @@ function set_panel_pca_solo!(gl::GridLayout)
     return Dict("mode" => ax_mode, "evol" => ax_evol, "freq" => ax_freq)
 end
 
-function set_panel_trend_sidepeak_nvlp!(gl::GridLayout, col::Int)
+function set_panel_trend_sidepeak_nvlp!(gl::GridLayout, col::Int; extra=false)
     gl |> clean_gridlayout!
     w, h = (400, 200)
+    col_freq = extra ? 3 : 2
     ax_evol_sum_dens = Axis(gl[1, 1]; width=w, height=h, ylabel="density sum")
     ax_evol_weight = Axis(gl[2, 1]; width=w, height=h, ylabel="side peak \nweight")
     ax_evol_height = Axis(gl[3, 1]; width=w, height=h, ylabel="side peak \nheight")
     ax_evol_width = Axis(gl[4, 1]; width=w, height=h, ylabel="side peak \nwidth (μm⁻¹)")
     ax_evol_wavenum = Axis(gl[5, 1]; width=w, height=h, ylabel="side peak \nwavenum (μm⁻¹)")
     ax_evol_sizes = Axis(gl[6, 1]; width=w, height=h, ylabel="envelope size (μm)")
-    ax_freq_weight = Axis(gl[2, 2]; width=w, height=h)
-    ax_freq_height = Axis(gl[3, 2]; width=w, height=h)
-    ax_freq_width = Axis(gl[4, 2]; width=w, height=h)
-    ax_freq_wavenum = Axis(gl[5, 2]; width=w, height=h)
-    ax_freq_sizes = Axis(gl[6, 2]; width=w, height=h)
+    if extra
+        ax_evol_extra_weight = Axis(gl[2, 1]; width=w, height=h, ylabel="side peak \nweight")
+        ax_evol_extra_height = Axis(gl[3, 1]; width=w, height=h, ylabel="side peak \nheight")
+        ax_evol_extra_width = Axis(gl[4, 1]; width=w, height=h, ylabel="side peak \nwidth (μm⁻¹)")
+        ax_evol_extra_wavenum = Axis(gl[5, 1]; width=w, height=h, ylabel="side peak \nwavenum (μm⁻¹)")
+    end
+    ax_freq_weight = Axis(gl[2, col_freq]; width=w, height=h)
+    ax_freq_height = Axis(gl[3, col_freq]; width=w, height=h)
+    ax_freq_width = Axis(gl[4, col_freq]; width=w, height=h)
+    ax_freq_wavenum = Axis(gl[5, col_freq]; width=w, height=h)
+    ax_freq_sizes = Axis(gl[6, col_freq]; width=w, height=h)
     rowgap!(gl, 4)
     rowgap!(gl, 4)
     dict_axs = Dict(
@@ -206,6 +215,12 @@ function set_panel_trend_sidepeak_nvlp!(gl::GridLayout, col::Int)
         "freq-wavenum" => ax_freq_wavenum,
         "freq-sizes" => ax_freq_sizes,
     )
+    if extra
+        dict_axs["evol-extra-weight"] = ax_evol_extra_weight
+        dict_axs["evol-extra-height"] = ax_evol_extra_height
+        dict_axs["evol-extra-width"] = ax_evol_extra_width
+        dict_axs["evol-extra-wavenum"] = ax_evol_extra_wavenum
+    end
     for ax in values(dict_axs)
         hideydecorations!(ax; label=true, ticklabels=false, ticks=false, grid=false, minorticks=false, minorgrid=false)
         hidexdecorations!(ax; label=true, ticklabels=true, ticks=false, grid=false, minorticks=false, minorgrid=false)
@@ -219,6 +234,11 @@ function set_panel_trend_sidepeak_nvlp!(gl::GridLayout, col::Int)
     ax_freq_sizes.xlabelvisible = true
     ax_evol_sizes.xlabel = "t hold (ms)"
     ax_freq_sizes.xlabel = "freq (Hz)"
+    if extra
+        ax_evol_extra_sizes.xticklabelsvisible = true
+        ax_evol_extra_sizes.xlabelvisible = true
+        ax_evol_extra_sizes.xlabel = "t hold (ms)"
+    end
     return dict_axs
 end
 
