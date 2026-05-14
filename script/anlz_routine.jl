@@ -77,16 +77,16 @@ dens_full_fmt = dens |>
                             ds -> permutedims(ds, (3, 2, 1, 4, 5))
 
 # A lite version for tests
-rng_lite = 1:50;
-val = (
-    collect(1:3),
-    collect(6:2:200)[rng_lite],
-    ["162", "164"],
-)
-n_variation = length(val[1]) * length(val[2]) * length(val[3])
-n_dim_vars = map(length, val);
-n_rep, n_main, n_istp = n_dim_vars
-dens_full_fmt = dens_full_fmt[:, rng_lite, :, :, :]
+# rng_lite = 1:50;
+# val = (
+#     collect(1:3),
+#     collect(6:2:200)[rng_lite],
+#     ["162", "164"],
+# )
+# n_variation = length(val[1]) * length(val[2]) * length(val[3])
+# n_dim_vars = map(length, val);
+# n_rep, n_main, n_istp = n_dim_vars
+# dens_full_fmt = dens_full_fmt[:, rng_lite, :, :, :]
 
 # Statistics on number sum
 # num_fmt = dens_full_fmt |> ds -> mapslices(calc_dens_sum, ds; dims=(4, 5)) |> n -> dropdims(n; dims=(4, 5));
@@ -134,13 +134,15 @@ modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
     d -> d
 modes_pca_modl2d = [modl2d_side[:, :, i] |> m -> fit_pca_modes(8, m) for i in 1:n_istp]
 
+selector_t_sidepeak = t -> 30 .< t .< 100
+selector_t_envelope = t -> 30 .< t .< 100
 trend_sidepeak_nvlp = [
-    extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak=t -> 30 .< t .< 80, selector_t_envelope=t -> 0 .< t .< 80)
+    extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak, selector_t_envelope)
     for r in axes(extr_fmt, 1), i in axes(extr_fmt, 3)
 ]
 
 trend_stacked_over_rep = [
-    extr_stacked_over_rep[:, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak=t -> 30 .< t .< 80, selector_t_envelope=t -> 0 .< t .< 80)
+    extr_stacked_over_rep[:, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak, selector_t_envelope)
     for i in axes(extr_fmt, 3)
 ]
 ##  saving data, still problematic
@@ -184,22 +186,22 @@ fig_pca |> f -> save(joinpath(path_output, @sprintf("%s_pca.pdf", tag)), f; back
 ## Large file generation for all shots
 
 # fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_essn_2d!)
-fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_modl!)
-for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
-    info = info_fmt[r, t, i]
-    print("\r\033[2Kplotting for rep $r, $(info["t_hold"]) ms, $(info["istp"])")
-    draw_solo_modl!(axs_solo[r, t, i], extr_fmt[r, t, i], info)
-    # draw_solo_modl!(axs_live, extr_fmt[r, t, i], info)
-end
-println("Full axes ready: dimensions $(n_dim_vars)")
-for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
-    info = info_fmt[1, t, i] |> d -> merge(d, Dict("repeat" => "stacked"))
-    print("\r\033[2Kplotting for stacked $(info["t_hold"]) ms, $(info["istp"])")
-    draw_solo_modl!(axs_stacked[t, i], extr_stacked_over_rep[t, i], info)
-    # draw_solo_modl!(axs_live, extr_stacked_over_rep[t, i], info)
-end
-println("Full modulation table drawn.")
-resize_to_layout!(fig_full)
+# fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_modl!)
+# for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+#     info = info_fmt[r, t, i]
+#     print("\r\033[2Kplotting for rep $r, $(info["t_hold"]) ms, $(info["istp"])")
+#     draw_solo_modl!(axs_solo[r, t, i], extr_fmt[r, t, i], info)
+#     # draw_solo_modl!(axs_live, extr_fmt[r, t, i], info)
+# end
+# println("Full axes ready: dimensions $(n_dim_vars)")
+# for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+#     info = info_fmt[1, t, i] |> d -> merge(d, Dict("repeat" => "stacked"))
+#     print("\r\033[2Kplotting for stacked $(info["t_hold"]) ms, $(info["istp"])")
+#     draw_solo_modl!(axs_stacked[t, i], extr_stacked_over_rep[t, i], info)
+#     # draw_solo_modl!(axs_live, extr_stacked_over_rep[t, i], info)
+# end
+# println("Full modulation table drawn.")
+# resize_to_layout!(fig_full)
 
-fig_full |> f -> save(joinpath(path_output, @sprintf("%s_essn_table.pdf", tag)), f; backend=CairoMakie)
-println("Full modulation plot saved.")
+# fig_full |> f -> save(joinpath(path_output, @sprintf("%s_essn_table.pdf", tag)), f; backend=CairoMakie)
+# println("Full modulation plot saved.")

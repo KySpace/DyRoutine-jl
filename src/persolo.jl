@@ -377,8 +377,8 @@ function fit_prfl_modl_twinpeak_1d(coor, prfl, mask)
         @. M * exp(-k^2 / (2 * σ0^2))
     end
     p_init = [3.0, 0.1, 0.5, 0.05, 0.3]
-    p_upper = [Inf, 0.30, 2.0, 0.100, 0.37]
-    p_lower = [2.0, 0.02, 0.0, 0.018, 0.23]
+    p_upper = [Inf, 0.30, 2.0, 0.200, 0.37]
+    p_lower = [2.0, 0.05, 0.0, 0.018, 0.23]
     fit = curve_fit(model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
     params_fit = coef(fit)
     fitfn_main(k) = model_main(k, params_fit)

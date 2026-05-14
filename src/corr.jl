@@ -159,11 +159,11 @@ function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, i
         for (k, obj) in axs
             obj isa Axis && empty!(obj)
         end
-        vspan!(axs["evol-weight"], trend["t_vec_sel_sp"][1]-1, trend["t_vec_sel_sp"][end]+1; color=clr_shade_selected)
-        vspan!(axs["evol-height"], trend["t_vec_sel_sp"][1]-1, trend["t_vec_sel_sp"][end]+1; color=clr_shade_selected)
-        vspan!(axs["evol-width"], trend["t_vec_sel_sp"][1]-1, trend["t_vec_sel_sp"][end]+1; color=clr_shade_selected)
-        vspan!(axs["evol-wavenum"], trend["t_vec_sel_sp"][1]-1, trend["t_vec_sel_sp"][end]+1; color=clr_shade_selected)
-        vspan!(axs["evol-sizes"], trend["t_vec_sel_nvlp"][1]-1, trend["t_vec_sel_nvlp"][end]+1; color=clr_shade_selected)
+        vspan!(axs["evol-weight"], trend["t_vec_sel_sp"][1] - 1, trend["t_vec_sel_sp"][end] + 1; color=clr_shade_selected)
+        vspan!(axs["evol-height"], trend["t_vec_sel_sp"][1] - 1, trend["t_vec_sel_sp"][end] + 1; color=clr_shade_selected)
+        vspan!(axs["evol-width"], trend["t_vec_sel_sp"][1] - 1, trend["t_vec_sel_sp"][end] + 1; color=clr_shade_selected)
+        vspan!(axs["evol-wavenum"], trend["t_vec_sel_sp"][1] - 1, trend["t_vec_sel_sp"][end] + 1; color=clr_shade_selected)
+        vspan!(axs["evol-sizes"], trend["t_vec_sel_nvlp"][1] - 1, trend["t_vec_sel_nvlp"][end] + 1; color=clr_shade_selected)
     end
     lines!(axs["evol-dens-sum"], trend["t_vec"], trend["evol-all-dens-sum"]; color=(clr_theme, alpha), label="sum")
     lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-fit-weight"]; color=(clr_fit, alpha), label="fit")
@@ -188,7 +188,7 @@ function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, i
     lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-y"]; color=(clr_theme2, alpha), label="fit size y")
     ylims!(axs["evol-weight"], -0.02, 0.22)
     ylims!(axs["evol-height"], -0.1, 1.1)
-    ylims!(axs["evol-width"], 0.02, 0.13)
+    ylims!(axs["evol-width"], 0.02, 0.205)
     ylims!(axs["evol-wavenum"], 0.22, 0.38)
     ylims!(axs["evol-sizes"], 1, 11)
     if to_legend
@@ -225,7 +225,7 @@ function plot_trend_all!(axs_trend::Dict, trend_reps::AbstractVector, trend_stac
             plot_trends!(axs, trend, istp; to_clean=to_clean, alpha=alpha, to_legend=to_legend)
         end
     end
-     # plot on the stacked axes
+    # plot on the stacked axes
     axs = axs_trend["stacked"]
     plot_trends!(axs, trend_stacked_over_rep, istp; to_clean=true, alpha=1.0, to_legend=true)
     axs |> set_tick_grid!

@@ -25,9 +25,9 @@ runinfos = [
     (date="0325", runid=51, IB=5.333, tag_head="CFNM"),
     (date="0325", runid=79, IB=5.336, tag_head="CFNM"),
     (date="0325", runid=53, IB=5.338, tag_head="CFNM"),
-][5:5]
+]
 
-title_anlz = "[05.14].42.CorrectedTailFit"
+title_anlz = "[05.14].45.Corr.[smw=5]"
 for runinfo_iter in runinfos
     global runinfo = runinfo_iter
     include(joinpath(@__DIR__, "..", "script", "anlz_routine.jl"))
