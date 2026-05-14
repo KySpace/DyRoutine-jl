@@ -305,7 +305,14 @@ end
 
 function fit_prfl_modl_twinpeak_decay_1d(coor, prfl, mask)
     # parameters: [MainPeak.Height MainPeak.Width SidePeak.Height SidePeak.Width SidePeak.Pos Decay.Height Decay.Length]
-    model(k, p) = p[1] .* exp.(-k .^ 2 ./ (2 .* p[2] .^ 2)) .+ p[3] .* exp.(-(k .- p[5]) .^ 2 ./ (2 .* p[4] .^ 2)) .+ p[6] .* exp.(-abs.(k) ./ p[7])
+    model(k, params) = begin
+        M, σ0, P, σ, p, D, λ = params
+        @. M * exp(-k^2 / (2 * σ0^2)) + P * exp(-(k - p)^2 / (2 * σ^2)) + D * exp(-abs(k) / λ)
+    end
+    model_tail(k, params) = begin
+        M, σ0, P, σ, p, D, λ = params
+        @. D * exp(-abs(k) / λ)
+    end
     p_init = [3.0, 0.1, 0.5, 0.05, 0.3, 0.5, 0.8]
     p_upper = [Inf, 0.30, 2.0, 0.100, 0.37, Inf, 5.0]
     p_lower = [2.0, 0.02, 0.0, 0.018, 0.23, 0.0, 0.5]
@@ -316,7 +323,7 @@ function fit_prfl_modl_twinpeak_decay_1d(coor, prfl, mask)
         "fit" => fit,
         "model" => model,
         "params" => params_fit,
-        "tail" => k -> params_fit[6] .* exp.(-abs.(k) ./ params_fit[7]),
+        "tail" => k -> model_tail(k, params_fit),
         "rss_rel" => rss_rel,
     )
 end
@@ -361,13 +368,20 @@ end
 
 function fit_prfl_modl_twinpeak_1d(coor, prfl, mask)
     # parameters: [MainPeak.Height MainPeak.Width SidePeak.Height SidePeak.Width SidePeak.Pos]
-    model(k, p) = @. p[1] * exp(-k^2 / (2 * p[2]^2)) + p[3] * exp(-(k - p[5])^2 / (2 * p[4]^2))
+    model(k, params) = begin
+        M, σ0, P, σ, p = params
+        @. M * exp(-k^2 / (2 * σ0^2)) + P * exp(-(k - p)^2 / (2 * σ^2))
+    end
+    model_main(k, params) = begin
+        M, σ0, P, σ, p = params
+        @. M * exp(-k^2 / (2 * σ0^2))
+    end
     p_init = [3.0, 0.1, 0.5, 0.05, 0.3]
     p_upper = [Inf, 0.30, 2.0, 0.100, 0.37]
     p_lower = [2.0, 0.02, 0.0, 0.018, 0.23]
     fit = curve_fit(model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
     params_fit = coef(fit)
-    fitfn_main(k) = params_fit |> p -> (@. p[1] * exp(-k^2 / (2 * p[2]^2)))
+    fitfn_main(k) = model_main(k, params_fit)
     fitfn(k) = model(k, params_fit)
     rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (prfl[mask] |> d -> sqrt(sum(abs2, d)))
     return Dict(
