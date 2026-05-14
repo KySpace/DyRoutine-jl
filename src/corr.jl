@@ -170,10 +170,6 @@ function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, i
     lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-fit-height"]; color=(clr_fit, alpha), label="fit")
     lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-fit-width"]; color=(clr_fit, alpha), label="fit")
     lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-fit-wavenum"]; color=(clr_fit, alpha), label="fit")
-    lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-moment-weight"]; color=(clr_mmt, alpha), label="moment")
-    lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-moment-height"]; color=(clr_mmt, alpha), label="moment")
-    lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-moment-width"]; color=(clr_mmt, alpha), label="moment")
-    lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
     if to_overlay
         lines!(axs["evol-extra-weight"], trend["t_vec"], trend["evol-all-moment-weight"]; color=(clr_mmt, alpha), label="moment")
         lines!(axs["evol-extra-height"], trend["t_vec"], trend["evol-all-moment-height"]; color=(clr_mmt, alpha), label="moment")
@@ -206,6 +202,12 @@ function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, i
         axislegend(axs["evol-dens-sum"]; position=:rt, framevisible=false, labelsize=14)
         axislegend(axs["freq-weight"]; position=:lt, framevisible=false, labelsize=14)
         axislegend(axs["freq-sizes"]; position=:lt, framevisible=false, labelsize=14)
+    end
+    if to_overlay
+        ylims!(axs["evol-extra-weight"], -0.02, 0.22)
+        ylims!(axs["evol-extra-height"], -0.1, 1.1)
+        ylims!(axs["evol-extra-width"], 0.02, 0.205)
+        ylims!(axs["evol-extra-wavenum"], 0.22, 0.38)
     end
 end
 
