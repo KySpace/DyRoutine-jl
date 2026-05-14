@@ -234,11 +234,6 @@ function set_panel_trend_sidepeak_nvlp!(gl::GridLayout, col::Int; extra=false)
     ax_freq_sizes.xlabelvisible = true
     ax_evol_sizes.xlabel = "t hold (ms)"
     ax_freq_sizes.xlabel = "freq (Hz)"
-    if extra
-        ax_evol_extra_sizes.xticklabelsvisible = true
-        ax_evol_extra_sizes.xlabelvisible = true
-        ax_evol_extra_sizes.xlabel = "t hold (ms)"
-    end
     return dict_axs
 end
 
