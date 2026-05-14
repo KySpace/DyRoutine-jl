@@ -134,12 +134,12 @@ modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
 modes_pca_modl2d = [modl2d_side[:, :, i] |> m -> fit_pca_modes(8, m) for i in 1:n_istp]
 
 trend_sidepeak_nvlp = [
-    extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak=t -> 25 .< t .< 75, selector_t_envelope=t -> 0 .< t .< 75)
+    extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak=t -> 30 .< t .< 80, selector_t_envelope=t -> 0 .< t .< 80)
     for r in axes(extr_fmt, 1), i in axes(extr_fmt, 3)
 ]
 
 trend_stacked_over_rep = [
-    extr_stacked_over_rep[:, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak=t -> 25 .< t .< 75, selector_t_envelope=t -> 0 .< t .< 75)
+    extr_stacked_over_rep[:, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak=t -> 30 .< t .< 80, selector_t_envelope=t -> 0 .< t .< 80)
     for i in axes(extr_fmt, 3)
 ]
 ##  saving data, still problematic
@@ -157,44 +157,44 @@ trend_stacked_over_rep = [
 # modes_pca_modl2d
 
 ## Overall plots
-fig_trend, axs_trend = set_axis_sidepeak_nvlp!(n_dim_vars, set_panel_trend_sidepeak_nvlp!, runinfo)
-for i in 1:n_istp
-    trend = trend_sidepeak_nvlp[:, i]
-    trend_stacked = trend_stacked_over_rep[i]
-    istp = val[3][i]
-    plot_trend_all!(axs_trend, trend, trend_stacked, istp)
-    resize_to_layout!(fig_trend)
-    fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.pdf", tag, istp)), f; backend=CairoMakie)
-    fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.png", tag, istp)), f; backend=CairoMakie)
-end
-fig_trend |> display
+# fig_trend, axs_trend = set_axis_sidepeak_nvlp!(n_dim_vars, set_panel_trend_sidepeak_nvlp!, runinfo)
+# for i in 1:n_istp
+#     trend = trend_sidepeak_nvlp[:, i]
+#     trend_stacked = trend_stacked_over_rep[i]
+#     istp = val[3][i]
+#     plot_trend_all!(axs_trend, trend, trend_stacked, istp)
+#     resize_to_layout!(fig_trend)
+#     fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.pdf", tag, istp)), f; backend=CairoMakie)
+#     fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.png", tag, istp)), f; backend=CairoMakie)
+# end
+# fig_trend |> display
 # fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_trend.pdf", tag)), f; backend=CairoMakie)
 ##
 
-fig_pca, axs_pca = set_axis_pca_dual_4x2!()
-for idx_mode in 1:8, istp in 1:n_istp
-    plot_mode_evol_freq_solo!(axs_pca[istp, idx_mode], modes_pca_modl2d[istp][idx_mode], val[2])
-end
-resize_to_layout!(fig_pca)
-display(fig_pca)
+# fig_pca, axs_pca = set_axis_pca_dual_4x2!()
+# for idx_mode in 1:8, istp in 1:n_istp
+#     plot_mode_evol_freq_solo!(axs_pca[istp, idx_mode], modes_pca_modl2d[istp][idx_mode], val[2])
+# end
+# resize_to_layout!(fig_pca)
+# display(fig_pca)
 
 
 ## Large file generation for all shots
 
 # fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_essn_2d!)
-# fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_modl!)
-# for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
-#     info = info_fmt[r, t, i]
-#     print("\rplotting for rep $r, $(info["t_hold"]) ms, $(info["istp"])")
-#     draw_solo_modl!(axs_solo[r, t, i], extr_fmt[r, t, i], info)
-#     draw_solo_modl!(axs_live, extr_fmt[r, t, i], info)
-# end
-# for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
-#     info = info_fmt[1, t, i] |> d -> merge(d, Dict("repeat" => "stacked"))
-#     print("\rplotting for stacked $(info["t_hold"]) ms, $(info["istp"])")
-#     draw_solo_modl!(axs_stacked[t, i], extr_stacked_over_rep[t, i], info)
-#     draw_solo_modl!(axs_live, extr_stacked_over_rep[t, i], info)
-# end
-# resize_to_layout!(fig_full)
+fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_modl!)
+for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+    info = info_fmt[r, t, i]
+    print("\rplotting for rep $r, $(info["t_hold"]) ms, $(info["istp"])")
+    draw_solo_modl!(axs_solo[r, t, i], extr_fmt[r, t, i], info)
+    draw_solo_modl!(axs_live, extr_fmt[r, t, i], info)
+end
+for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+    info = info_fmt[1, t, i] |> d -> merge(d, Dict("repeat" => "stacked"))
+    print("\rplotting for stacked $(info["t_hold"]) ms, $(info["istp"])")
+    draw_solo_modl!(axs_stacked[t, i], extr_stacked_over_rep[t, i], info)
+    draw_solo_modl!(axs_live, extr_stacked_over_rep[t, i], info)
+end
+resize_to_layout!(fig_full)
 
-# fig_full |> f -> save(joinpath(path_output, @sprintf("%s_essn_table.pdf", tag)), f; backend=CairoMakie)
+fig_full |> f -> save(joinpath(path_output, @sprintf("%s_essn_table.pdf", tag)), f; backend=CairoMakie)
