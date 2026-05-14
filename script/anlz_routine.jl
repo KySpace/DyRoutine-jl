@@ -114,7 +114,7 @@ essn_stacked_over_rep_t = [
 ]
 fit_prfl_modl_over_rep_t_1d = [
     essn_stacked_over_rep_t[istp] |>
-    e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl_norm_px, (y_modl .> 0.02) .& (y_modl .< 0.2))
+    e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl_norm_px, (y_modl .> 0.02))
     for istp in axes(essn_stacked_over_rep_t, 1)
 ]
 extr_fmt = [
