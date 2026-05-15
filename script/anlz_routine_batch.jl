@@ -28,6 +28,15 @@ runinfos = [
     (date="0325", runid=51, IB=5.333, tag_head="CFNM"),
     (date="0325", runid=79, IB=5.336, tag_head="CFNM"),
     (date="0325", runid=53, IB=5.338, tag_head="CFNM"),
+    (date="0322", runid=29, IB=5.314, tag_head="NTRC"),
+    (date="0322", runid=28, IB=5.316, tag_head="NTRC"),
+    (date="0322", runid=27, IB=5.318, tag_head="NTRC"),
+    (date="0322", runid=26, IB=5.322, tag_head="NTRC"),
+    (date="0322", runid=25, IB=5.326, tag_head="NTRC"),
+    (date="0323", runid=61, IB=5.332, tag_head="NTRC"),
+    (date="0323", runid=62, IB=5.336, tag_head="NTRC"),
+    (date="0323", runid=63, IB=5.340, tag_head="NTRC"),
+    (date="0323", runid=64, IB=5.343, tag_head="NTRC"),
 ]
 
 title_anlz = "[05.15].48.[20-80ms]"
