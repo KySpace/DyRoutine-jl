@@ -21,7 +21,7 @@ GLMakie.activate!()
 fig_live = Figure()
 gl = GridLayout()
 fig_live[1, 1] = gl
-axs_live = set_panel_trend_sidepeak_nvlp!(gl, 2);
+axs_live = set_panel_trend_sidepeak_nvlp!(gl, 1);
 
 info_demo = info_fmt[ids_demo...]
 extr_demo = extr_fmt[ids_demo...]
