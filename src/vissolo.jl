@@ -5,6 +5,29 @@ using CairoMakie, GLMakie
 using Colors: Oklch
 using LaTeXStrings
 
+function set_axis_full(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer}, panel_setter::Function)
+    CairoMakie.activate!()
+    CairoMakie.activate!()
+    fig = Figure()
+    length(n_dim_vars) == 3 || throw(ArgumentError("n_dim_vars must be a 3-tuple"))
+    axs_solo = Array{Dict}(undef, n_dim_vars)
+    axs_stacked = Array{Dict}(undef, n_dim_vars[2:end])
+    for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+        print("\r\033[2Kbuilding solo axis for rep $r, $t")
+        gl = GridLayout()
+        # fig[1, 1][t, (r-1)*n_dim_vars[3]+i] = gl
+        fig[1, 3*(i-1)+1][t, r] = gl
+        axs_solo[r, t, i] = panel_setter(gl)
+    end
+    for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+        print("\r\033[2Kbuilding stack axis for $t")
+        gl = GridLayout()
+        fig[1, 3*(i-1)+2][t, 1] = gl
+        axs_stacked[t, i] = panel_setter(gl)
+    end
+    colsize!(fig.layout, 3, Fixed(2))
+    return fig, axs_solo, axs_stacked
+end
 
 function set_panel_solo_essn_2d!(gl::GridLayout)
     gl |> clean_gridlayout!
