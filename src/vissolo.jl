@@ -32,8 +32,8 @@ function set_panel_solo_modl!(gl::GridLayout)
     rowsize!(gl, 1, Fixed(160))
     return Dict("dens" => ax_dens, "modl" => ax_modl, "upright" => ax_prfl_ft_upright, "sideway" => ax_prfl_ft_sideway)
 end
-function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
 
+function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     foreach(empty!, values(axs))
     essn = extr.essentials
     modl2d_norm = essn.modl2d |> m -> m ./ (sum(m) * (essn.step_modl / 2)^2)

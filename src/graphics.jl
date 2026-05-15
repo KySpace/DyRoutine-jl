@@ -10,6 +10,12 @@ function gen_clrmap_solo(hue)
     return [Oklch(1 - t, 0.24 * t, hue) |> c -> RGBAf(c) for t in range(0, 1; length=256)]
 end
 
+function clear_axes!(axs)
+    for obj in axs
+        obj isa Axis && empty!(obj)
+    end
+end
+
 function set_axis!(title::String)
     fig = Figure(
         size=(920, 620),
@@ -151,4 +157,8 @@ function draw_rotated_ellipse_corners!(
     end
     obj = lines!(ax, vtx_x, vtx_y; kwargs...)
     return obj
+end
+
+function matching_axes(dict_axes::Dict{String,Axis}, pattern)
+    return [dict_axes[k] for k in keys(dict_axes) if occursin(pattern, k)]
 end

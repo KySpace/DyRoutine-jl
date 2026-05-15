@@ -171,7 +171,6 @@ for i in 1:n_istp
     fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.png", tag, istp)), f; backend=CairoMakie)
 end
 # fig_trend |> display
-fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_trend.pdf", tag)), f; backend=CairoMakie)
 ##
 
 fig_pca, axs_pca = set_axis_pca_dual_4x2!()

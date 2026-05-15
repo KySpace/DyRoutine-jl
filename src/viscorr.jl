@@ -13,7 +13,7 @@ function set_panel_trend_sidepeak_nvlp!(gl::GridLayout, col::Int; extra=false)
     ax_evol_height = Axis(gl[3, 1]; width=w, height=h, ylabel="side peak \nheight")
     ax_evol_width = Axis(gl[4, 1]; width=w, height=h, ylabel="side peak \nwidth (μm⁻¹)")
     ax_evol_wavenum = Axis(gl[5, 1]; width=w, height=h, ylabel="side peak \nwavenum (μm⁻¹)")
-    ax_evol_sizes = Axis(gl[6, 1]; width=w, height=h, ylabel="envelope size (μm)")
+    ax_evol_sizes = Axis(gl[6, extra ? 2 : 1]; width=w, height=h, ylabel="envelope size (μm)")
     if extra
         ax_evol_extra_weight = Axis(gl[2, 2]; width=w, height=h, ylabel="side peak \nweight")
         ax_evol_extra_height = Axis(gl[3, 2]; width=w, height=h, ylabel="side peak \nheight")
@@ -89,30 +89,33 @@ function plot_mode_evol_freq_solo!(axs::Dict{String,Axis}, mode::ModeWeight, val
     end
 end
 
-function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, is_stacked=false, to_legend=false, to_overlay=false)
+function plot_shade_range!(axs, sample, clr)
+    step = sample |> diff |> s -> filter(!iszero, s) |> minimum
+    head = minimum(sample) - step / 2
+    tail = maximum(sample) + step / 2
+    for ax in axs
+        vspan!(ax, head, tail; color=clr)
+    end
+end
+
+function plot_trends_sidepeak!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, is_stacked=false, to_legend=false, to_overlay=false)
     hue_theme = hue_theme_istp[istp]
     clr_mmt = Oklch(0.52, 0.14, hue_theme)
     clr_fit = (:springgreen3, 1.0)
     clr_theme = Oklch(0.52, 0.14, hue_theme)
-    clr_theme1 = Oklch(0.52, 0.14, hue_theme - 20)
-    clr_theme2 = Oklch(0.52, 0.14, hue_theme + 20)
     clr_shade_selected = RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2)
+    axs_sidepeaks_evol = axs |> a -> matching_axes(a, r"(evol(-extra)?)-(weight|width|height|wavenum)")
+    axs_sidepeaks_freq = axs |> a -> matching_axes(a, r"freq-(weight|width|height|wavenum)")
     if to_clean
-        for (k, obj) in axs
-            obj isa Axis && empty!(obj)
-        end
-        vspan!(axs["evol-weight"], trend["t_vec_sel_sp"][1] - 1, trend["t_vec_sel_sp"][end] + 1; color=clr_shade_selected)
-        vspan!(axs["evol-height"], trend["t_vec_sel_sp"][1] - 1, trend["t_vec_sel_sp"][end] + 1; color=clr_shade_selected)
-        vspan!(axs["evol-width"], trend["t_vec_sel_sp"][1] - 1, trend["t_vec_sel_sp"][end] + 1; color=clr_shade_selected)
-        vspan!(axs["evol-wavenum"], trend["t_vec_sel_sp"][1] - 1, trend["t_vec_sel_sp"][end] + 1; color=clr_shade_selected)
-        vspan!(axs["evol-sizes"], trend["t_vec_sel_nvlp"][1] - 1, trend["t_vec_sel_nvlp"][end] + 1; color=clr_shade_selected)
+        axs |> a -> matching_axes(a, r"(freq|(evol(-extra)?))-(dens-sum|weight|width|height|wavenum)") |> clear_axes!
+        plot_shade_range!(axs_sidepeaks_evol, trend["t_vec_sel_sp"], clr_shade_selected)
     end
     lines!(axs["evol-dens-sum"], trend["t_vec"], trend["evol-all-dens-sum"]; color=(clr_theme, alpha), label="sum")
     lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-fit-weight"]; color=(clr_fit, alpha), label="fit")
     lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-fit-height"]; color=(clr_fit, alpha), label="fit")
     lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-fit-width"]; color=(clr_fit, alpha), label="fit")
     lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-fit-wavenum"]; color=(clr_fit, alpha), label="fit")
-    if to_overlay
+    if to_overlay # overlay plots are plotted separately for fit and moment
         lines!(axs["evol-extra-weight"], trend["t_vec"], trend["evol-all-moment-weight"]; color=(clr_mmt, alpha), label="moment")
         lines!(axs["evol-extra-height"], trend["t_vec"], trend["evol-all-moment-height"]; color=(clr_mmt, alpha), label="moment")
         lines!(axs["evol-extra-width"], trend["t_vec"], trend["evol-all-moment-width"]; color=(clr_mmt, alpha), label="moment")
@@ -123,8 +126,6 @@ function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, i
         lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-moment-width"]; color=(clr_mmt, alpha), label="moment")
         lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
     end
-    lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-x"]; color=(clr_theme1, alpha), label="fit")
-    lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-y"]; color=(clr_theme2, alpha), label="fit")
     lines!(axs["freq-weight"], trend["freq_query"], trend["freq-sel-fit-weight"]; color=(clr_fit, alpha), label="fit")
     lines!(axs["freq-height"], trend["freq_query"], trend["freq-sel-fit-height"]; color=(clr_fit, alpha), label="fit")
     lines!(axs["freq-width"], trend["freq_query"], trend["freq-sel-fit-width"]; color=(clr_fit, alpha), label="fit")
@@ -133,23 +134,39 @@ function plot_trends!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, i
     lines!(axs["freq-height"], trend["freq_query"], trend["freq-sel-moment-height"]; color=(clr_mmt, alpha), label="moment")
     lines!(axs["freq-width"], trend["freq_query"], trend["freq-sel-moment-width"]; color=(clr_mmt, alpha), label="moment")
     lines!(axs["freq-wavenum"], trend["freq_query"], trend["freq-sel-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
-    lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-x"]; color=(clr_theme1, alpha), label="fit size x")
-    lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-y"]; color=(clr_theme2, alpha), label="fit size y")
     ylims!(axs["evol-weight"], -0.02, 0.22)
     ylims!(axs["evol-height"], -0.1, 1.1)
     ylims!(axs["evol-width"], 0.02, 0.205)
     ylims!(axs["evol-wavenum"], 0.22, 0.38)
-    ylims!(axs["evol-sizes"], 1, 11)
     if to_legend
         axislegend(axs["evol-dens-sum"]; position=:rt, framevisible=false, labelsize=14)
         axislegend(axs["freq-weight"]; position=:lt, framevisible=false, labelsize=14)
-        axislegend(axs["freq-sizes"]; position=:lt, framevisible=false, labelsize=14)
     end
     if to_overlay
         ylims!(axs["evol-extra-weight"], -0.02, 0.22)
         ylims!(axs["evol-extra-height"], -0.1, 1.1)
         ylims!(axs["evol-extra-width"], 0.02, 0.205)
         ylims!(axs["evol-extra-wavenum"], 0.22, 0.38)
+    end
+end
+
+function plot_trends_nvlp!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, is_stacked=false, to_legend=false, to_overlay=false)
+    hue_theme = hue_theme_istp[istp]
+    clr_theme = Oklch(0.52, 0.14, hue_theme)
+    clr_shade_selected = RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2)
+    clr_theme1 = Oklch(0.52, 0.14, hue_theme - 20)
+    clr_theme2 = Oklch(0.52, 0.14, hue_theme + 20)
+    if to_clean
+        axs |> a -> matching_axes(a, r"(freq|evol)-(sizes)") |> clear_axes!
+        plot_shade_range!([axs["evol-sizes"]], trend["t_vec_sel_nvlp"], clr_shade_selected)
+    end
+    lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-x"]; color=(clr_theme1, alpha), label="fit")
+    lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-y"]; color=(clr_theme2, alpha), label="fit")
+    lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-x"]; color=(clr_theme1, alpha), label="fit size x")
+    lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-y"]; color=(clr_theme2, alpha), label="fit size y")
+    ylims!(axs["evol-sizes"], 1, 11)
+    if to_legend
+        axislegend(axs["freq-sizes"]; position=:lt, framevisible=false, labelsize=14)
     end
 end
 
@@ -178,11 +195,13 @@ function plot_trend_all!(axs_trend::Dict, trend_reps::AbstractVector, trend_stac
             to_legend = a == 1
             to_overlay = a > 1
             axs |> set_tick_grid!
-            plot_trends!(axs, trend, istp; to_clean, alpha, to_legend, to_overlay)
+            plot_trends_sidepeak!(axs, trend, istp; to_clean, alpha, to_legend, to_overlay)
+            plot_trends_nvlp!(axs, trend, istp; to_clean, alpha, to_legend, to_overlay)
         end
     end
     # plot on the stacked axes
     axs = axs_trend["stacked"]
-    plot_trends!(axs, trend_stacked_over_rep, istp; to_clean=true, alpha=1.0, to_legend=true)
+    plot_trends_sidepeak!(axs, trend_stacked_over_rep, istp; to_clean=true, alpha=1.0, to_legend=true)
+    plot_trends_nvlp!(axs, trend_stacked_over_rep, istp; to_clean=true, alpha=1.0, to_legend=true)
     axs |> set_tick_grid!
 end
