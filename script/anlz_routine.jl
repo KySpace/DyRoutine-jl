@@ -134,8 +134,8 @@ modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
     d -> d
 modes_pca_modl2d = [modl2d_side[:, :, i] |> m -> fit_pca_modes(8, m) for i in 1:n_istp]
 
-selector_t_sidepeak = t -> 20 .< t .< 70
-selector_t_envelope = t -> 20 .< t .< 80
+selector_t_sidepeak = t -> 0 .< t .< 20
+selector_t_envelope = t -> 0 .< t .< 20
 trend_sidepeak_nvlp = [
     extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak, selector_t_envelope)
     for r in axes(extr_fmt, 1), i in axes(extr_fmt, 3)

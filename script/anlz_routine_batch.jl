@@ -39,7 +39,7 @@ runinfos = [
     (date="0323", runid=64, IB=5.343, tag_head="NTRC"),
 ]
 
-title_anlz = "[05.15].48.[20-80ms]"
+title_anlz = "[05.15].49.[0-20ms]"
 for runinfo_iter in runinfos
     global runinfo = runinfo_iter
     include(joinpath(@__DIR__, "..", "script", "anlz_routine.jl"))
