@@ -4,6 +4,10 @@ include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "percond.jl"))
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "corr.jl"))
+include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
+include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
+include(joinpath(@__DIR__, "..", "src", "visduet.jl"))
+
 
 # extr_fmt = [
 #     essn_2d_fmt[r, t, i] |> e -> calc_solo_extr(e, fit_prfl_modl_over_rep_t_1d[i])
@@ -11,19 +15,17 @@ include(joinpath(@__DIR__, "..", "src", "corr.jl"))
 # ]
 
 ids_demo = (3, 20, 2)
-extr_demo = essn_2d_fmt[ids_demo...] |> e -> calc_solo_extr(e, fit_prfl_modl_over_rep_t_1d[ids_demo[3]])
+# extr_demo = essn_2d_fmt[ids_demo...] |> e -> calc_solo_extr(e, fit_prfl_modl_over_rep_t_1d[ids_demo[3]])
 
 GLMakie.activate!()
 fig_live = Figure()
 gl = GridLayout()
 fig_live[1, 1] = gl
-axs_live = set_panel_solo_modl!(gl);
-
-rss_rsdu = extr_demo.fit_dens_2d["fit"] |> residuals |> r -> sqrt(sum(abs2, r))
-rss_dens = extr_demo.essentials.dens2d |> d -> sum(abs2, d) |> sqrt
+axs_live = set_panel_trend_sidepeak_nvlp!(gl, 2);
 
 info_demo = info_fmt[ids_demo...]
-# extr_demo = extr_fmt[ids_demo...]
-draw_solo_modl!(axs_live, extr_demo, info_demo)
+extr_demo = extr_fmt[ids_demo...]
+plot_trends_sidepeak!(axs_live, trend_sidepeak_nvlp[1,2], "164"; to_clean=true, alpha=1.0, to_legend=true)
+# draw_solo_modl!(axs_live, extr_demo, info_demo)
 fig_live |> display
 fig_live |> resize_to_layout!

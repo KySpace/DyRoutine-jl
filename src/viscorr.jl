@@ -104,6 +104,9 @@ function set_panel_trend_sidepeak_nvlp!(gl::GridLayout, col::Int; extra=false)
     ax_freq_sizes.xlabelvisible = true
     ax_evol_sizes.xlabel = "t hold (ms)"
     ax_freq_sizes.xlabel = "freq (Hz)"
+    for col = 1:(extra ? 3 : 2)
+        colsize!(gl, col, Fixed(420))
+    end
     return dict_axs
 end
 
