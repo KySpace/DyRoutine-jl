@@ -135,7 +135,7 @@ modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
 modes_pca_modl2d = [modl2d_side[:, :, i] |> m -> fit_pca_modes(8, m) for i in 1:n_istp]
 
 selector_t_sidepeak = t -> 20 .< t .< 70
-selector_t_envelope = t -> 0 .< t .< 70
+selector_t_envelope = t -> 20 .< t .< 80
 trend_sidepeak_nvlp = [
     extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak, selector_t_envelope)
     for r in axes(extr_fmt, 1), i in axes(extr_fmt, 3)
@@ -161,14 +161,19 @@ trend_stacked_over_rep = [
 
 ## Overall plots
 fig_trend, axs_trend = set_axis_sidepeak_nvlp!(n_dim_vars, set_panel_trend_sidepeak_nvlp!, runinfo)
+fig_nvlp, axs_nvlp = set_axis_stack_all!(n_dim_vars, set_panel_trend_nvlp!, runinfo)
 for i in 1:n_istp
     trend = trend_sidepeak_nvlp[:, i]
     trend_stacked = trend_stacked_over_rep[i]
     istp = val[3][i]
     plot_trend_all!(axs_trend, trend, trend_stacked, istp)
+    plot_trend_nvlp!(axs_nvlp, trend, trend_stacked, istp)
     resize_to_layout!(fig_trend)
-    fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.pdf", tag, istp)), f; backend=CairoMakie)
-    fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.png", tag, istp)), f; backend=CairoMakie)
+    resize_to_layout!(fig_nvlp)
+    for format in ["pdf", "png"]
+        fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.%s", tag, istp, format)), f; backend=CairoMakie)
+        fig_nvlp |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend_nvlp.%s", tag, istp, format)), f; backend=CairoMakie)
+    end
 end
 # fig_trend |> display
 ##

@@ -49,6 +49,20 @@ function set_axis_sidepeak_nvlp!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer
     return fig, Dict("repeats" => axs_repeats, "stacked" => axs_stacked, "all" => axs_all)
 end
 
+function set_axis_stack_all!(_, panel_setter::Function, runinfo)
+    fig = Figure()
+    fig[0, 1] = Label(fig, text="$(runinfo.date) $(@sprintf("run%02d", runinfo.runid)) IB=$(@sprintf("%.3f", runinfo.IB))A $(runinfo.tag_head)"; tellwidth=false, tellheight=true, halign=:left, valign=:top)
+    gl = GridLayout()
+    fig[1, 1] = Label(fig, text="Processed after stacked"; tellwidth=false, tellheight=true, halign=:center, valign=:bottom)
+    fig[2, 1] = gl
+    axs_stacked = panel_setter(gl, 1)
+    gl = GridLayout()
+    fig[1, 2] = Label(fig, text="Reps overlayed"; tellwidth=false, tellheight=true, halign=:center, valign=:bottom)
+    fig[2, 2] = gl
+    axs_all = panel_setter(gl, 2)
+    return fig, Dict("stacked" => axs_stacked, "all" => axs_all)
+end
+
 function set_panel_trend_sidepeak_nvlp!(gl::GridLayout, col::Int; extra=false)
     gl |> clean_gridlayout!
     w, h = (400, 200)
@@ -92,6 +106,35 @@ function set_panel_trend_sidepeak_nvlp!(gl::GridLayout, col::Int; extra=false)
         dict_axs["evol-extra-width"] = ax_evol_extra_width
         dict_axs["evol-extra-wavenum"] = ax_evol_extra_wavenum
     end
+    for ax in values(dict_axs)
+        hideydecorations!(ax; label=true, ticklabels=false, ticks=false, grid=false, minorticks=false, minorgrid=false)
+        hidexdecorations!(ax; label=true, ticklabels=true, ticks=false, grid=false, minorticks=false, minorgrid=false)
+        if col == 1
+            ax.ylabelvisible = true
+        end
+    end
+    ax_evol_sizes.xticklabelsvisible = true
+    ax_freq_sizes.xticklabelsvisible = true
+    ax_evol_sizes.xlabelvisible = true
+    ax_freq_sizes.xlabelvisible = true
+    ax_evol_sizes.xlabel = "t hold (ms)"
+    ax_freq_sizes.xlabel = "freq (Hz)"
+    return dict_axs
+end
+
+function set_panel_trend_nvlp!(gl::GridLayout, col::Int; extra=false)
+    gl |> clean_gridlayout!
+    w, h = (400, 200)
+    kwargs_wh = (width=w, height=h, yticklabelspace=40.0)
+    col_freq = extra ? 3 : 2
+    ax_evol_sizes = Axis(gl[1, extra ? 2 : 1]; kwargs_wh..., ylabel="envelope size (μm)")
+    ax_freq_sizes = Axis(gl[1, col_freq]; kwargs_wh...)
+    rowgap!(gl, 4)
+    colgap!(gl, 4)
+    dict_axs = Dict(
+        "evol-sizes" => ax_evol_sizes,
+        "freq-sizes" => ax_freq_sizes,
+    )
     for ax in values(dict_axs)
         hideydecorations!(ax; label=true, ticklabels=false, ticks=false, grid=false, minorticks=false, minorgrid=false)
         hidexdecorations!(ax; label=true, ticklabels=true, ticks=false, grid=false, minorticks=false, minorgrid=false)
@@ -218,13 +261,15 @@ end
 
 function plot_trend_all!(axs_trend::Dict, trend_reps::AbstractVector, trend_stacked_over_rep::Dict, istp)
     function set_tick_grid!(axs)
-        for ax in [axs["evol-weight"], axs["evol-height"], axs["evol-width"], axs["evol-wavenum"], axs["evol-sizes"]]
+        axs_sidepeaks_evol = axs |> a -> matching_axes(a, r"(evol(-extra)?)-(weight|width|height|wavenum|dens-sum|sizes)")
+        axs_sidepeaks_freq = axs |> a -> matching_axes(a, r"freq-(weight|width|height|wavenum|dens-sum|sizes)")
+        for ax in axs_sidepeaks_evol
             ax.xticks = 0:50:200
             ax.xminorticksvisible = true
             ax.xminorgridvisible = true
             ax.xminorticks = IntervalsBetween(5)
         end
-        for ax in [axs["freq-weight"], axs["freq-height"], axs["freq-width"], axs["freq-wavenum"], axs["freq-sizes"]]
+        for ax in axs_sidepeaks_freq
             ax.xticks = 0:10:100
             ax.xminorticksvisible = true
             ax.xminorgridvisible = true
@@ -248,6 +293,40 @@ function plot_trend_all!(axs_trend::Dict, trend_reps::AbstractVector, trend_stac
     # plot on the stacked axes
     axs = axs_trend["stacked"]
     plot_trends_sidepeak!(axs, trend_stacked_over_rep, istp; to_clean=true, alpha=1.0, to_legend=true)
+    plot_trends_nvlp!(axs, trend_stacked_over_rep, istp; to_clean=true, alpha=1.0, to_legend=true)
+    axs |> set_tick_grid!
+end
+
+function plot_trend_nvlp!(axs_trend::Dict, trend_reps::AbstractVector, trend_stacked_over_rep::Dict, istp)
+    function set_tick_grid!(axs)
+        axs_sidepeaks_evol = axs |> a -> matching_axes(a, r"(evol(-extra)?)-(weight|width|height|wavenum|dens-sum|sizes)")
+        axs_sidepeaks_freq = axs |> a -> matching_axes(a, r"freq-(weight|width|height|wavenum|dens-sum|sizes)")
+        for ax in axs_sidepeaks_evol
+            ax.xticks = 0:50:200
+            ax.xminorticksvisible = true
+            ax.xminorgridvisible = true
+            ax.xminorticks = IntervalsBetween(5)
+        end
+        for ax in axs_sidepeaks_freq
+            ax.xticks = 0:10:100
+            ax.xminorticksvisible = true
+            ax.xminorgridvisible = true
+            ax.xminorticks = IntervalsBetween(2)
+        end
+    end
+    axs = axs_trend["all"]
+    for r = axes(trend_reps, 1)
+        trend = trend_reps[r]
+        # plot on both the individual reps and all reps combined
+        alpha = 0.5
+        # shade the selected time points on all reps combined only once
+        to_clean = r == 1
+        to_legend = r == 1
+        axs |> set_tick_grid!
+        plot_trends_nvlp!(axs, trend, istp; to_clean, alpha, to_legend)
+    end
+    # plot on the stacked axes
+    axs = axs_trend["stacked"]
     plot_trends_nvlp!(axs, trend_stacked_over_rep, istp; to_clean=true, alpha=1.0, to_legend=true)
     axs |> set_tick_grid!
 end
