@@ -13,6 +13,7 @@ include(joinpath(@__DIR__, "..", "src", "corr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
+include(joinpath(@__DIR__, "..", "src", "visduet.jl"))
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\SingDrplMisc"
@@ -21,11 +22,24 @@ runinfos = [
     (date="0513", runids=76:80, IB=5.376, tag_head="ImbaEvol", rep_each=1, bias=0.1:0.05:0.6, t_hold=6:5:56),
     (date="0513", runids=81, IB=[5.392, 5.386], tag_head="ImbaEvol", rep_each=1, bias=0.1:0.1:0.6, t_hold=6:10:116),
     (date="0513", runids=82, IB=[5.378, 5.372], tag_head="ImbaEvol", rep_each=1, bias=0.1:0.1:0.6, t_hold=6:10:116),
-]
+][1:1]
 n_istp = 2
 title_anlz = "[05.15].01.DevTest"
+path_output = joinpath(path_root, "AnlzRoutine", title_anlz);
 name_dims = ["IB" "repeat" "bias" "t_hold" "istp"]
 val_istp = ["162", "164"]
+
+wh_corner = (10, 10)
+smwh_peak = (30, 60)
+wh_peak = smwh_peak .* 2 .+ 1
+smw_peak, smh_peak = smwh_peak
+smw_ft = 5
+px_in_um = 6.5 / 22.06
+step_posi = px_in_um
+step_modl = 1 / (2 * smwh_peak[2] * px_in_um)
+x_vec, y_vec = smwh_peak |> s -> map(u -> (-u:1:u), s)
+x_posi, y_posi = (x_vec, y_vec) .* step_posi
+x_modl, y_modl = (x_vec, y_vec) .* step_modl
 
 as_vector(x) = x isa AbstractArray ? collect(x) : [x]
 
@@ -71,11 +85,11 @@ function format_dens_runinfo(runinfo)
            ds -> cat(ds...; dims=1)
     n_shot, h_dens, w_dens = size(dens)
     val = (
-        val_ib,
-        collect(1:n_rep),
-        val_bias,
-        val_thold,
-        val_istp,
+        ib=val_ib,
+        rep=collect(1:n_rep),
+        bias=val_bias,
+        t_hold=val_thold,
+        istp=val_istp,
     )
     n_dim_vars = map(length, val)
     n_variation = prod(n_dim_vars)
@@ -88,18 +102,25 @@ function format_dens_runinfo(runinfo)
                           ds -> reshape(ds, (reverse(n_dim_vars)..., reverse(wh_peak)...)) |>
                                 ds -> permutedims(ds, (5, 4, 3, 2, 1, 6, 7))
 
-    size(dens_full_fmt)[1:5] == n_dim_vars || throw(DimensionMismatch("Formatted dimensions $(size(dens_full_fmt)[1:5]) do not match expected $n_dim_vars for $(gen_run_tag(runinfo))."))
-    return (runinfo=runinfo, val=val, dens_full_fmt=dens_full_fmt, wh_dens=(w_dens, h_dens), xy_peak_px=xy_peak_px)
+    (size(dens_full_fmt)[1:5] |> Tuple) == n_dim_vars || throw(DimensionMismatch("Formatted dimensions $(size(dens_full_fmt)[1:5]) do not match expected $n_dim_vars for $(gen_run_tag(runinfo))."))
+    return (; runinfo, val, dens_full_fmt, wh_dens=(w_dens, h_dens), xy_peak_px, n_dim_vars)
 end
-
-wh_corner = (10, 10)
-smwh_peak = (30, 60)
-wh_peak = smwh_peak .* 2 .+ 1
 
 for (idx_runinfo, runinfo) in enumerate(runinfos)
     println("Processing set $idx_runinfo: $(gen_run_tag(runinfo))")
-    result = format_dens_runinfo(runinfo)
-    println("  val lengths ($(join(vec(name_dims), ", "))): $(map(length, result.val))")
-    println("  dens_full_fmt size: $(size(result.dens_full_fmt))")
-    println("  xy_peak_px: $(result.xy_peak_px), wh_dens: $(result.wh_dens)")
+    global r = format_dens_runinfo(runinfo)
+    println("  val lengths ($(join(vec(name_dims), ", "))): $(map(length, r.val))")
+    println("  dens_full_fmt size: $(size(r.dens_full_fmt))")
+    println("  xy_peak_px: $(r.xy_peak_px), wh_dens: $(r.wh_dens)")
+    essn_2d_fmt = r.dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, smw_ft, px_in_um), ds; dims=(6, 7)) |> e -> dropdims(e; dims=(6, 7))
+    info_fmt = [Dict("istp" => val.istp[i], "t_hold" => val.t_hold[t], "repeat" => val.repeat[r], "ib" => val.ib[c], "bias" => val.bias[b])
+                for c in 1:r.n_dim_vars[1], r in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4], i in 1:r.n_dim_vars[5]]
+    for c in 1:r.n_dim_vars[1]
+        fig_full_duets, axs_full_duets = set_axes_v_t_rep!(r.n_dim_vars[2:end], set_panel_misc_duet_2d!, r.runinfo, info_fmt[c, :, :, :, :])
+        for r in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4]
+            draw_misc_duet_2d!(axs_full_duets, essn_2d_fmt[c, r, b, t, :])
+        end
+        fig_full_duets |> resize_to_layout!
+        fig_full_duets |> f -> save(joinpath(path_output, @sprintf("%s_essn_table.pdf", gen_run_tag(runinfo))), f; backend=CairoMakie)
+    end
 end
