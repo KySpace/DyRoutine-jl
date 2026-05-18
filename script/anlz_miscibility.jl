@@ -102,7 +102,7 @@ function format_dens_runinfo(runinfo)
                           ds -> reshape(ds, (reverse(n_dim_vars)..., reverse(wh_peak)...)) |>
                                 ds -> permutedims(ds, (5, 4, 3, 2, 1, 6, 7))
 
-    (size(dens_full_fmt)[1:5] |> Tuple) == n_dim_vars || throw(DimensionMismatch("Formatted dimensions $(size(dens_full_fmt)[1:5]) do not match expected $n_dim_vars for $(gen_run_tag(runinfo))."))
+    size(dens_full_fmt)[1:5] == (n_dim_vars |> Tuple) || throw(DimensionMismatch("Formatted dimensions $(size(dens_full_fmt)[1:5]) do not match expected $n_dim_vars for $(gen_run_tag(runinfo))."))
     return (; runinfo, val, dens_full_fmt, wh_dens=(w_dens, h_dens), xy_peak_px, n_dim_vars)
 end
 
@@ -113,12 +113,12 @@ for (idx_runinfo, runinfo) in enumerate(runinfos)
     println("  dens_full_fmt size: $(size(r.dens_full_fmt))")
     println("  xy_peak_px: $(r.xy_peak_px), wh_dens: $(r.wh_dens)")
     essn_2d_fmt = r.dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, smw_ft, px_in_um), ds; dims=(6, 7)) |> e -> dropdims(e; dims=(6, 7))
-    info_fmt = [Dict("istp" => val.istp[i], "t_hold" => val.t_hold[t], "repeat" => val.repeat[r], "ib" => val.ib[c], "bias" => val.bias[b])
-                for c in 1:r.n_dim_vars[1], r in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4], i in 1:r.n_dim_vars[5]]
+    info_fmt = [Dict("istp" => r.val.istp[i], "t_hold" => r.val.t_hold[t], "repeat" => r.val.rep[rep], "ib" => r.val.ib[c], "bias" => r.val.bias[b])
+                for c in 1:r.n_dim_vars[1], rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4], i in 1:r.n_dim_vars[5]]
     for c in 1:r.n_dim_vars[1]
-        fig_full_duets, axs_full_duets = set_axes_v_t_rep!(r.n_dim_vars[2:end], set_panel_misc_duet_2d!, r.runinfo, info_fmt[c, :, :, :, :])
-        for r in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4]
-            draw_misc_duet_2d!(axs_full_duets, essn_2d_fmt[c, r, b, t, :])
+        fig_full_duets, axs_full_duets = set_axes_v_t_rep!(Tuple(r.n_dim_vars)[2:end], set_panel_misc_duet_2d!, r.runinfo, info_fmt[c, :, :, :, :])
+        for reo in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4]
+            draw_misc_duet_2d!(axs_full_duets, essn_2d_fmt[c, rep, b, t, :])
         end
         fig_full_duets |> resize_to_layout!
         fig_full_duets |> f -> save(joinpath(path_output, @sprintf("%s_essn_table.pdf", gen_run_tag(runinfo))), f; backend=CairoMakie)
