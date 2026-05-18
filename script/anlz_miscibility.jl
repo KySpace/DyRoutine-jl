@@ -22,9 +22,9 @@ runinfos = [
     (date="0513", runids=76:80, IB=5.376, tag_head="ImbaEvol", rep_each=1, bias=0.1:0.05:0.6, t_hold=6:5:56),
     (date="0513", runids=81, IB=[5.392, 5.386], tag_head="ImbaEvol", rep_each=1, bias=0.1:0.1:0.6, t_hold=6:10:116),
     (date="0513", runids=82, IB=[5.378, 5.372], tag_head="ImbaEvol", rep_each=1, bias=0.1:0.1:0.6, t_hold=6:10:116),
-][[2,1]]
+][2:2]
 n_istp = 2
-title_anlz = "[05.15].03.[05.13].Miscibility.NormEach"
+title_anlz = "[05.15].03.[05.14].Miscibility.Strip"
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz);
 name_dims = ["IB" "repeat" "bias" "t_hold" "istp"]
 val_istp = ["162", "164"]
@@ -33,14 +33,15 @@ if !isdir(path_output)
 end
 
 wh_corner = (10, 10)
-smwh_peak = (30, 30)
-wh_peak = smwh_peak .* 2 .+ 1
-smw_peak, smh_peak = smwh_peak
+smwh_roi = (30, 30)
+smwh_strip = (2, 20)
+wh_peak = smwh_roi .* 2 .+ 1
+smw_peak, smh_peak = smwh_roi
 smw_ft = 5
 px_in_um = 6.5 / 22.06
 step_posi = px_in_um
-step_modl = 1 / (2 * smwh_peak[2] * px_in_um)
-x_vec, y_vec = smwh_peak |> s -> map(u -> (-u:1:u), s)
+step_modl = 1 / (2 * smwh_roi[2] * px_in_um)
+x_vec, y_vec = smwh_roi |> s -> map(u -> (-u:1:u), s)
 x_posi, y_posi = (x_vec, y_vec) .* step_posi
 x_modl, y_modl = (x_vec, y_vec) .* step_modl
 
@@ -98,9 +99,9 @@ function format_dens_runinfo(runinfo)
     n_shot == n_variation || throw(DimensionMismatch("Loaded $n_shot shots for $(gen_run_tag(runinfo)), but expected $n_variation from dimensions $n_dim_vars."))
 
     dens_mean = dropdims(mean(dens; dims=1); dims=1)
-    xy_peak_px = find_positive_cluster_center(dens_mean; smwh=smwh_peak) |> cent -> round.(Int, cent)
+    xy_peak_px = find_positive_cluster_center(dens_mean; smwh=smwh_roi) |> cent -> round.(Int, cent)
     dens_full_fmt = dens |>
-                    ds -> mapslices(d -> crop_center(d, xy_peak_px, smwh_peak), ds; dims=(2, 3)) |>
+                    ds -> mapslices(d -> crop_center(d, xy_peak_px, smwh_roi), ds; dims=(2, 3)) |>
                           ds -> reshape(ds, (reverse(n_dim_vars)..., reverse(wh_peak)...)) |>
                                 ds -> permutedims(ds, (5, 4, 3, 2, 1, 6, 7))
 
@@ -128,11 +129,11 @@ for (idx_runinfo, runinfo) in enumerate(runinfos)
     println("  val lengths ($(join(vec(name_dims), ", "))): $(map(length, r.val))")
     println("  dens_full_fmt size: $(size(r.dens_full_fmt))")
     println("  xy_peak_px: $(r.xy_peak_px), wh_dens: $(r.wh_dens)")
-    global essn_2d_fmt = r.dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, smw_ft, px_in_um), ds; dims=(6, 7)) |> e -> dropdims(e; dims=(6, 7))
+    global essn_2d_fmt = r.dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, smw_ft, px_in_um; smwh_strip), ds; dims=(6, 7)) |> e -> dropdims(e; dims=(6, 7))
     global info_fmt = [Dict("istp" => r.val.istp[i], "t_hold" => r.val.t_hold[t], "repeat" => r.val.rep[rep], "ib" => r.val.ib[c], "bias" => r.val.bias[b])
-                for c in 1:r.n_dim_vars[1], rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4], i in 1:r.n_dim_vars[5]]
+                       for c in 1:r.n_dim_vars[1], rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4], i in 1:r.n_dim_vars[5]]
     # Statistics on number sum
-    global num_fmt = r.dens_full_fmt |> ds -> mapslices(calc_dens_sum, ds; dims=(6, 7)) |> n -> dropdims(n; dims=(6, 7));
+    global num_fmt = r.dens_full_fmt |> ds -> mapslices(calc_dens_sum, ds; dims=(6, 7)) |> n -> dropdims(n; dims=(6, 7))
     global stat_n_fmt = num_fmt |> a -> mapslices(calc_mean_std, a; dims=(2))
     for c in 1:r.n_dim_vars[1], b in 1:r.n_dim_vars[3]
         tag = @sprintf("Top View Number Stat [IB = %.3fA | bias = %.2f]", r.val.ib[c], r.val.bias[b])

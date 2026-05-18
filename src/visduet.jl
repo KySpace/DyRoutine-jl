@@ -18,15 +18,20 @@ function set_axes_v_t_rep!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer,<:Int
     axs = Array{Dict}(undef, n_dim_vars[1:3]...)
     for v in 1:n_dim_vars[2], t in 1:n_dim_vars[3]
         print("\r\033[2K\rbuilding axes for duet $v-$t")
-        fig[v, t][0, 1:n_dim_vars[1]] = Label(fig, text="bias=$(info_fmt[1,v,t,1]["bias"])\n t hold=$(info_fmt[1,v,t,1]["t_hold"]) ms"; tellwidth=true, tellheight=true, halign=:left, valign=:bottom)
+        gl_vt = GridLayout()
+        fig[v, t] = gl_vt
+        Label(gl_vt[0, 1:n_dim_vars[1]], text="bias= $(info_fmt[1,v,t,1]["bias"]) | t hold= $(info_fmt[1,v,t,1]["t_hold"]) ms"; tellwidth=true, tellheight=false, halign=:left, valign=:bottom)
         for r in 1:n_dim_vars[1]
             gl = GridLayout()
-            fig[v, t][1, r] = gl
+            gl_vt[1, r] = gl
             axs[r, v, t] = panel_setter(gl)
         end
-        fig[v, t].layout |> l -> colgap!(l, 0)
+        gl_vt |> l -> colgap!(l, 0)
+        gl_vt |> l -> rowgap!(l, 0)
+        gl_vt |> l -> rowsize!(l, 0, 20)
     end
     fig.layout |> l -> colgap!(l, 20)
+    fig.layout |> l -> rowgap!(l, 4)
     println("\r\033[2K\raxes built for duet")
     return fig, axs
 end
@@ -34,15 +39,16 @@ end
 function set_panel_misc_duet_2d!(gl::GridLayout)
     gl |> clean_gridlayout!
     ax_dens_1 = Axis(gl[1, 1])
-    ax_dens_2 = Axis(gl[2, 1])
-    ax_misc = Axis(gl[3, 1])
+    ax_dens_2 = Axis(gl[1, 2])
+    ax_misc = Axis(gl[2, 1])
+    ax_prfl = Axis(gl[2, 2])
     colsize!(gl, 1, Fixed(100))
+    colsize!(gl, 2, Fixed(100))
     rowsize!(gl, 1, Fixed(100))
     rowsize!(gl, 2, Fixed(100))
-    rowsize!(gl, 3, Fixed(100))
     colgap!(gl, 0)
     rowgap!(gl, 0)
-    return Dict("dens_1" => ax_dens_1, "dens_2" => ax_dens_2, "misc" => ax_misc)
+    return Dict("dens_1" => ax_dens_1, "dens_2" => ax_dens_2, "misc" => ax_misc, "prfl" => ax_prfl)
 end
 
 function to_miscibility_clr(dens1, dens2, hue1, hue2; max=16, to_norm_each=false)
@@ -58,13 +64,18 @@ function draw_misc_duet_2d!(axs::Dict{String,Axis}, essn::AbstractVector{SoloEss
     foreach(empty!, values(axs))
     x, y = essn[1].smwh |> s -> map(u -> (-u:1:u), s)
     x_posi, y_posi = (x, y) .* essn[1].step_posi
+    clr_theme = [RGBAf(Oklch(0.52, 0.14, hue_theme_istp[i]), 0.75) for i in ["162" "164"]]
     clrmap = [gen_clrmap_solo(hue_theme) for hue_theme in [hue_theme_istp["162"], hue_theme_istp["164"]]]
     clr_misc = to_miscibility_clr(essn[1].dens2d, essn[2].dens2d, hue_theme_istp["162"], hue_theme_istp["164"]; to_norm_each=true)
     heatmap!(axs["dens_1"], x_posi, y_posi, essn[1].dens2d'; colorrange=(0, 30.0), colormap=clrmap[1], rasterize=true)
     heatmap!(axs["dens_2"], x_posi, y_posi, essn[2].dens2d'; colorrange=(0, 30.0), colormap=clrmap[2], rasterize=true)
     heatmap!(axs["misc"], x_posi, y_posi, clr_misc'; rasterize=true)
+    draw_rotated_ellipse_corners!(axs["misc"], (0, 0), (essn[1].smwh_strip .+ 0.5) .* essn[1].step_posi, 0.0; color=:black)
+    lines!(axs["prfl"], essn[1].prfl_strip, color=clr_theme[1], linewidth=2)
+    lines!(axs["prfl"], essn[2].prfl_strip, color=clr_theme[2], linewidth=2)
     axs["dens_1"].aspect = DataAspect()
     axs["dens_2"].aspect = DataAspect()
     axs["misc"].aspect = DataAspect()
+    ylims!(axs["prfl"], 0, 20)
     axs |> values |> ax -> hidedecorations!.(ax)
 end
