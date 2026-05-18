@@ -12,7 +12,7 @@ function plot_num_stat_evo!(
     hue_shift=0.0,
     label=nothing
 )
-    hue = hue_theme_istp[val_istp]
+    hue = hue_theme_istp[val_istp] + hue_shift
     val_mean = map(s -> s[1], stat_number)
     val_err = map(s -> s[2], stat_number)
     clr_line = Oklch(0.62, 0.18, hue) |> c -> RGBAf(c, 0.95)
