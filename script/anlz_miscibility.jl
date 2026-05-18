@@ -22,15 +22,18 @@ runinfos = [
     (date="0513", runids=76:80, IB=5.376, tag_head="ImbaEvol", rep_each=1, bias=0.1:0.05:0.6, t_hold=6:5:56),
     (date="0513", runids=81, IB=[5.392, 5.386], tag_head="ImbaEvol", rep_each=1, bias=0.1:0.1:0.6, t_hold=6:10:116),
     (date="0513", runids=82, IB=[5.378, 5.372], tag_head="ImbaEvol", rep_each=1, bias=0.1:0.1:0.6, t_hold=6:10:116),
-][1:1]
+][1:2]
 n_istp = 2
 title_anlz = "[05.15].01.DevTest"
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz);
 name_dims = ["IB" "repeat" "bias" "t_hold" "istp"]
 val_istp = ["162", "164"]
+if !isdir(path_output)
+    mkpath(path_output)
+end
 
 wh_corner = (10, 10)
-smwh_peak = (30, 60)
+smwh_peak = (30, 30)
 wh_peak = smwh_peak .* 2 .+ 1
 smw_peak, smh_peak = smwh_peak
 smw_ft = 5
@@ -102,7 +105,21 @@ function format_dens_runinfo(runinfo)
                           ds -> reshape(ds, (reverse(n_dim_vars)..., reverse(wh_peak)...)) |>
                                 ds -> permutedims(ds, (5, 4, 3, 2, 1, 6, 7))
 
-    size(dens_full_fmt)[1:5] == (n_dim_vars |> Tuple) || throw(DimensionMismatch("Formatted dimensions $(size(dens_full_fmt)[1:5]) do not match expected $n_dim_vars for $(gen_run_tag(runinfo))."))
+    # A lite version for tests
+    # runinfo_lite = (date=runinfo.date, runids=runinfo.runids[1:3], IB=runinfo.IB, tag_head="ImbaEvol", rep_each=1, bias=runinfo.bias[5:7], t_hold=runinfo.t_hold[1:4])
+    # val_lite = (
+    #     ib=val_ib,
+    #     rep=collect(1:3),
+    #     bias=val_bias[5:7],
+    #     t_hold=val_thold[1:4],
+    #     istp=val_istp,
+    # )
+    # n_dim_vars = map(length, val_lite)
+    # n_variation = prod(n_dim_vars)
+    # dens_full_fmt = dens_full_fmt[:, 1:3, 5:7, 1:4, :, :, :]
+
+    # size(dens_full_fmt)[1:5] == (n_dim_vars |> Tuple) || throw(DimensionMismatch("Formatted dimensions $(size(dens_full_fmt)[1:5]) do not match expected $n_dim_vars for $(gen_run_tag(runinfo))."))
+    # return (; runinfo=runinfo_lite, val=val_lite, dens_full_fmt, wh_dens=(w_dens, h_dens), xy_peak_px, n_dim_vars)
     return (; runinfo, val, dens_full_fmt, wh_dens=(w_dens, h_dens), xy_peak_px, n_dim_vars)
 end
 
@@ -112,14 +129,16 @@ for (idx_runinfo, runinfo) in enumerate(runinfos)
     println("  val lengths ($(join(vec(name_dims), ", "))): $(map(length, r.val))")
     println("  dens_full_fmt size: $(size(r.dens_full_fmt))")
     println("  xy_peak_px: $(r.xy_peak_px), wh_dens: $(r.wh_dens)")
-    essn_2d_fmt = r.dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, smw_ft, px_in_um), ds; dims=(6, 7)) |> e -> dropdims(e; dims=(6, 7))
-    info_fmt = [Dict("istp" => r.val.istp[i], "t_hold" => r.val.t_hold[t], "repeat" => r.val.rep[rep], "ib" => r.val.ib[c], "bias" => r.val.bias[b])
+    global essn_2d_fmt = r.dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, smw_ft, px_in_um), ds; dims=(6, 7)) |> e -> dropdims(e; dims=(6, 7))
+    global info_fmt = [Dict("istp" => r.val.istp[i], "t_hold" => r.val.t_hold[t], "repeat" => r.val.rep[rep], "ib" => r.val.ib[c], "bias" => r.val.bias[b])
                 for c in 1:r.n_dim_vars[1], rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4], i in 1:r.n_dim_vars[5]]
     for c in 1:r.n_dim_vars[1]
-        fig_full_duets, axs_full_duets = set_axes_v_t_rep!(Tuple(r.n_dim_vars)[2:end], set_panel_misc_duet_2d!, r.runinfo, info_fmt[c, :, :, :, :])
-        for reo in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4]
-            draw_misc_duet_2d!(axs_full_duets, essn_2d_fmt[c, rep, b, t, :])
+        global fig_full_duets, axs_full_duets = set_axes_v_t_rep!(Tuple(r.n_dim_vars)[2:end], set_panel_misc_duet_2d!, r.runinfo, info_fmt[c, :, :, :, :])
+        for rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4]
+            draw_misc_duet_2d!(axs_full_duets[rep, b, t], essn_2d_fmt[c, rep, b, t, :])
+            print("\r\033[2K\rdrawing duet at $rep, $b, $t.")
         end
+        println("\r\033[2K\rdrawing complete for $c.")
         fig_full_duets |> resize_to_layout!
         fig_full_duets |> f -> save(joinpath(path_output, @sprintf("%s_essn_table.pdf", gen_run_tag(runinfo))), f; backend=CairoMakie)
     end

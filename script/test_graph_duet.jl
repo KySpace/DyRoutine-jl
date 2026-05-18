@@ -1,0 +1,26 @@
+## Run this after the data has been processed
+include(joinpath(@__DIR__, "..", "src", "helper.jl"))
+include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
+include(joinpath(@__DIR__, "..", "src", "percond.jl"))
+include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
+include(joinpath(@__DIR__, "..", "src", "corr.jl"))
+include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
+include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
+include(joinpath(@__DIR__, "..", "src", "visduet.jl"))
+
+
+ids_demo = (1, 1, 1, 2, :)
+# extr_demo = essn_2d_fmt[ids_demo...] |> e -> calc_solo_extr(e, fit_prfl_modl_over_rep_t_1d[ids_demo[3]])
+
+GLMakie.activate!()
+fig_live = Figure()
+gl = GridLayout()
+fig_live[1, 1] = gl
+axs_live = set_panel_misc_duet_2d!(gl);
+
+info_demo = info_fmt[ids_demo...]
+essn_demo = essn_2d_fmt[ids_demo...]
+draw_misc_duet_2d!(axs_live, essn_demo)
+# draw_solo_modl!(axs_live, extr_demo, info_demo)
+fig_live |> resize_to_layout!
+fig_live |> display
