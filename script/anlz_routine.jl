@@ -6,12 +6,17 @@
 # GLMakie.activate!()
 # include(joinpath(@__DIR__, "..", "src", "helper.jl"))
 # include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
+# include(joinpath(@__DIR__, "..", "src", "loadfmt.jl"))
 # include(joinpath(@__DIR__, "..", "src", "percond.jl"))
 # include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 # include(joinpath(@__DIR__, "..", "src", "corr.jl"))
 
 # year_test = 2026
 # path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
+# rep = 1:3
+# t_hold = 6:2:200
+# istp = ["162", "164"]
+# vars = (; rep, t_hold, istp)
 # runinfos = [
 #     (date="0325", runid=95, IB=5.311, tag_head="CFNM"),
 #     (date="0325", runid=82, IB=5.313, tag_head="CFNM"),
@@ -29,8 +34,8 @@
 
 
 # title_anlz = "[05.12].37.Correlations"
-# runinfo = runinfos[10]
-date, runid, tag = runinfo.date, runinfo.runid, @sprintf("%s_%.3f_r%02d", runinfo.tag_head, runinfo.IB, runinfo.runid)
+# runinfo = merge(runinfos[10], (; vars))
+date, runid, tag = runinfo.date, runinfo.runid, gen_run_tag(runinfo)
 println("Processing: $tag")
 dir_test = gen_date_path(date, year_test)
 file_data = gen_h5name(date, runid)
@@ -47,54 +52,35 @@ smw_peak, smh_peak = smwh_peak
 smw_ft = 5
 px_in_um = 6.5 / 22.06
 
-name = ["repeat", "t_hold", "istp"]
-val = (
-    collect(1:3),
-    collect(6:2:200),
-    ["162", "164"],
-)
-n_variation = length(val[1]) * length(val[2]) * length(val[3])
-n_dim_vars = map(length, val);
+name = propertynames(runinfo.vars)
+r = format_dens_runinfo(runinfo; path_root, year_test, wh_corner, smwh_roi=smwh_peak)
+val = r.val
+n_dim_vars = r.n_dim_vars
+n_variation = prod(n_dim_vars)
 n_rep, n_main, n_istp = n_dim_vars
-h5open(path_input, "r") do f
-    global dens = f["/od"] |>
-                  read |>
-                  x_vec -> permutedims(x_vec, (3, 2, 1)) |>
-                           x_vec -> stack(
-                      map(d -> subtract_corner_mean(d, wh_corner), eachslice(x_vec; dims=1));
-                      dims=1,
-                  )
-    ndims(dens) == 3 || error("Expected /od to have 3 dimensions, got $(ndims(dens)).")
-end
-
-_, h_dens, w_dens = size(dens)
-wh_dens = (w_dens, h_dens)
-dens_mean = dropdims(mean(dens; dims=1); dims=1)
-xy_peak_px = find_positive_cluster_center(dens_mean; smwh=smwh_peak) |> cent -> round.(Int, cent)
-dens_full_fmt = dens |>
-                ds -> mapslices(d -> crop_center(d, xy_peak_px, smwh_peak), ds; dims=(2, 3)) |>
-                      ds -> reshape(ds, (reverse(n_dim_vars)..., reverse(wh_peak)...)) |>
-                            ds -> permutedims(ds, (3, 2, 1, 4, 5))
+wh_dens = r.wh_dens
+xy_peak_px = r.xy_peak_px
+dens_full_fmt = r.dens_full_fmt
 
 # A lite version for tests
 # rng_lite = 1:50;
 # val = (
-#     collect(1:3),
-#     collect(6:2:200)[rng_lite],
-#     ["162", "164"],
+#     rep=collect(1:3),
+#     t_hold=collect(6:2:200)[rng_lite],
+#     istp=["162", "164"],
 # )
-# n_variation = length(val[1]) * length(val[2]) * length(val[3])
 # n_dim_vars = map(length, val);
+# n_variation = prod(n_dim_vars)
 # n_rep, n_main, n_istp = n_dim_vars
-# dens_full_fmt = dens_full_fmt[:, rng_lite, :, :, :]
+# dens_full_fmt = dens_full_fmt[:, rng_lite, :]
 
 # Statistics on number sum
-# num_fmt = dens_full_fmt |> ds -> mapslices(calc_dens_sum, ds; dims=(4, 5)) |> n -> dropdims(n; dims=(4, 5));
+# num_fmt = sum.(dens_full_fmt)
 # stat_n_fmt = num_fmt |> a -> mapslices(calc_mean_std, a; dims=(1))
 
 # fig_num, ax_num = set_axis!("number vs t hold")
-# for (i, istp) in enumerate(val[3])
-#     plot_num_stat_evo!(ax_num, val[2], stat_n_fmt[1, :, i], val[3][i])
+# for (i, istp) in enumerate(val.istp)
+#     plot_num_stat_evo!(ax_num, val.t_hold, stat_n_fmt[1, :, i], val.istp[i])
 # end
 # display(fig_num)
 
@@ -103,8 +89,8 @@ step_modl = 1 / (2 * smwh_peak[2] * px_in_um)
 x_vec, y_vec = smwh_peak |> s -> map(u -> (-u:1:u), s)
 x_posi, y_posi = (x_vec, y_vec) .* step_posi
 x_modl, y_modl = (x_vec, y_vec) .* step_modl
-essn_2d_fmt = dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, smw_ft, px_in_um), ds; dims=(4, 5)) |> e -> dropdims(e; dims=(4, 5));
-info_fmt = [Dict("istp" => val[3][i], "t_hold" => val[2][t], "repeat" => val[1][r]) for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]]
+essn_2d_fmt = map(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, smw_ft, px_in_um), dens_full_fmt)
+info_fmt = [Dict("istp" => val.istp[i], "t_hold" => val.t_hold[t], "repeat" => val.rep[r]) for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]]
 essn_stacked_over_rep = [
     calc_stacked_essn(@view essn_2d_fmt[:, t, i])
     for t in axes(essn_2d_fmt, 2), i in axes(essn_2d_fmt, 3)
@@ -137,12 +123,12 @@ modes_pca_modl2d = [modl2d_side[:, :, i] |> m -> fit_pca_modes(8, m) for i in 1:
 selector_t_sidepeak = t -> 0 .< t .< 20
 selector_t_envelope = t -> 0 .< t .< 20
 trend_sidepeak_nvlp = [
-    extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak, selector_t_envelope)
+    extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val.t_hold, e, 1:1:100; selector_t_sidepeak, selector_t_envelope)
     for r in axes(extr_fmt, 1), i in axes(extr_fmt, 3)
 ]
 
 trend_stacked_over_rep = [
-    extr_stacked_over_rep[:, i] |> e -> anlz_trend_from_extr(val[2], e, 1:1:100; selector_t_sidepeak, selector_t_envelope)
+    extr_stacked_over_rep[:, i] |> e -> anlz_trend_from_extr(val.t_hold, e, 1:1:100; selector_t_sidepeak, selector_t_envelope)
     for i in axes(extr_fmt, 3)
 ]
 ##  saving data, still problematic
@@ -165,22 +151,22 @@ fig_nvlp, axs_nvlp = set_axis_stack_all!(n_dim_vars, set_panel_trend_nvlp!, runi
 for i in 1:n_istp
     trend = trend_sidepeak_nvlp[:, i]
     trend_stacked = trend_stacked_over_rep[i]
-    istp = val[3][i]
-    plot_trend_all!(axs_trend, trend, trend_stacked, istp)
-    plot_trend_nvlp!(axs_nvlp, trend, trend_stacked, istp)
+    val_istp = val.istp[i]
+    plot_trend_all!(axs_trend, trend, trend_stacked, val_istp)
+    plot_trend_nvlp!(axs_nvlp, trend, trend_stacked, val_istp)
     resize_to_layout!(fig_trend)
     resize_to_layout!(fig_nvlp)
     for format in ["pdf", "png"]
-        fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.%s", tag, istp, format)), f; backend=CairoMakie)
-        fig_nvlp |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend_nvlp.%s", tag, istp, format)), f; backend=CairoMakie)
+        fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.%s", tag, val_istp, format)), f; backend=CairoMakie)
+        fig_nvlp |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend_nvlp.%s", tag, val_istp, format)), f; backend=CairoMakie)
     end
 end
 # fig_trend |> display
 ##
 
 fig_pca, axs_pca = set_axis_pca_dual_4x2!()
-for idx_mode in 1:8, istp in 1:n_istp
-    plot_mode_evol_freq_solo!(axs_pca[istp, idx_mode], modes_pca_modl2d[istp][idx_mode], val[2])
+for idx_mode in 1:8, idx_istp in 1:n_istp
+    plot_mode_evol_freq_solo!(axs_pca[idx_istp, idx_mode], modes_pca_modl2d[idx_istp][idx_mode], val.t_hold)
 end
 resize_to_layout!(fig_pca)
 fig_pca |> f -> save(joinpath(path_output, @sprintf("%s_pca.pdf", tag)), f; backend=CairoMakie)

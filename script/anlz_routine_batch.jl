@@ -6,6 +6,7 @@ using Printf
 GLMakie.activate!()
 include(joinpath(@__DIR__, "..", "src", "helper.jl"))
 include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
+include(joinpath(@__DIR__, "..", "src", "loadfmt.jl"))
 include(joinpath(@__DIR__, "..", "src", "percond.jl"))
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "corr.jl"))
@@ -15,6 +16,10 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
+rep = 1:3
+t_hold = 6:2:200
+istp = ["162", "164"]
+vars = (; rep, t_hold, istp)
 runinfos = [
     (date="0325", runid=95, IB=5.311, tag_head="CFNM"),
     (date="0325", runid=82, IB=5.313, tag_head="CFNM"),
@@ -39,8 +44,8 @@ runinfos = [
     (date="0323", runid=64, IB=5.343, tag_head="NTRC"),
 ]
 
-title_anlz = "[05.15].49.[0-20ms]"
+title_anlz = "[05.20].50.DevTests"
 for runinfo_iter in runinfos
-    global runinfo = runinfo_iter
+    global runinfo = merge(runinfo_iter, (; vars))
     include(joinpath(@__DIR__, "..", "script", "anlz_routine.jl"))
 end

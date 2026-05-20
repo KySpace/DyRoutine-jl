@@ -25,9 +25,11 @@ function calc_stacked_essn(essns::AbstractVector{SoloEssentials})::SoloEssential
     return SoloEssentials(
         mean(map(essn -> essn.dens2d, essns)),
         mean(map(essn -> essn.modl2d, essns)),
+        mean(map(essn -> essn.prfl_strip, essns)),
         mean(map(essn -> essn.prfl_modl, essns)),
         mean(map(essn -> essn.prfl_modl_norm_px, essns)),
         essn_ref.smwh,
+        essn_ref.smwh_strip,
         essn_ref.smw_modl,
         essn_ref.step_posi,
         essn_ref.step_modl,

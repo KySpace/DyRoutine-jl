@@ -7,6 +7,7 @@ using Statistics
 GLMakie.activate!()
 include(joinpath(@__DIR__, "..", "src", "helper.jl"))
 include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
+include(joinpath(@__DIR__, "..", "src", "loadfmt.jl"))
 include(joinpath(@__DIR__, "..", "src", "percond.jl"))
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "corr.jl"))
@@ -17,11 +18,12 @@ include(joinpath(@__DIR__, "..", "src", "visduet.jl"))
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\SingDrplMisc"
+istp = ["162", "164"]
 runinfos = [
-    (date="0513", runids=71:75, tag_head="ImbaEvol", vars=(IB=5.378, rep=1:5, bias=0.1:0.05:0.6, t_hold=6:5:56, istp=["162", "164"])),
-    (date="0513", runids=76:80, tag_head="ImbaEvol", vars=(IB=5.376, rep=1:5, bias=0.1:0.05:0.6, t_hold=6:5:56, istp=["162", "164"])),
-    (date="0513", runids=81, tag_head="ImbaEvol", vars=(IB=[5.392, 5.386], rep=1:1, bias=0.1:0.1:0.6, t_hold=6:10:116, istp=["162", "164"])),
-    (date="0513", runids=82, tag_head="ImbaEvol", vars=(IB=[5.378, 5.372], rep=1:1, bias=0.1:0.1:0.6, t_hold=6:10:116, istp=["162", "164"])),
+    (date="0513", runids=71:75, tag_head="ImbaEvol", vars=(IB=5.378, rep=1:5, bias=0.1:0.05:0.6, t_hold=6:5:56, istp)),
+    (date="0513", runids=76:80, tag_head="ImbaEvol", vars=(IB=5.376, rep=1:5, bias=0.1:0.05:0.6, t_hold=6:5:56, istp)),
+    (date="0513", runids=81, tag_head="ImbaEvol", vars=(IB=[5.392, 5.386], rep=1:1, bias=0.1:0.1:0.6, t_hold=6:10:116, istp)),
+    (date="0513", runids=82, tag_head="ImbaEvol", vars=(IB=[5.378, 5.372], rep=1:1, bias=0.1:0.1:0.6, t_hold=6:10:116, istp)),
 ][2:2]
 title_anlz = "[05.15].04.DevTest"
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz);
@@ -42,82 +44,9 @@ x_vec, y_vec = smwh_roi |> s -> map(u -> (-u:1:u), s)
 x_posi, y_posi = (x_vec, y_vec) .* step_posi
 x_modl, y_modl = (x_vec, y_vec) .* step_modl
 
-as_vector(x) = x isa AbstractArray ? collect(x) : [x]
-format_vars(vars::NamedTuple) = map(as_vector, vars)
-
-function gen_run_tag(runinfo)
-    str_runids = runinfo.runids |> a -> "$(a)" |> s -> replace(s, ":" => "-")
-    return @sprintf("%s_run%s", runinfo.tag_head, str_runids)
-end
-
-function load_dens_run(date::AbstractString, runid::Integer)
-    dir_data = gen_date_path(date, year_test)
-    file_data = gen_h5name(date, runid)
-    path_input_routine = joinpath(path_root, dir_data, @sprintf("run%02d", runid), file_data)
-    path_input_misc = joinpath(path_root, @sprintf("run%02d", runid), file_data)
-    path_input = isfile(path_input_routine) ? path_input_routine : path_input_misc
-
-    h5open(path_input, "r") do f
-        dens_run = f["/od"] |>
-                   read |>
-                   x_vec -> permutedims(x_vec, (3, 2, 1)) |>
-                            x_vec -> stack(
-                       map(d -> subtract_corner_mean(d, wh_corner), eachslice(x_vec; dims=1));
-                       dims=1,
-                   )
-        ndims(dens_run) == 3 || error("Expected /od in $path_input to have 3 dimensions after formatting, got $(ndims(dens_run)).")
-        return dens_run
-    end
-end
-
-function format_image_array(dens_crop::AbstractArray{<:Real,3}, n_dim_vars)
-    n_shot = size(dens_crop, 1)
-    n_shot == prod(n_dim_vars) || throw(DimensionMismatch("Loaded $n_shot cropped images but expected $(prod(n_dim_vars)) from dimensions $n_dim_vars."))
-
-    imgs = [copy(@view dens_crop[idx, :, :]) for idx in axes(dens_crop, 1)]
-    img_fmt_rev = reshape(imgs, reverse(n_dim_vars)...)
-    order_vars = Tuple(reverse(1:length(n_dim_vars)))
-    return permutedims(img_fmt_rev, order_vars)
-end
-
-function format_dens_runinfo(runinfo)
-    runids = as_vector(runinfo.runids)
-    val = format_vars(runinfo.vars)
-    name_dims = propertynames(val)
-    n_dim_vars = map(length, val)
-    n_variation = prod(n_dim_vars)
-
-    dens = map(runid -> load_dens_run(runinfo.date, runid), runids) |>
-           ds -> cat(ds...; dims=1)
-    n_shot, h_dens, w_dens = size(dens)
-    n_shot == n_variation || throw(DimensionMismatch("Loaded $n_shot shots for $(gen_run_tag(runinfo)), but expected $n_variation from variables $name_dims with dimensions $n_dim_vars."))
-
-    dens_mean = dropdims(mean(dens; dims=1); dims=1)
-    xy_peak_px = find_positive_cluster_center(dens_mean; smwh=smwh_roi) |> cent -> round.(Int, cent)
-    dens_crop = mapslices(d -> crop_center(d, xy_peak_px, smwh_roi), dens; dims=(2, 3))
-    dens_full_fmt = format_image_array(dens_crop, n_dim_vars)
-
-    # A lite version for tests
-    # runinfo_lite = (date=runinfo.date, runids=runinfo.runids[1:3], tag_head="ImbaEvol", vars=(IB=runinfo.vars.IB, rep=1:3, bias=runinfo.vars.bias[5:7], t_hold=runinfo.vars.t_hold[1:4], istp=runinfo.vars.istp))
-    # val_lite = (
-    #     IB=val.IB,
-    #     rep=collect(1:3),
-    #     bias=val.bias[5:7],
-    #     t_hold=val.t_hold[1:4],
-    #     istp=val.istp,
-    # )
-    # n_dim_vars = map(length, val_lite)
-    # n_variation = prod(n_dim_vars)
-    # dens_full_fmt = dens_full_fmt[:, 1:3, 5:7, 1:4, :]
-
-    # size(dens_full_fmt) == (n_dim_vars |> Tuple) || throw(DimensionMismatch("Formatted dimensions $(size(dens_full_fmt)) do not match expected $n_dim_vars for $(gen_run_tag(runinfo))."))
-    # return (; runinfo=runinfo_lite, val=val_lite, dens_full_fmt, wh_dens=(w_dens, h_dens), xy_peak_px, n_dim_vars)
-    return (; runinfo, val, dens_full_fmt, wh_dens=(w_dens, h_dens), xy_peak_px, n_dim_vars)
-end
-
 for (idx_runinfo, runinfo) in enumerate(runinfos)
     println("Processing set $idx_runinfo: $(gen_run_tag(runinfo))")
-    global r = format_dens_runinfo(runinfo)
+    global r = format_dens_runinfo(runinfo; path_root, year_test, wh_corner, smwh_roi)
     println("  val lengths ($(join(string.(propertynames(r.val)), ", "))): $(map(length, r.val))")
     println("  dens_full_fmt size: $(size(r.dens_full_fmt))")
     println("  image size: $(size(first(r.dens_full_fmt)))")
