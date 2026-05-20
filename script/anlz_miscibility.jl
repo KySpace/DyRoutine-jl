@@ -70,6 +70,16 @@ function load_dens_run(date::AbstractString, runid::Integer)
     end
 end
 
+function format_image_array(dens_crop::AbstractArray{<:Real,3}, n_dim_vars)
+    n_shot = size(dens_crop, 1)
+    n_shot == prod(n_dim_vars) || throw(DimensionMismatch("Loaded $n_shot cropped images but expected $(prod(n_dim_vars)) from dimensions $n_dim_vars."))
+
+    imgs = [copy(@view dens_crop[idx, :, :]) for idx in axes(dens_crop, 1)]
+    img_fmt_rev = reshape(imgs, reverse(n_dim_vars)...)
+    order_vars = Tuple(reverse(1:length(n_dim_vars)))
+    return permutedims(img_fmt_rev, order_vars)
+end
+
 function format_dens_runinfo(runinfo)
     runids = as_vector(runinfo.runids)
     val = format_vars(runinfo.vars)
@@ -84,10 +94,8 @@ function format_dens_runinfo(runinfo)
 
     dens_mean = dropdims(mean(dens; dims=1); dims=1)
     xy_peak_px = find_positive_cluster_center(dens_mean; smwh=smwh_roi) |> cent -> round.(Int, cent)
-    dens_full_fmt = dens |>
-                    ds -> mapslices(d -> crop_center(d, xy_peak_px, smwh_roi), ds; dims=(2, 3)) |>
-                          ds -> reshape(ds, (reverse(n_dim_vars)..., reverse(wh_peak)...)) |>
-                                ds -> permutedims(ds, (5, 4, 3, 2, 1, 6, 7))
+    dens_crop = mapslices(d -> crop_center(d, xy_peak_px, smwh_roi), dens; dims=(2, 3))
+    dens_full_fmt = format_image_array(dens_crop, n_dim_vars)
 
     # A lite version for tests
     # runinfo_lite = (date=runinfo.date, runids=runinfo.runids[1:3], tag_head="ImbaEvol", vars=(IB=runinfo.vars.IB, rep=1:3, bias=runinfo.vars.bias[5:7], t_hold=runinfo.vars.t_hold[1:4], istp=runinfo.vars.istp))
@@ -100,9 +108,9 @@ function format_dens_runinfo(runinfo)
     # )
     # n_dim_vars = map(length, val_lite)
     # n_variation = prod(n_dim_vars)
-    # dens_full_fmt = dens_full_fmt[:, 1:3, 5:7, 1:4, :, :, :]
+    # dens_full_fmt = dens_full_fmt[:, 1:3, 5:7, 1:4, :]
 
-    # size(dens_full_fmt)[1:5] == (n_dim_vars |> Tuple) || throw(DimensionMismatch("Formatted dimensions $(size(dens_full_fmt)[1:5]) do not match expected $n_dim_vars for $(gen_run_tag(runinfo))."))
+    # size(dens_full_fmt) == (n_dim_vars |> Tuple) || throw(DimensionMismatch("Formatted dimensions $(size(dens_full_fmt)) do not match expected $n_dim_vars for $(gen_run_tag(runinfo))."))
     # return (; runinfo=runinfo_lite, val=val_lite, dens_full_fmt, wh_dens=(w_dens, h_dens), xy_peak_px, n_dim_vars)
     return (; runinfo, val, dens_full_fmt, wh_dens=(w_dens, h_dens), xy_peak_px, n_dim_vars)
 end
@@ -112,12 +120,13 @@ for (idx_runinfo, runinfo) in enumerate(runinfos)
     global r = format_dens_runinfo(runinfo)
     println("  val lengths ($(join(string.(propertynames(r.val)), ", "))): $(map(length, r.val))")
     println("  dens_full_fmt size: $(size(r.dens_full_fmt))")
+    println("  image size: $(size(first(r.dens_full_fmt)))")
     println("  xy_peak_px: $(r.xy_peak_px), wh_dens: $(r.wh_dens)")
-    # global essn_2d_fmt = r.dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, smw_ft, px_in_um; smwh_strip), ds; dims=(6, 7)) |> e -> dropdims(e; dims=(6, 7))
+    # global essn_2d_fmt = map(d -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, smw_ft, px_in_um; smwh_strip), r.dens_full_fmt)
     # global info_fmt = [Dict("istp" => r.val.istp[i], "t_hold" => r.val.t_hold[t], "repeat" => r.val.rep[rep], "ib" => r.val.IB[c], "bias" => r.val.bias[b])
     #                    for c in 1:r.n_dim_vars[1], rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4], i in 1:r.n_dim_vars[5]]
     # Statistics on number sum
-    global num_fmt = r.dens_full_fmt |> ds -> mapslices(calc_dens_sum, ds; dims=(6, 7)) |> n -> dropdims(n; dims=(6, 7))
+    global num_fmt = sum.(r.dens_full_fmt)
     global stat_n_fmt = num_fmt |> a -> mapslices(calc_mean_std, a; dims=(2))
     for c in 1:r.n_dim_vars[1], b in 1:r.n_dim_vars[3]
         tag = @sprintf("Top View Number Stat [IB = %.3fA | bias = %.2f]", r.val.IB[c], r.val.bias[b])
