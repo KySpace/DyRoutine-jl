@@ -18,16 +18,13 @@ include(joinpath(@__DIR__, "..", "src", "visduet.jl"))
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\SingDrplMisc"
 runinfos = [
-    (date="0513", runids=71:75, IB=5.378, tag_head="ImbaEvol", rep_each=1, bias=0.1:0.05:0.6, t_hold=6:5:56),
-    (date="0513", runids=76:80, IB=5.376, tag_head="ImbaEvol", rep_each=1, bias=0.1:0.05:0.6, t_hold=6:5:56),
-    (date="0513", runids=81, IB=[5.392, 5.386], tag_head="ImbaEvol", rep_each=1, bias=0.1:0.1:0.6, t_hold=6:10:116),
-    (date="0513", runids=82, IB=[5.378, 5.372], tag_head="ImbaEvol", rep_each=1, bias=0.1:0.1:0.6, t_hold=6:10:116),
+    (date="0513", runids=71:75, tag_head="ImbaEvol", vars=(IB=5.378, rep=1:5, bias=0.1:0.05:0.6, t_hold=6:5:56, istp=["162", "164"])),
+    (date="0513", runids=76:80, tag_head="ImbaEvol", vars=(IB=5.376, rep=1:5, bias=0.1:0.05:0.6, t_hold=6:5:56, istp=["162", "164"])),
+    (date="0513", runids=81, tag_head="ImbaEvol", vars=(IB=[5.392, 5.386], rep=1:1, bias=0.1:0.1:0.6, t_hold=6:10:116, istp=["162", "164"])),
+    (date="0513", runids=82, tag_head="ImbaEvol", vars=(IB=[5.378, 5.372], rep=1:1, bias=0.1:0.1:0.6, t_hold=6:10:116, istp=["162", "164"])),
 ][2:2]
-n_istp = 2
-title_anlz = "[05.15].03.[05.14].Miscibility.Strip"
+title_anlz = "[05.15].04.DevTest"
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz);
-name_dims = ["IB" "repeat" "bias" "t_hold" "istp"]
-val_istp = ["162", "164"]
 if !isdir(path_output)
     mkpath(path_output)
 end
@@ -46,6 +43,7 @@ x_posi, y_posi = (x_vec, y_vec) .* step_posi
 x_modl, y_modl = (x_vec, y_vec) .* step_modl
 
 as_vector(x) = x isa AbstractArray ? collect(x) : [x]
+format_vars(vars::NamedTuple) = map(as_vector, vars)
 
 function gen_run_tag(runinfo)
     str_runids = runinfo.runids |> a -> "$(a)" |> s -> replace(s, ":" => "-")
@@ -74,29 +72,15 @@ end
 
 function format_dens_runinfo(runinfo)
     runids = as_vector(runinfo.runids)
-    val_ib = as_vector(runinfo.IB)
-    val_bias = as_vector(runinfo.bias)
-    val_thold = as_vector(runinfo.t_hold)
-
-    n_ib = length(val_ib)
-    n_rep = runinfo.rep_each * length(runids)
-    n_bias = length(val_bias)
-    n_thold = length(val_thold)
-    n_istp = length(val_istp)
+    val = format_vars(runinfo.vars)
+    name_dims = propertynames(val)
+    n_dim_vars = map(length, val)
+    n_variation = prod(n_dim_vars)
 
     dens = map(runid -> load_dens_run(runinfo.date, runid), runids) |>
            ds -> cat(ds...; dims=1)
     n_shot, h_dens, w_dens = size(dens)
-    val = (
-        ib=val_ib,
-        rep=collect(1:n_rep),
-        bias=val_bias,
-        t_hold=val_thold,
-        istp=val_istp,
-    )
-    n_dim_vars = map(length, val)
-    n_variation = prod(n_dim_vars)
-    n_shot == n_variation || throw(DimensionMismatch("Loaded $n_shot shots for $(gen_run_tag(runinfo)), but expected $n_variation from dimensions $n_dim_vars."))
+    n_shot == n_variation || throw(DimensionMismatch("Loaded $n_shot shots for $(gen_run_tag(runinfo)), but expected $n_variation from variables $name_dims with dimensions $n_dim_vars."))
 
     dens_mean = dropdims(mean(dens; dims=1); dims=1)
     xy_peak_px = find_positive_cluster_center(dens_mean; smwh=smwh_roi) |> cent -> round.(Int, cent)
@@ -106,13 +90,13 @@ function format_dens_runinfo(runinfo)
                                 ds -> permutedims(ds, (5, 4, 3, 2, 1, 6, 7))
 
     # A lite version for tests
-    # runinfo_lite = (date=runinfo.date, runids=runinfo.runids[1:3], IB=runinfo.IB, tag_head="ImbaEvol", rep_each=1, bias=runinfo.bias[5:7], t_hold=runinfo.t_hold[1:4])
+    # runinfo_lite = (date=runinfo.date, runids=runinfo.runids[1:3], tag_head="ImbaEvol", vars=(IB=runinfo.vars.IB, rep=1:3, bias=runinfo.vars.bias[5:7], t_hold=runinfo.vars.t_hold[1:4], istp=runinfo.vars.istp))
     # val_lite = (
-    #     ib=val_ib,
+    #     IB=val.IB,
     #     rep=collect(1:3),
-    #     bias=val_bias[5:7],
-    #     t_hold=val_thold[1:4],
-    #     istp=val_istp,
+    #     bias=val.bias[5:7],
+    #     t_hold=val.t_hold[1:4],
+    #     istp=val.istp,
     # )
     # n_dim_vars = map(length, val_lite)
     # n_variation = prod(n_dim_vars)
@@ -126,33 +110,33 @@ end
 for (idx_runinfo, runinfo) in enumerate(runinfos)
     println("Processing set $idx_runinfo: $(gen_run_tag(runinfo))")
     global r = format_dens_runinfo(runinfo)
-    println("  val lengths ($(join(vec(name_dims), ", "))): $(map(length, r.val))")
+    println("  val lengths ($(join(string.(propertynames(r.val)), ", "))): $(map(length, r.val))")
     println("  dens_full_fmt size: $(size(r.dens_full_fmt))")
     println("  xy_peak_px: $(r.xy_peak_px), wh_dens: $(r.wh_dens)")
-    global essn_2d_fmt = r.dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, smw_ft, px_in_um; smwh_strip), ds; dims=(6, 7)) |> e -> dropdims(e; dims=(6, 7))
-    global info_fmt = [Dict("istp" => r.val.istp[i], "t_hold" => r.val.t_hold[t], "repeat" => r.val.rep[rep], "ib" => r.val.ib[c], "bias" => r.val.bias[b])
-                       for c in 1:r.n_dim_vars[1], rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4], i in 1:r.n_dim_vars[5]]
+    # global essn_2d_fmt = r.dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, smw_ft, px_in_um; smwh_strip), ds; dims=(6, 7)) |> e -> dropdims(e; dims=(6, 7))
+    # global info_fmt = [Dict("istp" => r.val.istp[i], "t_hold" => r.val.t_hold[t], "repeat" => r.val.rep[rep], "ib" => r.val.IB[c], "bias" => r.val.bias[b])
+    #                    for c in 1:r.n_dim_vars[1], rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4], i in 1:r.n_dim_vars[5]]
     # Statistics on number sum
     global num_fmt = r.dens_full_fmt |> ds -> mapslices(calc_dens_sum, ds; dims=(6, 7)) |> n -> dropdims(n; dims=(6, 7))
     global stat_n_fmt = num_fmt |> a -> mapslices(calc_mean_std, a; dims=(2))
     for c in 1:r.n_dim_vars[1], b in 1:r.n_dim_vars[3]
-        tag = @sprintf("Top View Number Stat [IB = %.3fA | bias = %.2f]", r.val.ib[c], r.val.bias[b])
+        tag = @sprintf("Top View Number Stat [IB = %.3fA | bias = %.2f]", r.val.IB[c], r.val.bias[b])
         fig_num, axs_num = set_axis!(tag)
         [axs_num] |> clear_axes!
         for istp in 1:r.n_dim_vars[5]
             plot_num_stat_evo!(axs_num, r.val.t_hold, stat_n_fmt[c, 1, b, :, istp], r.val.istp[istp])
         end
         ylims!(axs_num, 0, 8000.0)
-        fig_num |> f -> save(joinpath(path_output, @sprintf("%s_num_stat_[IB=%.3fA'bias=%.2f].png", gen_run_tag(runinfo), r.val.ib[c], r.val.bias[b])), f; backend=CairoMakie)
+        fig_num |> f -> save(joinpath(path_output, @sprintf("%s_num_stat_[IB=%.3fA'bias=%.2f].png", gen_run_tag(runinfo), r.val.IB[c], r.val.bias[b])), f; backend=CairoMakie)
     end
-    for c in 1:r.n_dim_vars[1]
-        global fig_full_duets, axs_full_duets = set_axes_v_t_rep!(Tuple(r.n_dim_vars)[2:end], set_panel_misc_duet_2d!, r.runinfo, info_fmt[c, :, :, :, :]; partidx=c)
-        for rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4]
-            draw_misc_duet_2d!(axs_full_duets[rep, b, t], essn_2d_fmt[c, rep, b, t, :])
-            print("\r\033[2K\rdrawing duet at $rep, $b, $t.")
-        end
-        println("\r\033[2K\rdrawing complete for $c.")
-        fig_full_duets |> resize_to_layout!
-        fig_full_duets |> f -> save(joinpath(path_output, @sprintf("%s_[IB=%.3fA]_essn_table.pdf", gen_run_tag(runinfo), r.val.ib[c])), f; backend=CairoMakie)
-    end
+    # for c in 1:r.n_dim_vars[1]
+    #     global fig_full_duets, axs_full_duets = set_axes_v_t_rep!(Tuple(r.n_dim_vars)[2:end], set_panel_misc_duet_2d!, r.runinfo, info_fmt[c, :, :, :, :]; partidx=c)
+    #     for rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4]
+    #         draw_misc_duet_2d!(axs_full_duets[rep, b, t], essn_2d_fmt[c, rep, b, t, :])
+    #         print("\r\033[2K\rdrawing duet at $rep, $b, $t.")
+    #     end
+    #     println("\r\033[2K\rdrawing complete for $c.")
+    #     fig_full_duets |> resize_to_layout!
+    #     fig_full_duets |> f -> save(joinpath(path_output, @sprintf("%s_[IB=%.3fA]_essn_table.pdf", gen_run_tag(runinfo), r.val.IB[c])), f; backend=CairoMakie)
+    # end
 end
