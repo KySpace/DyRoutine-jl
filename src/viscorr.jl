@@ -1,3 +1,4 @@
+using GLMakie: Grid
 using CairoMakie: extract_attributes!
 using CairoMakie, GLMakie
 using CairoMakie: Axis
@@ -48,6 +49,45 @@ function set_axis_sidepeak_nvlp!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer
     fig[2, n_dim_vars[1]+3] = gl
     axs_all = panel_setter(gl, 1; extra=true)
     return fig, Dict("repeats" => axs_repeats, "stacked" => axs_stacked, "all" => axs_all)
+end
+
+function set_axes_2axes!(vals::NamedTuple, panel_setter::Function, runinfo)
+    fig = Figure()
+    n_dim_vars = vals |> vs -> map(length, vs) |> Tuple
+    name_vars = vals |> propertynames |> ns -> string.(ns)
+    length(n_dim_vars) == 2 || throw(ArgumentError("Select only 2 vars for to make this table."))
+    axs = Array{Dict}(undef, n_dim_vars)
+    for (r, v_r) in enumerate(vals[1]), (c, v_c) in enumerate(vals[2])
+        print("\r\033[2K\rbuilding axes for $r-$c")
+        gl_rc = GridLayout()
+        fig[r, c] = gl_rc
+        Label(gl_rc[0, 1], text="$(name_vars[1])=$(v_r) | $(name_vars[2])=$(v_c)"; tellwidth=false, tellheight=false, halign=:center, valign=:top)
+        gl = GridLayout()
+        gl_rc[1, 1] = gl
+        axs[r, c] = panel_setter(gl; row_cmpl=n_dim_vars[1] - r, col=c)
+        gl_rc |> l -> colgap!(l, 0)
+        gl_rc |> l -> rowgap!(l, 0)
+        gl_rc |> l -> rowsize!(l, 0, 20)
+    end
+    fig.layout |> l -> colgap!(l, 8)
+    fig.layout |> l -> rowgap!(l, 4)
+    println("\r\033[2K\raxes built for the trends")
+    return fig, axs
+end
+
+function set_panel_single_axis(gl::GridLayout; row_cmpl=0, col=1)
+    gl |> clean_gridlayout!
+    ax = Axis(gl[1, 1]; width=400, height=200)
+    hidedecorations!(ax; label=false, ticklabels=false, ticks=true, grid=true, minorticks=true, minorgrid=false)
+    if col == 1
+        ax.yticklabelsvisible = true
+        ax.ylabelvisible = true
+    end
+    if row_cmpl == 0
+        ax.xticklabelsvisible = true
+        ax.xlabelvisible = true
+    end
+    return Dict("ax" => ax)
 end
 
 function set_axis_stack_all!(_, panel_setter::Function, runinfo)

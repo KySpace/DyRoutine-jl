@@ -22,10 +22,9 @@ istp = ["162", "164"]
 runinfos = [
     (date="0513", runids=71:75, tag_head="ImbaEvol", vars=(IB=5.378, rep=1:5, bias=0.1:0.05:0.6, t_hold=6:5:56, istp)),
     (date="0513", runids=76:80, tag_head="ImbaEvol", vars=(IB=5.376, rep=1:5, bias=0.1:0.05:0.6, t_hold=6:5:56, istp)),
-    (date="0513", runids=81, tag_head="ImbaEvol", vars=(IB=[5.392, 5.386], rep=1:1, bias=0.1:0.1:0.6, t_hold=6:10:116, istp)),
-    (date="0513", runids=82, tag_head="ImbaEvol", vars=(IB=[5.378, 5.372], rep=1:1, bias=0.1:0.1:0.6, t_hold=6:10:116, istp)),
-][2:2]
-title_anlz = "[05.15].04.DevTest"
+    (date="0513", runids=81:82, tag_head="ImbaEvol", vars=(IB=[5.392, 5.386, 5.378, 5.372], rep=1:1, bias=0.1:0.1:0.6, t_hold=6:10:116, istp)),
+]
+title_anlz = "[05.21].05.StackedDuet"
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz);
 if !isdir(path_output)
     mkpath(path_output)
@@ -69,6 +68,19 @@ for (idx_runinfo, runinfo) in enumerate(runinfos)
     global stat_n_fmt = num_fmt |> a -> mapslices(calc_mean_std, a; dims=(2))
     global essn_2d_stacked_over_rep = essn_2d_fmt |> es -> mapslices(calc_stacked_essn, es; dims=2)
     global info_stacked_over_rep = info_fmt[:, 1:1, :, :, :]
+    fig_sizes, axs_sizes = set_axes_2axes!(r.runinfo.vars |> NamedTuple{(:IB, :bias)}, set_panel_single_axis, r.runinfo)
+    for (c, ib) in enumerate(r.val.IB), (b, bias) in enumerate(r.val.bias)
+        ax = axs_sizes[c, b]["ax"]
+        [ax] |> clear_axes!
+        for (i, istp) in enumerate(r.val.istp), rep in r.val.rep
+            clr_theme = Oklch(0.52, 0.14, hue_theme_istp[istp])
+            sizes = extr_2d_fmt[c, rep, b, :, i] |> es -> map(e -> e.envelope.params_round["size"], es)
+            lines!(ax, r.val.t_hold, sizes; color=clr_theme)
+        end
+        ylims!(ax, 0, 6.0)
+    end
+    fig_sizes |> resize_to_layout!
+    fig_sizes |> f -> save(joinpath(path_output, @sprintf("%s_sizes.png", gen_run_tag(r.runinfo))), f; backend=CairoMakie)
     # for c in 1:r.n_dim_vars[1], b in 1:r.n_dim_vars[3]
     #     tag = @sprintf("Top View Number Stat [IB = %.3fA | bias = %.2f]", r.val.IB[c], r.val.bias[b])
     #     fig_num, axs_num = set_axis!(tag)
@@ -77,28 +89,28 @@ for (idx_runinfo, runinfo) in enumerate(runinfos)
     #         plot_num_stat_evo!(axs_num, r.val.t_hold, stat_n_fmt[c, 1, b, :, istp], r.val.istp[istp])
     #     end
     #     ylims!(axs_num, 0, 8000.0)
-    #     fig_num |> f -> save(joinpath(path_output, @sprintf("%s_num_stat_[IB=%.3fA'bias=%.2f].png", gen_run_tag(runinfo), r.val.IB[c], r.val.bias[b])), f; backend=CairoMakie)
+    #     fig_num |> f -> save(joinpath(path_output, @sprintf("%s_num_stat_[IB=%.3fA'bias=%.2f].png", gen_run_tag(r.runinfo), r.val.IB[c], r.val.bias[b])), f; backend=CairoMakie)
     # end
-    println("\r\033[2K\rNow drawing table for stacked over rep.")
-    for c in 1:r.n_dim_vars[1]
-        global fig_stacked_duets, axs_stacked_duets = set_axes_v_t_rep!(Base.setindex(r.n_dim_vars, 1, 2)[2:end], set_panel_misc_duet_2d!, r.runinfo, info_stacked_over_rep[c, :, :, :, :]; partidx=c)
-        for b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4]
-            draw_misc_duet_core_2d!(axs_stacked_duets[1, b, t], essn_2d_stacked_over_rep[c, 1, b, t, :])
-            print("\r\033[2K\rdrawing duet at, $b, $t.")
-        end
-        println("\r\033[2K\rdrawing complete for $c.")
-        fig_stacked_duets |> resize_to_layout!
-        fig_stacked_duets |> f -> save(joinpath(path_output, @sprintf("%s_[IB=%.3fA]_essn_table.pdf", gen_run_tag(r.runinfo), r.val.IB[c])), f; backend=CairoMakie)
-    end
-    println("\r\033[2K\rNow drawing table for full run.")
-    for c in 1:r.n_dim_vars[1]
-        global fig_full_duets, axs_full_duets = set_axes_v_t_rep!(Tuple(r.n_dim_vars)[2:end], set_panel_misc_duet_2d!, r.runinfo, info_fmt[c, :, :, :, :]; partidx=c)
-        for rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4]
-            draw_misc_duet_2d!(axs_full_duets[rep, b, t], essn_2d_fmt[c, rep, b, t, :])
-            print("\r\033[2K\rdrawing duet at $rep, $b, $t.")
-        end
-        println("\r\033[2K\rdrawing complete for $c.")
-        fig_full_duets |> resize_to_layout!
-        fig_full_duets |> f -> save(joinpath(path_output, @sprintf("%s_[IB=%.3fA]_essn_table.pdf", gen_run_tag(r.runinfo), r.val.IB[c])), f; backend=CairoMakie)
-    end
+    # println("\r\033[2K\rNow drawing table for stacked over rep.")
+    # for c in 1:r.n_dim_vars[1]
+    #     global fig_stacked_duets, axs_stacked_duets = set_axes_v_t_rep!(Base.setindex(r.n_dim_vars, 1, 2)[2:end], set_panel_misc_duet_2d!, r.runinfo, info_stacked_over_rep[c, :, :, :, :]; partidx=c)
+    #     for b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4]
+    #         draw_misc_duet_core_2d!(axs_stacked_duets[1, b, t], essn_2d_stacked_over_rep[c, 1, b, t, :])
+    #         print("\r\033[2K\rdrawing duet at, $b, $t.")
+    #     end
+    #     println("\r\033[2K\rdrawing complete for $c.")
+    #     fig_stacked_duets |> resize_to_layout!
+    #     fig_stacked_duets |> f -> save(joinpath(path_output, @sprintf("%s_[IB=%.3fA]_essn_table_stacked.pdf", gen_run_tag(r.runinfo), r.val.IB[c])), f; backend=CairoMakie)
+    # end
+    # println("\r\033[2K\rNow drawing table for full run.")
+    # for c in 1:r.n_dim_vars[1]
+    #     global fig_full_duets, axs_full_duets = set_axes_v_t_rep!(Tuple(r.n_dim_vars)[2:end], set_panel_misc_duet_2d!, r.runinfo, info_fmt[c, :, :, :, :]; partidx=c)
+    #     for rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4]
+    #         draw_misc_duet_2d!(axs_full_duets[rep, b, t], essn_2d_fmt[c, rep, b, t, :])
+    #         print("\r\033[2K\rdrawing duet at $rep, $b, $t.")
+    #     end
+    #     println("\r\033[2K\rdrawing complete for $c.")
+    #     fig_full_duets |> resize_to_layout!
+    #     fig_full_duets |> f -> save(joinpath(path_output, @sprintf("%s_[IB=%.3fA]_essn_table.pdf", gen_run_tag(r.runinfo), r.val.IB[c])), f; backend=CairoMakie)
+    # end
 end
