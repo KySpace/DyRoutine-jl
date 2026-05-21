@@ -51,22 +51,30 @@ for (idx_runinfo, runinfo) in enumerate(runinfos)
     println("  dens_full_fmt size: $(size(r.dens_full_fmt))")
     println("  image size: $(size(first(r.dens_full_fmt)))")
     println("  xy_peak_px: $(r.xy_peak_px), wh_dens: $(r.wh_dens)")
+    global xy_peak_duet = r.dens_full_fmt |>
+                          ds -> mapslices(
+                              imgs -> mean(imgs) |>
+                                      d -> fit_dens2d_gaussian_elliptic_disk(1:wh_peak[1], 1:wh_peak[2], d, :)["params"] |>
+                                           p -> (round(Int, p[2]), round(Int, p[3])),
+                              ds;
+                              dims=ndims(ds),
+                          )
     # global essn_2d_fmt = map(d -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, smw_ft, px_in_um; smwh_strip), r.dens_full_fmt)
     # global info_fmt = [Dict("istp" => r.val.istp[i], "t_hold" => r.val.t_hold[t], "repeat" => r.val.rep[rep], "ib" => r.val.IB[c], "bias" => r.val.bias[b])
     #                    for c in 1:r.n_dim_vars[1], rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4], i in 1:r.n_dim_vars[5]]
     # Statistics on number sum
     global num_fmt = sum.(r.dens_full_fmt)
     global stat_n_fmt = num_fmt |> a -> mapslices(calc_mean_std, a; dims=(2))
-    for c in 1:r.n_dim_vars[1], b in 1:r.n_dim_vars[3]
-        tag = @sprintf("Top View Number Stat [IB = %.3fA | bias = %.2f]", r.val.IB[c], r.val.bias[b])
-        fig_num, axs_num = set_axis!(tag)
-        [axs_num] |> clear_axes!
-        for istp in 1:r.n_dim_vars[5]
-            plot_num_stat_evo!(axs_num, r.val.t_hold, stat_n_fmt[c, 1, b, :, istp], r.val.istp[istp])
-        end
-        ylims!(axs_num, 0, 8000.0)
-        fig_num |> f -> save(joinpath(path_output, @sprintf("%s_num_stat_[IB=%.3fA'bias=%.2f].png", gen_run_tag(runinfo), r.val.IB[c], r.val.bias[b])), f; backend=CairoMakie)
-    end
+    # for c in 1:r.n_dim_vars[1], b in 1:r.n_dim_vars[3]
+    #     tag = @sprintf("Top View Number Stat [IB = %.3fA | bias = %.2f]", r.val.IB[c], r.val.bias[b])
+    #     fig_num, axs_num = set_axis!(tag)
+    #     [axs_num] |> clear_axes!
+    #     for istp in 1:r.n_dim_vars[5]
+    #         plot_num_stat_evo!(axs_num, r.val.t_hold, stat_n_fmt[c, 1, b, :, istp], r.val.istp[istp])
+    #     end
+    #     ylims!(axs_num, 0, 8000.0)
+    #     fig_num |> f -> save(joinpath(path_output, @sprintf("%s_num_stat_[IB=%.3fA'bias=%.2f].png", gen_run_tag(runinfo), r.val.IB[c], r.val.bias[b])), f; backend=CairoMakie)
+    # end
     # for c in 1:r.n_dim_vars[1]
     #     global fig_full_duets, axs_full_duets = set_axes_v_t_rep!(Tuple(r.n_dim_vars)[2:end], set_panel_misc_duet_2d!, r.runinfo, info_fmt[c, :, :, :, :]; partidx=c)
     #     for rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4]
