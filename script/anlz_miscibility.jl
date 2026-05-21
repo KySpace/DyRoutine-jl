@@ -33,6 +33,7 @@ end
 
 wh_corner = (10, 10)
 smwh_roi = (30, 30)
+smwh_core = (20, 20)
 smwh_strip = (2, 20)
 wh_peak = smwh_roi .* 2 .+ 1
 smw_peak, smh_peak = smwh_roi
@@ -53,15 +54,15 @@ for (idx_runinfo, runinfo) in enumerate(runinfos)
     println("  xy_peak_px: $(r.xy_peak_px), wh_dens: $(r.wh_dens)")
     global xy_peak_duet = r.dens_full_fmt |>
                           ds -> mapslices(
-                              imgs -> mean(imgs) |>
-                                      d -> fit_dens2d_gaussian_elliptic_disk(1:wh_peak[1], 1:wh_peak[2], d, :)["params"] |>
-                                           p -> (round(Int, p[2]), round(Int, p[3])),
-                              ds;
-                              dims=ndims(ds),
-                          )
-    # global essn_2d_fmt = map(d -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, smw_ft, px_in_um; smwh_strip), r.dens_full_fmt)
-    # global info_fmt = [Dict("istp" => r.val.istp[i], "t_hold" => r.val.t_hold[t], "repeat" => r.val.rep[rep], "ib" => r.val.IB[c], "bias" => r.val.bias[b])
-    #                    for c in 1:r.n_dim_vars[1], rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4], i in 1:r.n_dim_vars[5]]
+        imgs -> mean(imgs) |>
+                d -> fit_dens2d_gaussian_elliptic_disk(1:wh_peak[1], 1:wh_peak[2], d, :)["params"] |>
+                     p -> (round(Int, p[2]), round(Int, p[3])),
+        ds;
+        dims=ndims(ds),
+    ) |> p -> repeat(p, inner=ntuple(i -> i == 5 ? 2 : 1, length(r.n_dim_vars)))
+    global essn_2d_fmt = map((d, xy) -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, smw_ft, px_in_um, xy, smwh_core; smwh_strip), r.dens_full_fmt, xy_peak_duet)
+    global info_fmt = [Dict("istp" => r.val.istp[i], "t_hold" => r.val.t_hold[t], "repeat" => r.val.rep[rep], "ib" => r.val.IB[c], "bias" => r.val.bias[b])
+                       for c in 1:r.n_dim_vars[1], rep in 1:r.n_dim_vars[2], b in 1:r.n_dim_vars[3], t in 1:r.n_dim_vars[4], i in 1:r.n_dim_vars[5]]
     # Statistics on number sum
     global num_fmt = sum.(r.dens_full_fmt)
     global stat_n_fmt = num_fmt |> a -> mapslices(calc_mean_std, a; dims=(2))

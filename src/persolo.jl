@@ -239,6 +239,9 @@ end
 struct SoloEssentials
     dens2d::AbstractMatrix
     modl2d::AbstractMatrix
+    dens2d_core::AbstractMatrix
+    xy_cent_core::Tuple{<:Real,<:Real}
+    smwh_core::Tuple{<:Real,<:Real}
     prfl_strip::AbstractVector
     prfl_modl::AbstractVector
     prfl_modl_norm_px::AbstractVector
@@ -260,7 +263,7 @@ struct SoloExtract
     envelope::Dict{String}
 end
 
-function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smwh::Tuple{<:Real,<:Real}, smw_modl::Integer, px_in_um::Real; smwh_strip::Tuple{<:Real,<:Real}=smwh)
+function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smwh::Tuple{<:Real,<:Real}, smw_modl::Integer, px_in_um::Real, cent_core::Tuple{<:Real,<:Real}, smwh_core::Tuple{<:Real,<:Real}; smwh_strip::Tuple{<:Real,<:Real}=smwh)
     dens_roi = crop_center(dens, cent, smwh)
     sum_dens = sum(dens)
     x_cent = smwh[1] + 1
@@ -270,7 +273,8 @@ function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smw
     modl_roi = dens_roi .* gen_win_hann_2d(smwh) |> fft |> fftshift |> c -> abs.(c)
     prfl_modl = modl_roi[:, x_cent-smw_modl:x_cent+smw_modl] |> m -> sum(m, dims=2) ./ (smw_modl * 2 + 1) |> vec
     prfl_modl_norm_px = prfl_modl ./ (sum(prfl_modl) * step_modl / 2)
-    return SoloEssentials(dens_roi, modl_roi, prfl_strip, prfl_modl, prfl_modl_norm_px, smwh, smwh_strip, smw_modl, step_posi, step_modl, sum_dens)
+    dens2d_core = crop_center(dens, cent_core, smwh_core)
+    return SoloEssentials(dens_roi, modl_roi, dens2d_core, cent_core, smwh_core, prfl_strip, prfl_modl, prfl_modl_norm_px, smwh, smwh_strip, smw_modl, step_posi, step_modl, sum_dens)
 end
 
 function calc_solo_extr(essn::SoloEssentials, fit_stack::Dict)
