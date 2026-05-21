@@ -57,6 +57,9 @@ function set_panel_solo_modl!(gl::GridLayout)
 end
 
 function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
+    isnothing(extr.envelope) && return
+    isnothing(extr.sidepeak) && return
+
     foreach(empty!, values(axs))
     essn = extr.essentials
     modl2d_norm = essn.modl2d |> m -> m ./ (sum(m) * (essn.step_modl / 2)^2)
@@ -69,9 +72,9 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     clr_mark_nvlp = RGBAf(Oklch(0.52, 0.10, hue_theme + 90), 1.0)
     clr_moments = Oklch(0.52, 0.14, hue_theme)
 
-    nvlp = extr.envelope
-    shade_mainpeak = extr.fit_tailess["fitfn_main"](y_modl_sm)
-    shade_peaks = extr.fit_tailess["fitfn"](y_modl_sm)
+    nvlp = extr.envelope.params_asymm_2d
+    shade_mainpeak = extr.sidepeak.fit_tailess["fitfn_main"](y_modl_sm)
+    shade_peaks = extr.sidepeak.fit_tailess["fitfn"](y_modl_sm)
     band!(axs["upright"], y_modl_sm, 0, shade_mainpeak, color=(:gray, 0.1))
     band!(axs["upright"], y_modl_sm, shade_mainpeak, shade_peaks, color=(:darkseagreen1, 0.5))
 
@@ -82,8 +85,8 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, 10.0), colormap=clrmap, rasterize=true)
     lines!(axs["upright"], y_modl_sm, essn.prfl_modl_norm_px[essn.smwh[2]+1:end], color=(:black, 0.4), linewidth=1)
     lines!(axs["sideway"], essn.prfl_modl_norm_px[essn.smwh[2]+1:end], y_modl_sm, color=(:black, 0.4), linewidth=1)
-    lines!(axs["upright"], y_modl_sm, extr.prfl_modl_norm_tailess_px[essn.smwh[2]+1:end], color=:black, linewidth=1)
-    lines!(axs["sideway"], extr.prfl_modl_norm_tailess_px[essn.smwh[2]+1:end], y_modl_sm, color=:black, linewidth=1)
+    lines!(axs["upright"], y_modl_sm, extr.sidepeak.prfl_norm_tailess_px[essn.smwh[2]+1:end], color=:black, linewidth=1)
+    lines!(axs["sideway"], extr.sidepeak.prfl_norm_tailess_px[essn.smwh[2]+1:end], y_modl_sm, color=:black, linewidth=1)
     axs["sideway"].yreversed = true
     axs["sideway"] |> hidedecorations!
     axs["modl"] |> hidedecorations!
@@ -102,10 +105,10 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     vlines!(axs["modl"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.2))
     vlines!(axs["upright"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
     hlines!(axs["upright"], 0.0; color=(:darkseagreen1, 0.5))
-    vlines!(axs["upright"], extr.sidepeak["wavenum"]; color=(:mediumspringgreen, 1.0))
-    vlines!(axs["sideway"], extr.sidepeak["height"]; color=(:mediumspringgreen, 1.0))
-    mmt = extr.moments_modl
-    sp = extr.sidepeak
+    vlines!(axs["upright"], extr.sidepeak.params_tailess["wavenum"]; color=(:mediumspringgreen, 1.0))
+    vlines!(axs["sideway"], extr.sidepeak.params_tailess["height"]; color=(:mediumspringgreen, 1.0))
+    mmt = extr.sidepeak.moments
+    sp = extr.sidepeak.params_tailess
     mmt_coor_min = mmt["coor"] |> minimum
     mmt_coor_max = mmt["coor"] |> maximum
     errorbars!(axs["upright"], [mmt["wavenum"]], [1.7], [mmt["width"]], [mmt["width"]]; direction=:x, color=clr_moments, whiskerwidth=8)

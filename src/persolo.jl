@@ -6,6 +6,7 @@ using NaNStatistics: movmean
 using FFTW
 using DSP.Windows: hanning
 using NumericalIntegration: integrate
+using StatsBase: geomean
 
 function subtract_corner_mean(arr::AbstractMatrix, wh_corner::Tuple{<:Integer,<:Integer})
     (h_corner, w_corner) = wh_corner
@@ -187,9 +188,51 @@ function fit_dens2d_gaussian_elliptic_disk(xs, ys, dens, mask)
         yp = (-s) .* dx .+ c .* dy
         return @. A * exp.(-(xp^2 / (2σx^2) + yp^2 / (2σy^2)))
     end
-    params_init = Float64[10, 0, 0, 2, 5, 10/180*π]
-    params_upper = Float64[25, 5, 10, 4, 20, 20/180*π]
-    params_lower = Float64[0, -5, -10, 1, 2, -10/180*π]
+    x_min, x_max = [minimum(xs), maximum(xs)]
+    y_min, y_max = [minimum(ys), maximum(ys)]
+    x_mid, y_mid = [(x_min + x_max) / 2, (y_min + y_max) / 2]
+    x_scale, y_scale = [(x_max - x_min) / 2, (y_max - y_min) / 2] ./ 3
+    params_init = Float64[10, x_mid, y_mid, x_scale, y_scale, 10/180*π]
+    params_upper = Float64[25, x_max, y_max, x_scale*10, y_scale*10, 20/180*π]
+    params_lower = Float64[0, x_min, y_min, x_scale/10, y_scale/10, -10/180*π]
+    fit = curve_fit(
+        model, xydata, zdata,
+        params_init;
+        lower=params_lower,
+        upper=params_upper,
+    )
+    params_fit = coef(fit)
+    fitfn(coords) = model(coords, params_fit)
+    rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (dens[mask] |> d -> sqrt(sum(abs2, d)))
+    return Dict(
+        "fit" => fit,
+        "model" => model,
+        "params" => params_fit,
+        "fitfn" => fitfn,
+        "rss_rel" => rss_rel,
+    )
+end
+
+function fit_dens2d_gaussian_round_disk(xs, ys, dens, mask)
+    X = [x for y in ys, x in xs]
+    Y = [y for y in ys, x in xs]
+    xydata = hcat(vec(X[mask]), vec(Y[mask]))
+    zdata = vec(dens[mask])
+    model(coords, p) = begin
+        x = coords[:, 1]
+        y = coords[:, 2]
+        A, x0, y0, σ = p
+        dx = x .- x0
+        dy = y .- y0
+        return @. A * exp.(-(dx^2 / (2σ^2) + dy^2 / (2σ^2)))
+    end
+    x_min, x_max = [minimum(xs), maximum(xs)]
+    y_min, y_max = [minimum(ys), maximum(ys)]
+    x_mid, y_mid = [(x_min + x_max) / 2, (y_min + y_max) / 2]
+    scale = [(x_max - x_min) / 2, (y_max - y_min) / 2] ./ 3 |> geomean
+    params_init = Float64[10, x_mid, y_mid, scale]
+    params_upper = Float64[25, x_max, y_max, scale*10]
+    params_lower = Float64[0, x_min, y_min, scale/10]
     fit = curve_fit(
         model, xydata, zdata,
         params_init;
@@ -240,7 +283,7 @@ struct SoloEssentials
     dens2d::AbstractMatrix
     modl2d::AbstractMatrix
     dens2d_core::AbstractMatrix
-    xy_cent_core::Tuple{<:Real,<:Real}
+    offset_cent_core::Tuple{<:Real,<:Real}
     smwh_core::Tuple{<:Real,<:Real}
     prfl_strip::AbstractVector
     prfl_modl::AbstractVector
@@ -253,14 +296,24 @@ struct SoloEssentials
     sum_dens_full::Real
 end
 
+struct SoloSidepeak
+    prfl_norm_tailess_px::AbstractVector
+    params_tailess::Dict{String,Real}
+    fit_tailess::Dict
+    moments::Dict{String}
+end
+
+struct SoloEnvelope
+    fit_asymm_2d::Dict{String}
+    params_asymm::Dict{String}
+    fit_round_2d::Dict{String}
+    params_round::Dict{String}
+end
+
 struct SoloExtract
     essentials::SoloEssentials
-    prfl_modl_norm_tailess_px::AbstractVector
-    sidepeak::Dict{String,Real}
-    fit_tailess::Dict
-    moments_modl::Dict{String}
-    fit_dens_2d::Dict
-    envelope::Dict{String}
+    sidepeak::Union{SoloSidepeak,Nothing}
+    envelope::Union{SoloEnvelope,Nothing}
 end
 
 function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smwh::Tuple{<:Real,<:Real}, smw_modl::Integer, px_in_um::Real, cent_core::Tuple{<:Real,<:Real}, smwh_core::Tuple{<:Real,<:Real}; smwh_strip::Tuple{<:Real,<:Real}=smwh)
@@ -269,38 +322,54 @@ function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smw
     x_cent = smwh[1] + 1
     step_posi = px_in_um
     step_modl = 1 / (2 * smwh[2] * px_in_um)
-    prfl_strip = crop_center(dens, cent, smwh_strip) |> m -> mean(m, dims=2) |> vec
+    x_posi, y_posi = map(u -> (-u:1:u), smwh) .* step_posi
+    prfl_strip = crop_center(dens, cent_core, smwh_strip) |> m -> mean(m, dims=2) |> vec
     modl_roi = dens_roi .* gen_win_hann_2d(smwh) |> fft |> fftshift |> c -> abs.(c)
     prfl_modl = modl_roi[:, x_cent-smw_modl:x_cent+smw_modl] |> m -> sum(m, dims=2) ./ (smw_modl * 2 + 1) |> vec
     prfl_modl_norm_px = prfl_modl ./ (sum(prfl_modl) * step_modl / 2)
     dens2d_core = crop_center(dens, cent_core, smwh_core)
-    return SoloEssentials(dens_roi, modl_roi, dens2d_core, cent_core, smwh_core, prfl_strip, prfl_modl, prfl_modl_norm_px, smwh, smwh_strip, smw_modl, step_posi, step_modl, sum_dens)
+    return SoloEssentials(dens_roi, modl_roi, dens2d_core, (x_posi[cent_core[1]], y_posi[cent_core[2]]), smwh_core, prfl_strip, prfl_modl, prfl_modl_norm_px, smwh, smwh_strip, smw_modl, step_posi, step_modl, sum_dens)
 end
 
-function calc_solo_extr(essn::SoloEssentials, fit_stack::Dict)
+function calc_solo_extr(essn::SoloEssentials, fit_stack::Union{Dict,Nothing}; proc_sidepeak::Bool=false, proc_envelope::Bool=false)
     x, y = essn.smwh |> s -> map(u -> (-u:1:u), s)
     x_modl, y_modl = (x, y) .* essn.step_modl
     x_posi, y_posi = (x, y) .* essn.step_posi
     sel_moment = y -> (y .> 0.10) .& (y .< 0.50)
     sel_sidepeak = (y_modl .> 0.1) .& (y_modl .< 0.5)
-    mask_mmt = sel_moment(y_modl)
-    prfl_tailess = essn.prfl_modl_norm_px - fit_stack["tail"](y_modl)
-    fit_tailess = fit_prfl_modl_twinpeak_1d(y_modl, prfl_tailess, sel_sidepeak)
-    sidepeak = Dict(
-        "height" => fit_tailess["params"][3],
-        "width" => fit_tailess["params"][4],
-        "wavenum" => fit_tailess["params"][5],
-        "weight" => sqrt(2 * pi) * fit_tailess["params"][3] * fit_tailess["params"][4],
-        "rel. residue" => fit_tailess["rss_rel"]
-    )
-    moments = calc_prfl_moment(y_modl[mask_mmt], prfl_tailess[mask_mmt])
-    fit_dens = fit_dens2d_gaussian_elliptic_disk(x_posi, y_posi, essn.dens2d, :)
-    envelope = Dict(
-        "max" => fit_dens["params"][1],
-        "cent" => (fit_dens["params"][2], fit_dens["params"][3]),
-        "size" => (fit_dens["params"][4], fit_dens["params"][5]),
-        "rotation" => fit_dens["params"][6],
-        "rel. residue" => fit_dens["rss_rel"]
-    )
-    return SoloExtract(essn, prfl_tailess, sidepeak, fit_tailess, moments, fit_dens, envelope)
+    sidepeak = proc_sidepeak ?
+    begin
+        mask_mmt = sel_moment(y_modl)
+        prfl_tailess = essn.prfl_modl_norm_px - fit_stack["tail"](y_modl)
+        fit_tailess = fit_prfl_modl_twinpeak_1d(y_modl, prfl_tailess, sel_sidepeak)
+        params_tailess = Dict(
+            "height" => fit_tailess["params"][3],
+            "width" => fit_tailess["params"][4],
+            "wavenum" => fit_tailess["params"][5],
+            "weight" => sqrt(2 * pi) * fit_tailess["params"][3] * fit_tailess["params"][4],
+            "rel. residue" => fit_tailess["rss_rel"]
+        )
+        moments = calc_prfl_moment(y_modl[mask_mmt], prfl_tailess[mask_mmt])
+        SoloSidepeak(prfl_tailess, params_tailess, fit_tailess, moments)
+    end : nothing
+    envelope = proc_envelope ?
+    begin
+        fit_asymm = fit_dens2d_gaussian_elliptic_disk(x_posi, y_posi, essn.dens2d, :)
+        params_asymm = Dict(
+            "max" => fit_asymm["params"][1],
+            "cent" => (fit_asymm["params"][2], fit_asymm["params"][3]),
+            "size" => (fit_asymm["params"][4], fit_asymm["params"][5]),
+            "rotation" => fit_asymm["params"][6],
+            "rel. residue" => fit_asymm["rss_rel"]
+        )
+        fit_round = fit_dens2d_gaussian_round_disk(x_posi, y_posi, essn.dens2d, :)
+        params_round = Dict(
+            "max" => fit_round["params"][1],
+            "cent" => (fit_round["params"][2], fit_round["params"][3]),
+            "size" => fit_round["params"][4],
+            "rel. residue" => fit_round["rss_rel"]
+        )
+        SoloEnvelope(fit_asymm, params_asymm, fit_round, params_round)
+    end : nothing
+    return SoloExtract(essn, sidepeak, envelope)
 end

@@ -14,7 +14,7 @@ function set_axes_v_t_rep!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer,<:Int
     CairoMakie.activate!()
     CairoMakie.activate!()
     fig = Figure()
-    fig[0, 1] = Label(fig, text="$(runinfo.date) run$(runinfo.runids) IB=$(@sprintf("%.3f", runinfo.IB[partidx]))A $(runinfo.tag_head)"; tellwidth=false, tellheight=true, halign=:left, valign=:top)
+    fig[0, 1] = Label(fig, text="$(runinfo.date) run$(runinfo.runids) IB=$(@sprintf("%.3f", runinfo.vars.IB[partidx]))A $(runinfo.tag_head)"; tellwidth=false, tellheight=true, halign=:left, valign=:top)
     axs = Array{Dict}(undef, n_dim_vars[1:3]...)
     for v in 1:n_dim_vars[2], t in 1:n_dim_vars[3]
         print("\r\033[2K\rbuilding axes for duet $v-$t")
@@ -70,7 +70,30 @@ function draw_misc_duet_2d!(axs::Dict{String,Axis}, essn::AbstractVector{SoloEss
     heatmap!(axs["dens_1"], x_posi, y_posi, essn[1].dens2d'; colorrange=(0, 30.0), colormap=clrmap[1], rasterize=true)
     heatmap!(axs["dens_2"], x_posi, y_posi, essn[2].dens2d'; colorrange=(0, 30.0), colormap=clrmap[2], rasterize=true)
     heatmap!(axs["misc"], x_posi, y_posi, clr_misc'; rasterize=true)
-    draw_rotated_ellipse_corners!(axs["misc"], (0, 0), (essn[1].smwh_strip .+ 0.5) .* essn[1].step_posi, 0.0; color=:black)
+    draw_rotated_ellipse_corners!(axs["misc"], essn[1].offset_cent_core, (essn[1].smwh_strip .+ 0.5) .* essn[1].step_posi, 0.0; color=:black)
+    draw_rotated_ellipse_corners!(axs["dens_1"], essn[1].offset_cent_core, (essn[1].smwh_core .+ 0.5) .* essn[1].step_posi, 0.0; color=:slateblue4)
+    draw_rotated_ellipse_corners!(axs["dens_2"], essn[2].offset_cent_core, (essn[2].smwh_core .+ 0.5) .* essn[1].step_posi, 0.0; color=:slateblue4)
+    lines!(axs["prfl"], essn[1].prfl_strip, color=clr_theme[1], linewidth=2)
+    lines!(axs["prfl"], essn[2].prfl_strip, color=clr_theme[2], linewidth=2)
+    axs["dens_1"].aspect = DataAspect()
+    axs["dens_2"].aspect = DataAspect()
+    axs["misc"].aspect = DataAspect()
+    ylims!(axs["prfl"], 0, 20)
+    axs |> values |> ax -> hidedecorations!.(ax)
+end
+
+function draw_misc_duet_core_2d!(axs::Dict{String,Axis}, essn::AbstractVector{SoloEssentials})
+    length(essn) == 2 || throw(ArgumentError("essn duet must have length 2"))
+    foreach(empty!, values(axs))
+    x_posi, y_posi = map(u -> (-u:1:u), essn[1].smwh) .* essn[1].step_posi
+    x_posi_core, y_posi_core = map(u -> (-u:1:u), essn[1].smwh_core) .* essn[1].step_posi
+    clr_theme = [RGBAf(Oklch(0.52, 0.14, hue_theme_istp[i]), 0.75) for i in ["162" "164"]]
+    clrmap = [gen_clrmap_solo(hue_theme) for hue_theme in [hue_theme_istp["162"], hue_theme_istp["164"]]]
+    clr_misc = to_miscibility_clr(essn[1].dens2d_core, essn[2].dens2d_core, hue_theme_istp["162"], hue_theme_istp["164"]; to_norm_each=true)
+    heatmap!(axs["dens_1"], x_posi_core, y_posi_core, essn[1].dens2d_core'; colorrange=(0, 30.0), colormap=clrmap[1], rasterize=true)
+    heatmap!(axs["dens_2"], x_posi_core, y_posi_core, essn[2].dens2d_core'; colorrange=(0, 30.0), colormap=clrmap[2], rasterize=true)
+    heatmap!(axs["misc"], x_posi_core, y_posi_core, clr_misc'; rasterize=true)
+    draw_rotated_ellipse_corners!(axs["misc"], essn[1].offset_cent_core, (essn[1].smwh_strip .+ 0.5) .* essn[1].step_posi, 0.0; color=:black)
     lines!(axs["prfl"], essn[1].prfl_strip, color=clr_theme[1], linewidth=2)
     lines!(axs["prfl"], essn[2].prfl_strip, color=clr_theme[2], linewidth=2)
     axs["dens_1"].aspect = DataAspect()

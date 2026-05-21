@@ -140,7 +140,7 @@ trend_stacked_over_rep = [
 # essn_stacked_over_rep
 # essn_stacked_over_rep_t
 # fit_prfl_modl_over_rep_t_1d
-# extr_fmt[1,1,1].fit_tailess
+# extr_fmt[1,1,1].sidepeak.fit_tailess
 # extr_stacked_over_rep
 # modl2d_side
 # modes_pca_modl2d
