@@ -75,12 +75,25 @@ for (idx_runinfo, runinfo) in enumerate(runinfos)
         for (i, istp) in enumerate(r.val.istp), rep in r.val.rep
             clr_theme = Oklch(0.52, 0.14, hue_theme_istp[istp])
             sizes = extr_2d_fmt[c, rep, b, :, i] |> es -> map(e -> e.envelope.params_round["size"], es)
-            lines!(ax, r.val.t_hold, sizes; color=clr_theme)
+            lines!(ax, r.val.t_hold, sizes; color=(clr_theme, 0.65))
         end
         ylims!(ax, 0, 6.0)
     end
     fig_sizes |> resize_to_layout!
-    fig_sizes |> f -> save(joinpath(path_output, @sprintf("%s_sizes.png", gen_run_tag(r.runinfo))), f; backend=CairoMakie)
+    fig_sizes |> f -> save(joinpath(path_output, @sprintf("%s_sizes_t.png", gen_run_tag(r.runinfo))), f; backend=CairoMakie)
+    fig_sizes, axs_sizes = set_axes_2axes!(r.runinfo.vars |> NamedTuple{(:IB, :t_hold)}, set_panel_single_axis, r.runinfo)
+    for (c, ib) in enumerate(r.val.IB), (t, t_hold) in enumerate(r.val.t_hold)
+        ax = axs_sizes[c, t]["ax"]
+        [ax] |> clear_axes!
+        for (i, istp) in enumerate(r.val.istp), rep in r.val.rep
+            clr_theme = Oklch(0.52, 0.14, hue_theme_istp[istp])
+            sizes = extr_2d_fmt[c, rep, :, t, i] |> es -> map(e -> e.envelope.params_round["size"], es)
+            lines!(ax, r.val.bias, sizes; color=(clr_theme, 0.65))
+        end
+        ylims!(ax, 0, 6.0)
+    end
+    fig_sizes |> resize_to_layout!
+    fig_sizes |> f -> save(joinpath(path_output, @sprintf("%s_sizes_bias.png", gen_run_tag(r.runinfo))), f; backend=CairoMakie)
     # for c in 1:r.n_dim_vars[1], b in 1:r.n_dim_vars[3]
     #     tag = @sprintf("Top View Number Stat [IB = %.3fA | bias = %.2f]", r.val.IB[c], r.val.bias[b])
     #     fig_num, axs_num = set_axis!(tag)
