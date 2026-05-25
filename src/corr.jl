@@ -5,10 +5,6 @@ struct ModeWeight{TProfile<:AbstractArray,TWeight<:AbstractArray}
     weight::TWeight
 end
 
-function gen_clrmap_posneg(hue_pos, hue_neg)
-    return [Oklch(1 - abs(t), 0.24 * abs(t), t > 0 ? hue_pos : hue_neg) |> c -> RGBAf(c) for t in range(-1, 1; length=256)]
-end
-
 function build_pca_matrix(samples::AbstractArray{<:AbstractArray{<:Real}})
 
     n_sample = length(samples)
@@ -52,6 +48,7 @@ function fit_pca_modes(n_mode::Integer, samples::AbstractArray{<:AbstractArray{<
 end
 
 function query_weight(evo, mask, t_vec, freq_query)
+    scaling = 1000.0
     weight = evo[mask] |> e -> e .- mean(e) |> e -> [
         sum(@. e * exp(-2im * pi * freq_query[f] * t_vec[mask] / 1000.0))
         for f in freq_query] |> e -> abs.(e) .^ 2

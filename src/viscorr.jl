@@ -5,6 +5,10 @@ using CairoMakie: Axis
 using Colors: Oklch
 using LaTeXStrings
 
+function gen_clrmap_posneg(hue_pos, hue_neg)
+    return [Oklch(1 - abs(t), 0.24 * abs(t), t > 0 ? hue_pos : hue_neg) |> c -> RGBAf(c) for t in range(-1, 1; length=256)]
+end
+
 function plot_num_stat_evo!(
     ax::Axis,
     val_t::AbstractVector,

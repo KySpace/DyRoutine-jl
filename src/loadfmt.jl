@@ -71,7 +71,7 @@ function format_dens_runinfo(
     n_shot == n_variation || throw(DimensionMismatch("Loaded $n_shot shots for $(gen_run_tag(runinfo)), but expected $n_variation from variables $name_dims with dimensions $n_dim_vars."))
 
     dens_mean = dropdims(mean(dens; dims=1); dims=1)
-    xy_peak_px = find_positive_cluster_center(dens_mean; smwh=smwh_roi) |> cent -> round.(Int, cent)
+    xy_peak_px = find_positive_cluster_center(dens_mean, smwh_roi) |> cent -> round.(Int, cent)
     dens_crop = mapslices(d -> crop_center(d, xy_peak_px, smwh_roi), dens; dims=(2, 3))
     dens_full_fmt = format_image_array(dens_crop, n_dim_vars)
 

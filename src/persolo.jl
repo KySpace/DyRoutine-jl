@@ -102,9 +102,9 @@ function gaussian_fit_center_1d(prfl::AbstractVector)
 end
 
 function find_positive_cluster_center(
-    arr::AbstractMatrix;
+    arr::AbstractMatrixr,
+    smwh::Tuple{Integer,Integer};
     len_avg::Integer=10,
-    smwh::Tuple{Integer,Integer}=(),
 )::Tuple{<:Real,<:Real}
     smw, smh = smwh
     cx_coarse = find_peak_position_moving(vec(sum(arr; dims=1)); len_avg=len_avg)
@@ -171,7 +171,11 @@ function fit_prfl_modl_twinpeak_decay_1d(coor, prfl, mask)
     )
 end
 
-function fit_dens2d_gaussian_elliptic_disk(xs, ys, dens, mask)
+function fit_dens2d_gaussian_elliptic_disk(
+    xs, ys, dens, mask;
+    θ_hint=(max=20.0/180*π, min=-10.0/180*π, init=10.0/180*π),
+    A_hint=(max=25.0, min=0, init=10.0),
+)
     X = [x for y in ys, x in xs]
     Y = [y for y in ys, x in xs]
     xydata = hcat(vec(X[mask]), vec(Y[mask]))
@@ -192,9 +196,9 @@ function fit_dens2d_gaussian_elliptic_disk(xs, ys, dens, mask)
     y_min, y_max = [minimum(ys), maximum(ys)]
     x_mid, y_mid = [(x_min + x_max) / 2, (y_min + y_max) / 2]
     x_scale, y_scale = [(x_max - x_min) / 2, (y_max - y_min) / 2] ./ 3
-    params_init = Float64[10, x_mid, y_mid, x_scale, y_scale, 10/180*π]
-    params_upper = Float64[25, x_max, y_max, x_scale*10, y_scale*10, 20/180*π]
-    params_lower = Float64[0, x_min, y_min, x_scale/10, y_scale/10, -10/180*π]
+    params_init = Float64[A_hint.init, x_mid, y_mid, x_scale, y_scale, θ_hint.init]
+    params_upper = Float64[A_hint.max, x_max, y_max, x_scale*10, y_scale*10, θ_hint.max]
+    params_lower = Float64[A_hint.min, x_min, y_min, x_scale/10, y_scale/10, θ_hint.min]
     fit = curve_fit(
         model, xydata, zdata,
         params_init;
