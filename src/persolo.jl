@@ -146,7 +146,16 @@ function calc_prfl_moment(coor, prfl)
     )
 end
 
-function fit_prfl_modl_twinpeak_decay_1d(coor, prfl, mask)
+function fit_prfl_modl_twinpeak_decay_1d(
+    coor, prfl, mask;
+    M_hint=(max=Inf, min=2.0, init=3.0),
+    σ0_hint=(max=0.30, min=0.02, init=0.1),
+    P_hint=(max=2.0, min=0.0, init=0.5),
+    σ_hint=(max=0.100, min=0.018, init=0.05),
+    p_hint=(max=0.37, min=0.23, init=0.3),
+    D_hint=(max=Inf, min=0.0, init=0.5),
+    λ_hint=(max=5.0, min=0.5, init=0.8),
+)
     # parameters: [MainPeak.Height MainPeak.Width SidePeak.Height SidePeak.Width SidePeak.Pos Decay.Height Decay.Length]
     model(k, params) = begin
         M, σ0, P, σ, p, D, λ = params
@@ -156,9 +165,9 @@ function fit_prfl_modl_twinpeak_decay_1d(coor, prfl, mask)
         M, σ0, P, σ, p, D, λ = params
         @. D * exp(-abs(k) / λ)
     end
-    p_init = [3.0, 0.1, 0.5, 0.05, 0.3, 0.5, 0.8]
-    p_upper = [Inf, 0.30, 2.0, 0.100, 0.37, Inf, 5.0]
-    p_lower = [2.0, 0.02, 0.0, 0.018, 0.23, 0.0, 0.5]
+    p_init = Float64[M_hint.init, σ0_hint.init, P_hint.init, σ_hint.init, p_hint.init, D_hint.init, λ_hint.init]
+    p_upper = Float64[M_hint.max, σ0_hint.max, P_hint.max, σ_hint.max, p_hint.max, D_hint.max, λ_hint.max]
+    p_lower = Float64[M_hint.min, σ0_hint.min, P_hint.min, σ_hint.min, p_hint.min, D_hint.min, λ_hint.min]
     fit = curve_fit(model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
     params_fit = coef(fit)
     rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (prfl[mask] |> d -> sqrt(sum(abs2, d)))
@@ -255,7 +264,14 @@ function fit_dens2d_gaussian_round_disk(xs, ys, dens, mask)
     )
 end
 
-function fit_prfl_modl_twinpeak_1d(coor, prfl, mask)
+function fit_prfl_modl_twinpeak_1d(
+    coor, prfl, mask;
+    M_hint=(max=Inf, min=2.0, init=3.0),
+    σ0_hint=(max=0.30, min=0.05, init=0.1),
+    P_hint=(max=2.0, min=0.0, init=0.5),
+    σ_hint=(max=0.200, min=0.018, init=0.05),
+    p_hint=(max=0.37, min=0.23, init=0.3),
+)
     # parameters: [MainPeak.Height MainPeak.Width SidePeak.Height SidePeak.Width SidePeak.Pos]
     model(k, params) = begin
         M, σ0, P, σ, p = params
@@ -265,9 +281,9 @@ function fit_prfl_modl_twinpeak_1d(coor, prfl, mask)
         M, σ0, P, σ, p = params
         @. M * exp(-k^2 / (2 * σ0^2))
     end
-    p_init = [3.0, 0.1, 0.5, 0.05, 0.3]
-    p_upper = [Inf, 0.30, 2.0, 0.200, 0.37]
-    p_lower = [2.0, 0.05, 0.0, 0.018, 0.23]
+    p_init = Float64[M_hint.init, σ0_hint.init, P_hint.init, σ_hint.init, p_hint.init]
+    p_upper = Float64[M_hint.max, σ0_hint.max, P_hint.max, σ_hint.max, p_hint.max]
+    p_lower = Float64[M_hint.min, σ0_hint.min, P_hint.min, σ_hint.min, p_hint.min]
     fit = curve_fit(model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
     params_fit = coef(fit)
     fitfn_main(k) = model_main(k, params_fit)
