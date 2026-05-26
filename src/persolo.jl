@@ -102,7 +102,7 @@ function gaussian_fit_center_1d(prfl::AbstractVector)
 end
 
 function find_positive_cluster_center(
-    arr::AbstractMatrixr,
+    arr::AbstractMatrix,
     smwh::Tuple{Integer,Integer};
     len_avg::Integer=10,
 )::Tuple{<:Real,<:Real}
@@ -226,7 +226,10 @@ function fit_dens2d_gaussian_elliptic_disk(
     )
 end
 
-function fit_dens2d_gaussian_round_disk(xs, ys, dens, mask)
+function fit_dens2d_gaussian_round_disk(
+    xs, ys, dens, mask;
+    A_hint=(max=25.0, min=0, init=10.0),
+)
     X = [x for y in ys, x in xs]
     Y = [y for y in ys, x in xs]
     xydata = hcat(vec(X[mask]), vec(Y[mask]))
@@ -243,9 +246,9 @@ function fit_dens2d_gaussian_round_disk(xs, ys, dens, mask)
     y_min, y_max = [minimum(ys), maximum(ys)]
     x_mid, y_mid = [(x_min + x_max) / 2, (y_min + y_max) / 2]
     scale = [(x_max - x_min) / 2, (y_max - y_min) / 2] ./ 3 |> geomean
-    params_init = Float64[10, x_mid, y_mid, scale]
-    params_upper = Float64[25, x_max, y_max, scale*10]
-    params_lower = Float64[0, x_min, y_min, scale/10]
+    params_init = Float64[A_hint.init, x_mid, y_mid, scale]
+    params_upper = Float64[A_hint.max, x_max, y_max, scale*10]
+    params_lower = Float64[A_hint.min, x_min, y_min, scale/10]
     fit = curve_fit(
         model, xydata, zdata,
         params_init;
@@ -351,17 +354,26 @@ function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smw
     return SoloEssentials(dens_roi, modl_roi, dens2d_core, (x_posi[cent_core[1]], y_posi[cent_core[2]]), smwh_core, prfl_strip, prfl_modl, prfl_modl_norm_px, smwh, smwh_strip, smw_modl, step_posi, step_modl, sum_dens)
 end
 
-function calc_solo_extr(essn::SoloEssentials, fit_stack::Union{Dict,Nothing}; proc_sidepeak::Bool=false, proc_envelope::Bool=false)
+function calc_solo_extr(
+    essn::SoloEssentials,
+    fit_stack::Union{Dict,Nothing};
+    proc_sidepeak::Bool=false,
+    proc_envelope::Bool=false,
+    selector_moment::Function=y -> (y .> 0.10) .& (y .< 0.50),
+    selector_sidepeak::Function=y -> (y .> 0.1) .& (y .< 0.5),
+    fit_tailess_kwargs::NamedTuple=NamedTuple(),
+    fit_asymm_kwargs::NamedTuple=NamedTuple(),
+    fit_round_kwargs::NamedTuple=NamedTuple(),
+)
     x, y = essn.smwh |> s -> map(u -> (-u:1:u), s)
     x_modl, y_modl = (x, y) .* essn.step_modl
     x_posi, y_posi = (x, y) .* essn.step_posi
-    sel_moment = y -> (y .> 0.10) .& (y .< 0.50)
-    sel_sidepeak = (y_modl .> 0.1) .& (y_modl .< 0.5)
+    sel_sidepeak = selector_sidepeak(y_modl)
     sidepeak = proc_sidepeak ?
     begin
-        mask_mmt = sel_moment(y_modl)
+        mask_mmt = selector_moment(y_modl)
         prfl_tailess = essn.prfl_modl_norm_px - fit_stack["tail"](y_modl)
-        fit_tailess = fit_prfl_modl_twinpeak_1d(y_modl, prfl_tailess, sel_sidepeak)
+        fit_tailess = fit_prfl_modl_twinpeak_1d(y_modl, prfl_tailess, sel_sidepeak; fit_tailess_kwargs...)
         params_tailess = Dict(
             "height" => fit_tailess["params"][3],
             "width" => fit_tailess["params"][4],
@@ -374,7 +386,7 @@ function calc_solo_extr(essn::SoloEssentials, fit_stack::Union{Dict,Nothing}; pr
     end : nothing
     envelope = proc_envelope ?
     begin
-        fit_asymm = fit_dens2d_gaussian_elliptic_disk(x_posi, y_posi, essn.dens2d, :)
+        fit_asymm = fit_dens2d_gaussian_elliptic_disk(x_posi, y_posi, essn.dens2d, :; fit_asymm_kwargs...)
         params_asymm = Dict(
             "max" => fit_asymm["params"][1],
             "cent" => (fit_asymm["params"][2], fit_asymm["params"][3]),
@@ -382,7 +394,7 @@ function calc_solo_extr(essn::SoloEssentials, fit_stack::Union{Dict,Nothing}; pr
             "rotation" => fit_asymm["params"][6],
             "rel. residue" => fit_asymm["rss_rel"]
         )
-        fit_round = fit_dens2d_gaussian_round_disk(x_posi, y_posi, essn.dens2d, :)
+        fit_round = fit_dens2d_gaussian_round_disk(x_posi, y_posi, essn.dens2d, :; fit_round_kwargs...)
         params_round = Dict(
             "max" => fit_round["params"][1],
             "cent" => (fit_round["params"][2], fit_round["params"][3]),

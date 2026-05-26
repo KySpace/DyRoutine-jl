@@ -47,22 +47,28 @@ function fit_pca_modes(n_mode::Integer, samples::AbstractArray{<:AbstractArray{<
     ]
 end
 
-function query_weight(evo, mask, t_vec, freq_query)
-    scaling = 1000.0
+function query_weight(evo, mask, t_vec, freq_query; scaling::Real=1000.0)
     weight = evo[mask] |> e -> e .- mean(e) |> e -> [
         sum(@. e * exp(-2im * pi * freq_query[f] * t_vec[mask] / scaling))
         for f in freq_query] |> e -> abs.(e) .^ 2
     return weight / sum(weight)
 end
 
-function anlz_trend_from_extr(t_vec::AbstractVector{<:Real}, extr::AbstractVector{SoloExtract}, freq_query::AbstractVector{<:Real}; selector_t_sidepeak::Function, selector_t_envelope::Function)
+function anlz_trend_from_extr(
+    t_vec::AbstractVector{<:Real},
+    extr::AbstractVector{SoloExtract},
+    freq_query::AbstractVector{<:Real};
+    selector_t_sidepeak::Function,
+    selector_t_envelope::Function,
+    query_weight_kwargs::NamedTuple=NamedTuple(),
+)
     mask_sel_sp = selector_t_sidepeak(t_vec)
     t_vec_sel_sp = t_vec[mask_sel_sp]
     mask_sel_nvlp = selector_t_envelope(t_vec)
     t_vec_sel_nvlp = t_vec[mask_sel_nvlp]
 
-    query_weight_sel_sp = evo -> query_weight(evo, mask_sel_sp, t_vec, freq_query)
-    query_weight_sel_nvlp = evo -> query_weight(evo, mask_sel_nvlp, t_vec, freq_query)
+    query_weight_sel_sp = evo -> query_weight(evo, mask_sel_sp, t_vec, freq_query; query_weight_kwargs...)
+    query_weight_sel_nvlp = evo -> query_weight(evo, mask_sel_nvlp, t_vec, freq_query; query_weight_kwargs...)
     evo_dens_sum = extr |> e -> map(t -> t.essentials.sum_dens_full, e)
     evo_fit_weight = extr |> e -> map(t -> t.sidepeak.params_tailess["weight"], e)
     evo_fit_height = extr |> e -> map(t -> t.sidepeak.params_tailess["height"], e)
