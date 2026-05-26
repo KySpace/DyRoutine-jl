@@ -10,7 +10,10 @@ function calc_stacked_essn(essns::AbstractVector{SoloEssentials})::SoloEssential
     n_essn = length(essns)
     n_essn > 0 || throw(ArgumentError("essns must contain at least one SoloEssentials."))
     essn_ref = first(essns)
-    mean_tuple = ts -> mean.(zip(ts...)) |> Tuple
+    mean_tuple(ts) = begin
+        t_ref = first(ts)
+        ntuple(idx -> mean(t -> t[idx], ts), length(t_ref))
+    end
     return SoloEssentials(
         mean(map(essn -> essn.dens2d, essns)),
         mean(map(essn -> essn.modl2d, essns)),

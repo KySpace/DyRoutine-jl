@@ -13,6 +13,12 @@ function gen_run_tag(runinfo)
     if hasproperty(runinfo, :IB)
         return @sprintf("%s_%.3f_r%s", runinfo.tag_head, runinfo.IB, str_runids)
     end
+    if hasproperty(runinfo, :vars) && hasproperty(runinfo.vars, :IB)
+        val_ib = as_vector(runinfo.vars.IB)
+        if length(val_ib) == 1
+            return @sprintf("%s_%.3f_r%s", runinfo.tag_head, only(val_ib), str_runids)
+        end
+    end
     return @sprintf("%s_run%s", runinfo.tag_head, str_runids)
 end
 

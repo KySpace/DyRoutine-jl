@@ -1,66 +1,22 @@
-# using HDF5
-# using CairoMakie: Figure, Axis, Colorbar, DataAspect, heatmap!, lines!, scatter!, save, text!, rowgap!, colgap!
-# using GLMakie
-# using JLD2
-# using Printf
-# GLMakie.activate!()
-# include(joinpath(@__DIR__, "..", "src", "helper.jl"))
-# include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
-# include(joinpath(@__DIR__, "..", "src", "loadfmt.jl"))
-# include(joinpath(@__DIR__, "..", "src", "percond.jl"))
-# include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
-# include(joinpath(@__DIR__, "..", "src", "corr.jl"))
-
-# year_test = 2026
-# path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
-# rep = 1:3
-# t_hold = 6:2:200
-# istp = ["162", "164"]
-# vars = (; rep, t_hold, istp)
-# runinfos = [
-#     (date="0325", runid=95, IB=5.311, tag_head="CFNM"),
-#     (date="0325", runid=82, IB=5.313, tag_head="CFNM"),
-#     (date="0325", runid=52, IB=5.316, tag_head="CFNM"),
-#     (date="0325", runid=80, IB=5.318, tag_head="CFNM"),
-#     (date="0325", runid=96, IB=5.321, tag_head="CFNM"),
-#     (date="0325", runid=67, IB=5.322, tag_head="CFNM"),
-#     (date="0325", runid=68, IB=5.328, tag_head="CFNM"),
-#     (date="0325", runid=50, IB=5.328, tag_head="CFNM"),
-#     (date="0325", runid=81, IB=5.332, tag_head="CFNM"),
-#     (date="0325", runid=51, IB=5.333, tag_head="CFNM"),
-#     (date="0325", runid=79, IB=5.336, tag_head="CFNM"),
-#     (date="0325", runid=53, IB=5.338, tag_head="CFNM"),
-# ]
-
-
-# title_anlz = "[05.12].37.Correlations"
-# runinfo = merge(runinfos[10], (; vars))
 date, runid, tag = runinfo.date, runinfo.runid, gen_run_tag(runinfo)
 println("Processing: $tag")
-dir_test = gen_date_path(date, year_test)
-file_data = gen_h5name(date, runid)
-path_input = joinpath(path_root, dir_test, @sprintf("run%02d", runid), file_data)
-path_output = joinpath(path_root, dir_test, "AnlzRoutine", title_anlz);
-if !isdir(path_output)
-    mkpath(path_output)
-end
-
-wh_corner = (10, 10)
-smwh_peak = (30, 60)
-wh_peak = smwh_peak .* 2 .+ 1
-smw_peak, smh_peak = smwh_peak
-smw_ft = 5
-px_in_um = 6.5 / 22.06
+log_step(msg) = (println("  [$tag] $msg"); flush(stdout); time())
+log_done(msg, t_start) = (println("  [$tag] $msg ($(round(time() - t_start; digits=1)) s)"); flush(stdout))
 
 name = propertynames(runinfo.vars)
-r = format_dens_runinfo(runinfo; path_root, year_test, wh_corner, smwh_roi=smwh_peak)
+t_stage = log_step("formatting density data")
+r = format_dens_runinfo(runinfo; path_root, year_test, wh_corner, smwh_roi, len_avg_peak)
 val = r.val
-n_dim_vars = r.n_dim_vars
-n_variation = prod(n_dim_vars)
+n_dim_vars_full = r.n_dim_vars
+n_variation = prod(n_dim_vars_full)
+n_dim_vars = Tuple(deleteat!(collect(n_dim_vars_full), idx_ib_axis))
 n_rep, n_main, n_istp = n_dim_vars
 wh_dens = r.wh_dens
 xy_peak_px = r.xy_peak_px
-dens_full_fmt = r.dens_full_fmt
+ib = only(val.IB[idx_ib:idx_ib])
+runinfo_plot = merge(runinfo, (; IB=ib))
+dens_full_fmt = selectdim(r.dens_full_fmt, idx_ib_axis, idx_ib)
+log_done("formatted density data: axes $(r.name_dims) dims $(n_dim_vars_full), slice dims $(n_dim_vars), image $(size(first(dens_full_fmt)))", t_stage)
 
 # A lite version for tests
 # rng_lite = 1:50;
@@ -79,58 +35,131 @@ dens_full_fmt = r.dens_full_fmt
 # stat_n_fmt = num_fmt |> a -> mapslices(calc_mean_std, a; dims=(1))
 
 # fig_num, ax_num = set_axis!("number vs t hold")
-# for (i, istp) in enumerate(val.istp)
-#     plot_num_stat_evo!(ax_num, val.t_hold, stat_n_fmt[1, :, i], val.istp[i])
+# for (i, istp_iter) in enumerate(val.istp)
+#     plot_num_stat_evo!(ax_num, val.t_hold, stat_n_fmt[1, :, i], istp_iter)
 # end
 # display(fig_num)
 
-step_posi = px_in_um
-step_modl = 1 / (2 * smwh_peak[2] * px_in_um)
-x_vec, y_vec = smwh_peak |> s -> map(u -> (-u:1:u), s)
-x_posi, y_posi = (x_vec, y_vec) .* step_posi
-x_modl, y_modl = (x_vec, y_vec) .* step_modl
-essn_2d_fmt = map(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, smw_ft, px_in_um), dens_full_fmt)
-info_fmt = [Dict("istp" => val.istp[i], "t_hold" => val.t_hold[t], "repeat" => val.rep[r]) for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]]
+xy_peak_core = smwh_roi .+ 1
+t_stage = log_step("calculating solo essentials for $(length(dens_full_fmt)) shots")
+essn_2d_fmt = map(
+    d -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, smw_ft, px_in_um, xy_peak_core, smwh_core),
+    dens_full_fmt,
+)
+log_done("calculated solo essentials", t_stage)
+info_fmt = [Dict("istp" => val.istp[i], "t_hold" => val.t_hold[t], "repeat" => val.rep[r], "ib" => ib) for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]]
+
+t_stage = log_step("stacking essentials over repeats and full time traces")
 essn_stacked_over_rep = [
-    calc_stacked_essn(@view essn_2d_fmt[:, t, i])
+    begin
+        print("\r  [$tag] stacking over rep t_idx=$t istp_idx=$i")
+        flush(stdout)
+        calc_stacked_essn(@view essn_2d_fmt[:, t, i])
+    end
     for t in axes(essn_2d_fmt, 2), i in axes(essn_2d_fmt, 3)
 ]
+println()
 essn_stacked_over_rep_t = [
-    calc_stacked_essn((@view essn_2d_fmt[:, :, i]) |> vec)
+    begin
+        essns_rt = [essn_2d_fmt[r, t, i] for r in axes(essn_2d_fmt, 1), t in axes(essn_2d_fmt, 2)] |> vec
+        print("\r  [$tag] stacking over rep+t istp_idx=$i n=$(length(essns_rt))")
+        flush(stdout)
+        calc_stacked_essn(essns_rt)
+    end
     for i in axes(essn_2d_fmt, 3)
 ]
+println()
+log_done("stacked essentials", t_stage)
+
+t_stage = log_step("fitting stacked modulation tails")
 fit_prfl_modl_over_rep_t_1d = [
     essn_stacked_over_rep_t[istp] |>
-    e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl_norm_px, (y_modl .> 0.02))
+    e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl_norm_px, selector_tail_stack(y_modl); fit_stack_kwargs...)
     for istp in axes(essn_stacked_over_rep_t, 1)
 ]
+log_done("fit stacked modulation tails", t_stage)
+
+t_stage = log_step("extracting per-shot sidepeak/envelope values")
 extr_fmt = [
-    essn_2d_fmt[r, t, i] |> e -> calc_solo_extr(e, fit_prfl_modl_over_rep_t_1d[i])
+    begin
+        if r == first(axes(essn_2d_fmt, 1)) && (t == first(axes(essn_2d_fmt, 2)) || t % 25 == 0 || t == last(axes(essn_2d_fmt, 2)))
+            print("\r  [$tag] extracting shots t_idx=$t istp_idx=$i")
+            flush(stdout)
+        end
+        essn_2d_fmt[r, t, i] |> e -> calc_solo_extr(
+        e,
+        fit_prfl_modl_over_rep_t_1d[i];
+        proc_sidepeak,
+        proc_envelope,
+        selector_moment,
+        selector_sidepeak,
+        fit_tailess_kwargs,
+        fit_asymm_kwargs,
+        fit_round_kwargs,
+    )
+    end
     for r in axes(essn_2d_fmt, 1), t in axes(essn_2d_fmt, 2), i in axes(essn_2d_fmt, 3)
 ]
+println()
+log_done("extracted per-shot sidepeak/envelope values", t_stage)
+
+t_stage = log_step("extracting stacked-over-repeat values")
 extr_stacked_over_rep = [
-    essn_stacked_over_rep[t, i] |> e -> calc_solo_extr(e, fit_prfl_modl_over_rep_t_1d[i])
+    begin
+        if t == first(axes(essn_stacked_over_rep, 1)) || t % 25 == 0 || t == last(axes(essn_stacked_over_rep, 1))
+            print("\r  [$tag] extracting stacked t_idx=$t istp_idx=$i")
+            flush(stdout)
+        end
+        essn_stacked_over_rep[t, i] |> e -> calc_solo_extr(
+        e,
+        fit_prfl_modl_over_rep_t_1d[i];
+        proc_sidepeak,
+        proc_envelope,
+        selector_moment,
+        selector_sidepeak,
+        fit_tailess_kwargs,
+        fit_asymm_kwargs,
+        fit_round_kwargs,
+    )
+    end
     for t in axes(essn_stacked_over_rep, 1), i in axes(essn_stacked_over_rep, 2)
 ]
+println()
+log_done("extracted stacked-over-repeat values", t_stage)
+
+t_stage = log_step("preparing PCA samples")
 modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
                                   m ->
-    map(a -> a[smwh_peak[2]+1+8:smwh_peak[2]+1+15, smwh_peak[1]+1-smw_ft:smwh_peak[1]+1+smw_ft], m) |>
+    map(a -> a[smwh_roi[2]+1+8:smwh_roi[2]+1+15, smwh_roi[1]+1-smw_ft:smwh_roi[1]+1+smw_ft], m) |>
     # d -> [permutedims(stack(@view d[i, j, :]), (3, 1, 2))
     #     for i in axes(d, 1), j in axes(d, 2)];
     d -> d
-modes_pca_modl2d = [modl2d_side[:, :, i] |> m -> fit_pca_modes(8, m) for i in 1:n_istp]
+log_done("prepared PCA samples", t_stage)
 
-selector_t_sidepeak = t -> 0 .< t .< 20
-selector_t_envelope = t -> 0 .< t .< 20
+t_stage = log_step("fitting PCA modes")
+modes_pca_modl2d = [
+    begin
+        println("  [$tag] fitting PCA istp_idx=$i")
+        flush(stdout)
+        modl2d_side[:, :, i] |> m -> fit_pca_modes(n_pca_modes, m)
+    end
+    for i in 1:n_istp
+]
+log_done("fit PCA modes", t_stage)
+
+t_stage = log_step("analyzing per-shot trends")
 trend_sidepeak_nvlp = [
-    extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val.t_hold, e, 1:1:100; selector_t_sidepeak, selector_t_envelope)
+    extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val.t_hold, e, freq_query; selector_t_sidepeak, selector_t_envelope, query_weight_kwargs)
     for r in axes(extr_fmt, 1), i in axes(extr_fmt, 3)
 ]
+log_done("analyzed per-shot trends", t_stage)
 
+t_stage = log_step("analyzing stacked trends")
 trend_stacked_over_rep = [
-    extr_stacked_over_rep[:, i] |> e -> anlz_trend_from_extr(val.t_hold, e, 1:1:100; selector_t_sidepeak, selector_t_envelope)
+    extr_stacked_over_rep[:, i] |> e -> anlz_trend_from_extr(val.t_hold, e, freq_query; selector_t_sidepeak, selector_t_envelope, query_weight_kwargs)
     for i in axes(extr_fmt, 3)
 ]
+log_done("analyzed stacked trends", t_stage)
 ##  saving data, still problematic
 
 # @save joinpath(path_output, @sprintf("%s_data.jld2", tag))
@@ -146,9 +175,12 @@ trend_stacked_over_rep = [
 # modes_pca_modl2d
 
 ## Overall plots
-fig_trend, axs_trend = set_axis_sidepeak_nvlp!(n_dim_vars, set_panel_trend_sidepeak_nvlp!, runinfo)
-fig_nvlp, axs_nvlp = set_axis_stack_all!(n_dim_vars, set_panel_trend_nvlp!, runinfo)
+t_stage = log_step("building trend figures")
+fig_trend, axs_trend = set_axis_sidepeak_nvlp!(n_dim_vars, set_panel_trend_sidepeak_nvlp!, runinfo_plot)
+fig_nvlp, axs_nvlp = set_axis_stack_all!(n_dim_vars, set_panel_trend_nvlp!, runinfo_plot)
+log_done("built trend figures", t_stage)
 for i in 1:n_istp
+    t_plot_stage = log_step("plotting and saving trends for istp=$(val.istp[i])")
     trend = trend_sidepeak_nvlp[:, i]
     trend_stacked = trend_stacked_over_rep[i]
     val_istp = val.istp[i]
@@ -160,16 +192,19 @@ for i in 1:n_istp
         fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.%s", tag, val_istp, format)), f; backend=CairoMakie)
         fig_nvlp |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend_nvlp.%s", tag, val_istp, format)), f; backend=CairoMakie)
     end
+    log_done("saved trends for istp=$(val.istp[i])", t_plot_stage)
 end
 # fig_trend |> display
 ##
 
+t_stage = log_step("building and saving PCA figure")
 fig_pca, axs_pca = set_axis_pca_dual_4x2!()
-for idx_mode in 1:8, idx_istp in 1:n_istp
+for idx_mode in 1:n_pca_modes, idx_istp in 1:n_istp
     plot_mode_evol_freq_solo!(axs_pca[idx_istp, idx_mode], modes_pca_modl2d[idx_istp][idx_mode], val.t_hold)
 end
 resize_to_layout!(fig_pca)
 fig_pca |> f -> save(joinpath(path_output, @sprintf("%s_pca.pdf", tag)), f; backend=CairoMakie)
+log_done("saved PCA figure", t_stage)
 # display(fig_pca)
 
 

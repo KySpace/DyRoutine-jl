@@ -76,10 +76,10 @@ function anlz_trend_from_extr(
     evo_fit_width = extr |> e -> map(t -> t.sidepeak.params_tailess["width"], e)
     evo_fit_size_x = extr |> e -> map(t -> t.envelope.params_asymm["size"][1], e)
     evo_fit_size_y = extr |> e -> map(t -> t.envelope.params_asymm["size"][2], e)
-    evo_moment_weight = extr |> e -> map(t -> t.moments["weight"], e)
-    evo_moment_height = extr |> e -> map(t -> t.moments["height"], e)
-    evo_moment_wavenum = extr |> e -> map(t -> t.moments["wavenum"], e)
-    evo_moment_width = extr |> e -> map(t -> t.moments["width"], e)
+    evo_moment_weight = extr |> e -> map(t -> t.sidepeak.moments["weight"], e)
+    evo_moment_height = extr |> e -> map(t -> t.sidepeak.moments["height"], e)
+    evo_moment_wavenum = extr |> e -> map(t -> t.sidepeak.moments["wavenum"], e)
+    evo_moment_width = extr |> e -> map(t -> t.sidepeak.moments["width"], e)
 
     ft_fit_weight = evo_fit_weight |> query_weight_sel_sp
     ft_fit_height = evo_fit_height |> query_weight_sel_sp
