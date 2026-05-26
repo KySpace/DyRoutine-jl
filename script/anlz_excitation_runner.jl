@@ -15,7 +15,7 @@ include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
 path_runner = @__FILE__
-path_anlz_routine = joinpath(@__DIR__, "anlz_routine.jl")
+path_anlz_excitation = joinpath(@__DIR__, "anlz_excitation.jl")
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
@@ -50,7 +50,7 @@ path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
 
 cp(path_runner, joinpath(path_output, basename(path_runner)); force=true)
-cp(path_anlz_routine, joinpath(path_output, basename(path_anlz_routine)); force=true)
+cp(path_anlz_excitation, joinpath(path_output, basename(path_anlz_excitation)); force=true)
 
 wh_corner = (10, 10)
 smwh_roi = (30, 60)
@@ -92,5 +92,5 @@ query_weight_kwargs = NamedTuple()
 for idx_runinfo_iter in ids_runinfo
     global idx_runinfo = idx_runinfo_iter
     global runinfo = runinfos[idx_runinfo]
-    include(path_anlz_routine)
+    include(path_anlz_excitation)
 end

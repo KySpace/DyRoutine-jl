@@ -2,16 +2,18 @@
 
 ## Run And Data Selection
 
+Name change notice: the excitation workflow scripts formerly named `script/anlz_routine.jl` and `script/anlz_routine_batch.jl` are now `script/anlz_excitation.jl` and `script/anlz_excitation_runner.jl`.
+
 - `year_test`
 - `path_root`
-  - routine batch: `raw"...\Data\Excitations"`
+  - excitation runner: `raw"...\Data\Excitations"`
   - miscibility: `raw"...\Data\SingDrplMisc"`
 - `title_anlz`
 - `runinfos`
-  - routine/routine batch: `date`, `runid`, `IB`, `tag_head`
+  - excitation/excitation runner: `date`, `runid`, `vars`, `tag_head`
   - miscibility: `date`, `runids`, `tag_head`, `vars`
 - variable axes:
-  - routine/routine batch: `rep = 1:3`, `t_hold = 6:2:200`, `istp = ["162", "164"]`
+  - excitation/excitation runner: `IB`, `rep`, `t_hold`, `istp`
   - miscibility: `IB`, `rep`, `bias`, `t_hold`, `istp`
 - lite/test data slice:
   - `rng_lite = 1:50`
@@ -20,7 +22,7 @@
 
 - `wh_corner = (10, 10)`
 - `smwh_roi`
-  - routine: `smwh_peak = (30, 60)`
+  - excitation: `smwh_roi = (30, 60)`
   - miscibility: `smwh_roi = (30, 30)`
 - `smwh_core = (20, 20)`
 - `smwh_strip = (2, 20)`
