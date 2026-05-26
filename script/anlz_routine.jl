@@ -5,29 +5,27 @@ log_done(msg, t_start) = (println("  [$tag] $msg ($(round(time() - t_start; digi
 
 name = propertynames(runinfo.vars)
 t_stage = log_step("formatting density data")
-r = format_dens_runinfo(runinfo; path_root, year_test, wh_corner, smwh_roi, len_avg_peak)
-val = r.val
-n_dim_vars_full = r.n_dim_vars
-n_variation = prod(n_dim_vars_full)
-n_dim_vars = Tuple(deleteat!(collect(n_dim_vars_full), idx_ib_axis))
-n_rep, n_main, n_istp = n_dim_vars
-wh_dens = r.wh_dens
-xy_peak_px = r.xy_peak_px
-ib = only(val.IB[idx_ib:idx_ib])
+fmt_dens = format_dens_runinfo(runinfo; path_root, year_test, wh_corner, smwh_roi, len_avg_peak)
+val_vars = fmt_dens.val
+(; dens_full_fmt, wh_dens, xy_peak_px, n_dim_vars, name_dims) = fmt_dens
+n_variation = prod(n_dim_vars)
+n_dim_vars_per_ib = Tuple(deleteat!(collect(n_dim_vars), idx_ib_axis))
+n_rep, n_main, n_istp = n_dim_vars_per_ib
+ib = only(val_vars.IB[idx_ib:idx_ib])
 runinfo_plot = merge(runinfo, (; IB=ib))
-dens_full_fmt = selectdim(r.dens_full_fmt, idx_ib_axis, idx_ib)
-log_done("formatted density data: axes $(r.name_dims) dims $(n_dim_vars_full), slice dims $(n_dim_vars), image $(size(first(dens_full_fmt)))", t_stage)
+dens_full_fmt = selectdim(dens_full_fmt, idx_ib_axis, idx_ib)
+log_done("formatted density data: axes $(name_dims) dims $(n_dim_vars), per-IB dims $(n_dim_vars_per_ib), image $(size(first(dens_full_fmt)))", t_stage)
 
 # A lite version for tests
 # rng_lite = 1:50;
-# val = (
+# val_vars = (
 #     rep=collect(1:3),
 #     t_hold=collect(6:2:200)[rng_lite],
 #     istp=["162", "164"],
 # )
-# n_dim_vars = map(length, val);
-# n_variation = prod(n_dim_vars)
-# n_rep, n_main, n_istp = n_dim_vars
+# n_dim_vars_per_ib = map(length, val_vars);
+# n_variation = prod(n_dim_vars_per_ib)
+# n_rep, n_main, n_istp = n_dim_vars_per_ib
 # dens_full_fmt = dens_full_fmt[:, rng_lite, :]
 
 # Statistics on number sum
@@ -35,8 +33,8 @@ log_done("formatted density data: axes $(r.name_dims) dims $(n_dim_vars_full), s
 # stat_n_fmt = num_fmt |> a -> mapslices(calc_mean_std, a; dims=(1))
 
 # fig_num, ax_num = set_axis!("number vs t hold")
-# for (i, istp_iter) in enumerate(val.istp)
-#     plot_num_stat_evo!(ax_num, val.t_hold, stat_n_fmt[1, :, i], istp_iter)
+# for (i, istp_iter) in enumerate(val_vars.istp)
+#     plot_num_stat_evo!(ax_num, val_vars.t_hold, stat_n_fmt[1, :, i], istp_iter)
 # end
 # display(fig_num)
 
@@ -47,7 +45,7 @@ essn_2d_fmt = map(
     dens_full_fmt,
 )
 log_done("calculated solo essentials", t_stage)
-info_fmt = [Dict("istp" => val.istp[i], "t_hold" => val.t_hold[t], "repeat" => val.rep[r], "ib" => ib) for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]]
+info_fmt = [Dict("istp" => val_vars.istp[i], "t_hold" => val_vars.t_hold[t], "repeat" => val_vars.rep[r], "ib" => ib) for r in 1:n_dim_vars_per_ib[1], t in 1:n_dim_vars_per_ib[2], i in 1:n_dim_vars_per_ib[3]]
 
 t_stage = log_step("stacking essentials over repeats and full time traces")
 essn_stacked_over_rep = [
@@ -149,21 +147,21 @@ log_done("fit PCA modes", t_stage)
 
 t_stage = log_step("analyzing per-shot trends")
 trend_sidepeak_nvlp = [
-    extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val.t_hold, e, freq_query; selector_t_sidepeak, selector_t_envelope, query_weight_kwargs)
+    extr_fmt[r, :, i] |> e -> anlz_trend_from_extr(val_vars.t_hold, e, freq_query; selector_t_sidepeak, selector_t_envelope, query_weight_kwargs)
     for r in axes(extr_fmt, 1), i in axes(extr_fmt, 3)
 ]
 log_done("analyzed per-shot trends", t_stage)
 
 t_stage = log_step("analyzing stacked trends")
 trend_stacked_over_rep = [
-    extr_stacked_over_rep[:, i] |> e -> anlz_trend_from_extr(val.t_hold, e, freq_query; selector_t_sidepeak, selector_t_envelope, query_weight_kwargs)
+    extr_stacked_over_rep[:, i] |> e -> anlz_trend_from_extr(val_vars.t_hold, e, freq_query; selector_t_sidepeak, selector_t_envelope, query_weight_kwargs)
     for i in axes(extr_fmt, 3)
 ]
 log_done("analyzed stacked trends", t_stage)
 ##  saving data, still problematic
 
 # @save joinpath(path_output, @sprintf("%s_data.jld2", tag))
-# val
+# val_vars
 # essn_2d_fmt
 # info_fmt
 # essn_stacked_over_rep
@@ -176,14 +174,14 @@ log_done("analyzed stacked trends", t_stage)
 
 ## Overall plots
 t_stage = log_step("building trend figures")
-fig_trend, axs_trend = set_axis_sidepeak_nvlp!(n_dim_vars, set_panel_trend_sidepeak_nvlp!, runinfo_plot)
-fig_nvlp, axs_nvlp = set_axis_stack_all!(n_dim_vars, set_panel_trend_nvlp!, runinfo_plot)
+fig_trend, axs_trend = set_axis_sidepeak_nvlp!(n_dim_vars_per_ib, set_panel_trend_sidepeak_nvlp!, runinfo_plot)
+fig_nvlp, axs_nvlp = set_axis_stack_all!(n_dim_vars_per_ib, set_panel_trend_nvlp!, runinfo_plot)
 log_done("built trend figures", t_stage)
 for i in 1:n_istp
-    t_plot_stage = log_step("plotting and saving trends for istp=$(val.istp[i])")
+    t_plot_stage = log_step("plotting and saving trends for istp=$(val_vars.istp[i])")
     trend = trend_sidepeak_nvlp[:, i]
     trend_stacked = trend_stacked_over_rep[i]
-    val_istp = val.istp[i]
+    val_istp = val_vars.istp[i]
     plot_trend_all!(axs_trend, trend, trend_stacked, val_istp)
     plot_trend_nvlp!(axs_nvlp, trend, trend_stacked, val_istp)
     resize_to_layout!(fig_trend)
@@ -192,7 +190,7 @@ for i in 1:n_istp
         fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.%s", tag, val_istp, format)), f; backend=CairoMakie)
         fig_nvlp |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend_nvlp.%s", tag, val_istp, format)), f; backend=CairoMakie)
     end
-    log_done("saved trends for istp=$(val.istp[i])", t_plot_stage)
+    log_done("saved trends for istp=$(val_vars.istp[i])", t_plot_stage)
 end
 # fig_trend |> display
 ##
@@ -200,7 +198,7 @@ end
 t_stage = log_step("building and saving PCA figure")
 fig_pca, axs_pca = set_axis_pca_dual_4x2!()
 for idx_mode in 1:n_pca_modes, idx_istp in 1:n_istp
-    plot_mode_evol_freq_solo!(axs_pca[idx_istp, idx_mode], modes_pca_modl2d[idx_istp][idx_mode], val.t_hold)
+    plot_mode_evol_freq_solo!(axs_pca[idx_istp, idx_mode], modes_pca_modl2d[idx_istp][idx_mode], val_vars.t_hold)
 end
 resize_to_layout!(fig_pca)
 fig_pca |> f -> save(joinpath(path_output, @sprintf("%s_pca.pdf", tag)), f; backend=CairoMakie)
@@ -210,16 +208,16 @@ log_done("saved PCA figure", t_stage)
 
 ## Large file generation for all shots
 
-# fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_essn_2d!)
-# fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_modl!)
-# for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+# fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars_per_ib, set_panel_solo_essn_2d!)
+# fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars_per_ib, set_panel_solo_modl!)
+# for r in 1:n_dim_vars_per_ib[1], t in 1:n_dim_vars_per_ib[2], i in 1:n_dim_vars_per_ib[3]
 #     info = info_fmt[r, t, i]
 #     print("\r\033[2Kplotting for rep $r, $(info["t_hold"]) ms, $(info["istp"])")
 #     draw_solo_modl!(axs_solo[r, t, i], extr_fmt[r, t, i], info)
 #     # draw_solo_modl!(axs_live, extr_fmt[r, t, i], info)
 # end
-# println("Full axes ready: dimensions $(n_dim_vars)")
-# for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+# println("Full axes ready: dimensions $(n_dim_vars_per_ib)")
+# for t in 1:n_dim_vars_per_ib[2], i in 1:n_dim_vars_per_ib[3]
 #     info = info_fmt[1, t, i] |> d -> merge(d, Dict("repeat" => "stacked"))
 #     print("\r\033[2Kplotting for stacked $(info["t_hold"]) ms, $(info["istp"])")
 #     draw_solo_modl!(axs_stacked[t, i], extr_stacked_over_rep[t, i], info)
