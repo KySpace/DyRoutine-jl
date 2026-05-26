@@ -21,31 +21,76 @@ year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
 istp = ["162", "164"]
 runinfos = [
-    (date="0325", runid=95, tag_head="CFNM", vars=(IB=5.311, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0325", runid=82, tag_head="CFNM", vars=(IB=5.313, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0325", runid=52, tag_head="CFNM", vars=(IB=5.316, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0325", runid=80, tag_head="CFNM", vars=(IB=5.318, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0325", runid=96, tag_head="CFNM", vars=(IB=5.321, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0325", runid=67, tag_head="CFNM", vars=(IB=5.322, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0325", runid=68, tag_head="CFNM", vars=(IB=5.328, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0325", runid=50, tag_head="CFNM", vars=(IB=5.328, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0325", runid=81, tag_head="CFNM", vars=(IB=5.332, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0325", runid=51, tag_head="CFNM", vars=(IB=5.333, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0325", runid=79, tag_head="CFNM", vars=(IB=5.336, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0325", runid=53, tag_head="CFNM", vars=(IB=5.338, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0322", runid=29, tag_head="NTRC", vars=(IB=5.314, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0322", runid=28, tag_head="NTRC", vars=(IB=5.316, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0322", runid=27, tag_head="NTRC", vars=(IB=5.318, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0322", runid=26, tag_head="NTRC", vars=(IB=5.322, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0322", runid=25, tag_head="NTRC", vars=(IB=5.326, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0323", runid=61, tag_head="NTRC", vars=(IB=5.332, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0323", runid=62, tag_head="NTRC", vars=(IB=5.336, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0323", runid=63, tag_head="NTRC", vars=(IB=5.340, rep=1:3, t_hold=6:2:200, istp)),
-    (date="0323", runid=64, tag_head="NTRC", vars=(IB=5.343, rep=1:3, t_hold=6:2:200, istp)),
+    (
+        tag_head="CFNM",
+        date_runid=[
+            ("0325", 95),
+            ("0325", 82),
+            ("0325", 52),
+            ("0325", 80),
+            ("0325", 96),
+            ("0325", 67),
+            ("0325", 68),
+            ("0325", 50),
+            ("0325", 81),
+            ("0325", 51),
+            ("0325", 79),
+            ("0325", 53),
+        ],
+        vars=(
+            runid_IB=[
+                (95, 5.311),
+                (82, 5.313),
+                (52, 5.316),
+                (80, 5.318),
+                (96, 5.321),
+                (67, 5.322),
+                (68, 5.328),
+                (50, 5.328),
+                (81, 5.332),
+                (51, 5.333),
+                (79, 5.336),
+                (53, 5.338),
+            ],
+            rep=1:3,
+            t_hold=6:2:200,
+            istp,
+        ),
+    ),
+    (
+        tag_head="NTRC",
+        date_runid=[
+            ("0322", 29),
+            ("0322", 28),
+            ("0322", 27),
+            ("0322", 26),
+            ("0322", 25),
+            ("0323", 61),
+            ("0323", 62),
+            ("0323", 63),
+            ("0323", 64),
+        ],
+        vars=(
+            runid_IB=[
+                (29, 5.314),
+                (28, 5.316),
+                (27, 5.318),
+                (26, 5.322),
+                (25, 5.326),
+                (61, 5.332),
+                (62, 5.336),
+                (63, 5.340),
+                (64, 5.343),
+            ],
+            rep=1:3,
+            t_hold=6:2:200,
+            istp,
+        ),
+    ),
 ]
-ids_runinfo = 1:5
+ids_runinfo = eachindex(runinfos)
 
-title_anlz = "[05.26].51.DevTests"
+title_anlz = "[05.26].52.DevTests"
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
 
@@ -67,11 +112,10 @@ x_vec, y_vec = smwh_roi |> s -> map(u -> (-u:1:u), s)
 x_posi, y_posi = (x_vec, y_vec) .* step_posi
 x_modl, y_modl = (x_vec, y_vec) .* step_modl
 
-idx_ib_axis = 1
+idx_runid_IB_axis = 1
 idx_rep_axis = 2
 idx_t_hold_axis = 3
 idx_istp_axis = 4
-idx_ib = 1
 n_pca_modes = 8
 freq_query = 1:1:100
 

@@ -10,10 +10,12 @@ Name change notice: the excitation workflow scripts formerly named `script/anlz_
   - miscibility: `raw"...\Data\SingDrplMisc"`
 - `title_anlz`
 - `runinfos`
-  - excitation/excitation runner: `date`, `runid`, `vars`, `tag_head`
+  - excitation runner: `tag_head`, `date_runid`, `vars`
+  - `date_runid`: tuples of `(date, runid)` used for loading raw folders; its order should match the first formatted variable axis
   - miscibility: `date`, `runids`, `tag_head`, `vars`
 - variable axes:
-  - excitation/excitation runner: `IB`, `rep`, `t_hold`, `istp`
+  - excitation runner: `runid_IB`, `rep`, `t_hold`, `istp`
+  - `runid_IB`: tuples of `(runid, IB)` used as the first formatted axis; per-IB plot filenames/log tags extract both values from this tuple
   - miscibility: `IB`, `rep`, `bias`, `t_hold`, `istp`
 - lite/test data slice:
   - `rng_lite = 1:50`

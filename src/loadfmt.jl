@@ -5,10 +5,24 @@ using Statistics
 as_vector(x) = x isa AbstractArray ? collect(x) : [x]
 format_vars(vars::NamedTuple) = map(as_vector, vars)
 format_runids(runids::Integer) = @sprintf("%02d", runids)
+format_runids(runids::AbstractRange{<:Integer}) = runids |> a -> "$(a)" |> s -> replace(s, ":" => "-")
+format_runids(runids::AbstractVector{<:Integer}) = join(format_runids.(runids), "-")
 format_runids(runids) = runids |> a -> "$(a)" |> s -> replace(s, ":" => "-")
+get_runid(runid_IB::Tuple) = first(runid_IB)
+get_IB(runid_IB::Tuple) = last(runid_IB)
+get_date(date_runid::Tuple) = first(date_runid)
+get_runid_from_date_runid(date_runid::Tuple) = last(date_runid)
 
 function gen_run_tag(runinfo)
-    runids = hasproperty(runinfo, :runids) ? runinfo.runids : runinfo.runid
+    runids = if hasproperty(runinfo, :runids)
+        runinfo.runids
+    elseif hasproperty(runinfo, :runid)
+        runinfo.runid
+    elseif hasproperty(runinfo, :date_runid)
+        get_runid_from_date_runid.(as_vector(runinfo.date_runid))
+    else
+        error("runinfo must contain runid, runids, or date_runid.")
+    end
     str_runids = format_runids(runids)
     if hasproperty(runinfo, :IB)
         return @sprintf("%s_%.3f_r%s", runinfo.tag_head, runinfo.IB, str_runids)
@@ -17,6 +31,12 @@ function gen_run_tag(runinfo)
         val_ib = as_vector(runinfo.vars.IB)
         if length(val_ib) == 1
             return @sprintf("%s_%.3f_r%s", runinfo.tag_head, only(val_ib), str_runids)
+        end
+    end
+    if hasproperty(runinfo, :vars) && hasproperty(runinfo.vars, :runid_IB)
+        val_runid_IB = as_vector(runinfo.vars.runid_IB)
+        if length(val_runid_IB) == 1
+            return @sprintf("%s_%.3f_r%s", runinfo.tag_head, get_IB(only(val_runid_IB)), str_runids)
         end
     end
     return @sprintf("%s_run%s", runinfo.tag_head, str_runids)
@@ -66,13 +86,23 @@ function format_dens_runinfo(
     smwh_roi::Tuple{<:Integer,<:Integer},
     len_avg_peak::Integer=10,
 )
-    runids = hasproperty(runinfo, :runids) ? as_vector(runinfo.runids) : as_vector(runinfo.runid)
     val = format_vars(runinfo.vars)
     name_dims = propertynames(val)
     n_dim_vars = Tuple(map(length, val))
     n_variation = prod(n_dim_vars)
+    dates, runids = if hasproperty(runinfo, :date_runid)
+        date_runids = as_vector(runinfo.date_runid)
+        length(date_runids) == first(n_dim_vars) || throw(DimensionMismatch("date_runid has length $(length(date_runids)); expected $(first(n_dim_vars)) to match the first variable axis $(first(name_dims))."))
+        get_date.(date_runids), get_runid_from_date_runid.(date_runids)
+    elseif hasproperty(runinfo, :runids)
+        fill(runinfo.date, length(as_vector(runinfo.runids))), as_vector(runinfo.runids)
+    elseif hasproperty(runinfo, :runid)
+        [runinfo.date], as_vector(runinfo.runid)
+    else
+        error("runinfo must contain runid, runids, or date_runid.")
+    end
 
-    dens = map(runid -> load_dens_run(runinfo.date, runid; path_root, year_test, wh_corner), runids) |>
+    dens = map((date, runid) -> load_dens_run(date, runid; path_root, year_test, wh_corner), dates, runids) |>
            ds -> cat(ds...; dims=1)
     n_shot, h_dens, w_dens = size(dens)
     n_shot == n_variation || throw(DimensionMismatch("Loaded $n_shot shots for $(gen_run_tag(runinfo)), but expected $n_variation from variables $name_dims with dimensions $n_dim_vars."))
