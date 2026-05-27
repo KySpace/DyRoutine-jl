@@ -8,10 +8,31 @@ format_runids(runids::Integer) = @sprintf("%02d", runids)
 format_runids(runids::AbstractRange{<:Integer}) = runids |> a -> "$(a)" |> s -> replace(s, ":" => "-")
 format_runids(runids::AbstractVector{<:Integer}) = join(format_runids.(runids), "-")
 format_runids(runids) = runids |> a -> "$(a)" |> s -> replace(s, ":" => "-")
-get_runid(runid_IB::Tuple) = first(runid_IB)
-get_IB(runid_IB::Tuple) = last(runid_IB)
 get_date(date_runid::Tuple) = first(date_runid)
 get_runid_from_date_runid(date_runid::Tuple) = last(date_runid)
+
+function get_n_runids(runinfo)
+    if hasproperty(runinfo, :runids)
+        return length(as_vector(runinfo.runids))
+    elseif hasproperty(runinfo, :runid)
+        return length(as_vector(runinfo.runid))
+    elseif hasproperty(runinfo, :date_runid)
+        return length(as_vector(runinfo.date_runid))
+    else
+        error("runinfo must contain runid, runids, or date_runid.")
+    end
+end
+
+function validate_bind_id(runinfo, val_vars)
+    hasproperty(runinfo, :bind_id) || return nothing
+    name_bound = runinfo.bind_id
+    hasproperty(val_vars, name_bound) || throw(ArgumentError("runinfo.bind_id is $name_bound, but runinfo.vars does not contain that variable."))
+
+    n_runids = get_n_runids(runinfo)
+    n_bound = length(getproperty(val_vars, name_bound))
+    n_runids == n_bound || throw(DimensionMismatch("runinfo.bind_id=$name_bound requires the same number of runids and $(name_bound) values; got $n_runids runids and $n_bound $(name_bound) values."))
+    return nothing
+end
 
 function gen_run_tag(runinfo)
     runids = if hasproperty(runinfo, :runids)
@@ -31,12 +52,6 @@ function gen_run_tag(runinfo)
         val_ib = as_vector(runinfo.vars.IB)
         if length(val_ib) == 1
             return @sprintf("%s_%.3f_r%s", runinfo.tag_head, only(val_ib), str_runids)
-        end
-    end
-    if hasproperty(runinfo, :vars) && hasproperty(runinfo.vars, :runid_IB)
-        val_runid_IB = as_vector(runinfo.vars.runid_IB)
-        if length(val_runid_IB) == 1
-            return @sprintf("%s_%.3f_r%s", runinfo.tag_head, get_IB(only(val_runid_IB)), str_runids)
         end
     end
     return @sprintf("%s_run%s", runinfo.tag_head, str_runids)
@@ -90,6 +105,7 @@ function format_dens_runinfo(
     name_dims = propertynames(val_vars)
     n_dim_vars = Tuple(map(length, val_vars))
     n_variation = prod(n_dim_vars)
+    validate_bind_id(runinfo, val_vars)
     dates, runids = if hasproperty(runinfo, :date_runid)
         date_runids = as_vector(runinfo.date_runid)
         length(date_runids) == first(n_dim_vars) || throw(DimensionMismatch("date_runid has length $(length(date_runids)); expected $(first(n_dim_vars)) to match the first variable axis $(first(name_dims))."))
