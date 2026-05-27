@@ -10,7 +10,7 @@ println("  xy_peak_px: $(xy_peak_px), wh_dens: $(wh_dens)")
 xy_peak_duet = dens_full_fmt |>
                ds -> mapslices(
     imgs -> mean(imgs) |>
-            d -> fit_dens2d_gaussian_round_disk(1:wh_peak[1], 1:wh_peak[2], d, :; fit_round_kwargs...)["params"] |>
+            d -> fit_dens2d_gaussian_round_disk(1:wh_peak[1], 1:wh_peak[2], d, :; fit_round_kwargs...).params |>
                  p -> (round(Int, p[2]), round(Int, p[3])),
     ds;
     dims=ndims(ds),
@@ -52,7 +52,7 @@ for (c, ib) in enumerate(val_vars.IB), (b, bias) in enumerate(val_vars.bias)
     [ax] |> clear_axes!
     for (i, istp_iter) in enumerate(val_vars.istp), rep in val_vars.rep
         clr_theme = Oklch(0.52, 0.14, hue_theme_istp[istp_iter])
-        sizes = extr_2d_fmt[c, rep, b, :, i] |> es -> map(e -> e.envelope.params_round["size"], es)
+        sizes = extr_2d_fmt[c, rep, b, :, i] |> es -> map(e -> e.envelope.params_round.size, es)
         lines!(ax, val_vars.t_hold, sizes; color=(clr_theme, 0.65))
     end
     ylims!(ax, 0, 6.0)
@@ -66,7 +66,7 @@ for (c, ib) in enumerate(val_vars.IB), (t, t_hold_iter) in enumerate(val_vars.t_
     [ax] |> clear_axes!
     for (i, istp_iter) in enumerate(val_vars.istp), rep in val_vars.rep
         clr_theme = Oklch(0.52, 0.14, hue_theme_istp[istp_iter])
-        sizes = extr_2d_fmt[c, rep, :, t, i] |> es -> map(e -> e.envelope.params_round["size"], es)
+        sizes = extr_2d_fmt[c, rep, :, t, i] |> es -> map(e -> e.envelope.params_round.size, es)
         lines!(ax, val_vars.bias, sizes; color=(clr_theme, 0.65))
     end
     ylims!(ax, 0, 6.0)

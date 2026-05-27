@@ -137,13 +137,7 @@ function calc_prfl_moment(coor, prfl)
     height = weight / (coor[end] - coor[1])
     expval = coor .* prfl |> ntgr_over_coor |> u -> u ./ weight
     var = (coor .- expval) .^ 2 .* prfl |> ntgr_over_coor |> sqrt |> u -> u / sqrt(weight)
-    return Dict(
-        "weight" => weight,
-        "wavenum" => expval,
-        "width" => var,
-        "height" => height,
-        "coor" => coor
-    )
+    return (; weight, wavenum=expval, width=var, height, coor)
 end
 
 function fit_prfl_modl_twinpeak_decay_1d(
@@ -171,13 +165,7 @@ function fit_prfl_modl_twinpeak_decay_1d(
     fit = curve_fit(model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
     params_fit = coef(fit)
     rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (prfl[mask] |> d -> sqrt(sum(abs2, d)))
-    return Dict(
-        "fit" => fit,
-        "model" => model,
-        "params" => params_fit,
-        "tail" => k -> model_tail(k, params_fit),
-        "rss_rel" => rss_rel,
-    )
+    return (; fit, model, params=params_fit, tail=k -> model_tail(k, params_fit), rss_rel)
 end
 
 function fit_dens2d_gaussian_elliptic_disk(
@@ -217,13 +205,7 @@ function fit_dens2d_gaussian_elliptic_disk(
     params_fit = coef(fit)
     fitfn(coords) = model(coords, params_fit)
     rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (dens[mask] |> d -> sqrt(sum(abs2, d)))
-    return Dict(
-        "fit" => fit,
-        "model" => model,
-        "params" => params_fit,
-        "fitfn" => fitfn,
-        "rss_rel" => rss_rel,
-    )
+    return (; fit, model, params=params_fit, fitfn, rss_rel)
 end
 
 function fit_dens2d_gaussian_round_disk(
@@ -258,13 +240,7 @@ function fit_dens2d_gaussian_round_disk(
     params_fit = coef(fit)
     fitfn(coords) = model(coords, params_fit)
     rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (dens[mask] |> d -> sqrt(sum(abs2, d)))
-    return Dict(
-        "fit" => fit,
-        "model" => model,
-        "params" => params_fit,
-        "fitfn" => fitfn,
-        "rss_rel" => rss_rel,
-    )
+    return (; fit, model, params=params_fit, fitfn, rss_rel)
 end
 
 function fit_prfl_modl_twinpeak_1d(
@@ -292,14 +268,7 @@ function fit_prfl_modl_twinpeak_1d(
     fitfn_main(k) = model_main(k, params_fit)
     fitfn(k) = model(k, params_fit)
     rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (prfl[mask] |> d -> sqrt(sum(abs2, d)))
-    return Dict(
-        "fit" => fit,
-        "model" => model,
-        "params" => params_fit,
-        "fitfn_main" => fitfn_main,
-        "fitfn" => fitfn,
-        "rss_rel" => rss_rel,
-    )
+    return (; fit, model, params=params_fit, fitfn_main, fitfn, rss_rel)
 end
 
 struct SoloEssentials
@@ -321,16 +290,16 @@ end
 
 struct SoloSidepeak
     prfl_norm_tailess_px::AbstractVector
-    params_tailess::Dict{String,Real}
-    fit_tailess::Dict
-    moments::Dict{String}
+    params_tailess::NamedTuple
+    fit_tailess::NamedTuple
+    moments::NamedTuple
 end
 
 struct SoloEnvelope
-    fit_asymm_2d::Dict{String}
-    params_asymm::Dict{String}
-    fit_round_2d::Dict{String}
-    params_round::Dict{String}
+    fit_asymm_2d::NamedTuple
+    params_asymm::NamedTuple
+    fit_round_2d::NamedTuple
+    params_round::NamedTuple
 end
 
 struct SoloExtract
@@ -356,7 +325,7 @@ end
 
 function calc_solo_extr(
     essn::SoloEssentials,
-    fit_stack::Union{Dict,Nothing};
+    fit_stack::Union{NamedTuple,Nothing};
     proc_sidepeak::Bool=false,
     proc_envelope::Bool=false,
     selector_moment::Function=y -> (y .> 0.10) .& (y .< 0.50),
@@ -372,14 +341,14 @@ function calc_solo_extr(
     sidepeak = proc_sidepeak ?
     begin
         mask_mmt = selector_moment(y_modl)
-        prfl_tailess = essn.prfl_modl_norm_px - fit_stack["tail"](y_modl)
+        prfl_tailess = essn.prfl_modl_norm_px - fit_stack.tail(y_modl)
         fit_tailess = fit_prfl_modl_twinpeak_1d(y_modl, prfl_tailess, sel_sidepeak; fit_tailess_kwargs...)
-        params_tailess = Dict(
-            "height" => fit_tailess["params"][3],
-            "width" => fit_tailess["params"][4],
-            "wavenum" => fit_tailess["params"][5],
-            "weight" => sqrt(2 * pi) * fit_tailess["params"][3] * fit_tailess["params"][4],
-            "rel. residue" => fit_tailess["rss_rel"]
+        params_tailess = (;
+            height=fit_tailess.params[3],
+            width=fit_tailess.params[4],
+            wavenum=fit_tailess.params[5],
+            weight=sqrt(2 * pi) * fit_tailess.params[3] * fit_tailess.params[4],
+            rel_residue=fit_tailess.rss_rel,
         )
         moments = calc_prfl_moment(y_modl[mask_mmt], prfl_tailess[mask_mmt])
         SoloSidepeak(prfl_tailess, params_tailess, fit_tailess, moments)
@@ -387,19 +356,19 @@ function calc_solo_extr(
     envelope = proc_envelope ?
     begin
         fit_asymm = fit_dens2d_gaussian_elliptic_disk(x_posi, y_posi, essn.dens2d, :; fit_asymm_kwargs...)
-        params_asymm = Dict(
-            "max" => fit_asymm["params"][1],
-            "cent" => (fit_asymm["params"][2], fit_asymm["params"][3]),
-            "size" => (fit_asymm["params"][4], fit_asymm["params"][5]),
-            "rotation" => fit_asymm["params"][6],
-            "rel. residue" => fit_asymm["rss_rel"]
+        params_asymm = (;
+            max=fit_asymm.params[1],
+            cent=(fit_asymm.params[2], fit_asymm.params[3]),
+            size=(fit_asymm.params[4], fit_asymm.params[5]),
+            rotation=fit_asymm.params[6],
+            rel_residue=fit_asymm.rss_rel,
         )
         fit_round = fit_dens2d_gaussian_round_disk(x_posi, y_posi, essn.dens2d, :; fit_round_kwargs...)
-        params_round = Dict(
-            "max" => fit_round["params"][1],
-            "cent" => (fit_round["params"][2], fit_round["params"][3]),
-            "size" => fit_round["params"][4],
-            "rel. residue" => fit_round["rss_rel"]
+        params_round = (;
+            max=fit_round.params[1],
+            cent=(fit_round.params[2], fit_round.params[3]),
+            size=fit_round.params[4],
+            rel_residue=fit_round.rss_rel,
         )
         SoloEnvelope(fit_asymm, params_asymm, fit_round, params_round)
     end : nothing

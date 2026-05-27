@@ -20,32 +20,32 @@ path_anlz_excitation = joinpath(@__DIR__, "anlz_excitation.jl")
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
 istp = ["162", "164"]
-# runinfos = [
-#     (date="0325", runid=95, tag_head="CFNM", bind_id=:IB, vars=(IB=5.311, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0325", runid=82, tag_head="CFNM", bind_id=:IB, vars=(IB=5.313, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0325", runid=52, tag_head="CFNM", bind_id=:IB, vars=(IB=5.316, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0325", runid=80, tag_head="CFNM", bind_id=:IB, vars=(IB=5.318, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0325", runid=96, tag_head="CFNM", bind_id=:IB, vars=(IB=5.321, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0325", runid=67, tag_head="CFNM", bind_id=:IB, vars=(IB=5.322, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0325", runid=68, tag_head="CFNM", bind_id=:IB, vars=(IB=5.328, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0325", runid=50, tag_head="CFNM", bind_id=:IB, vars=(IB=5.328, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0325", runid=81, tag_head="CFNM", bind_id=:IB, vars=(IB=5.332, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0325", runid=51, tag_head="CFNM", bind_id=:IB, vars=(IB=5.333, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0325", runid=79, tag_head="CFNM", bind_id=:IB, vars=(IB=5.336, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0325", runid=53, tag_head="CFNM", bind_id=:IB, vars=(IB=5.338, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0322", runid=29, tag_head="NTRC", bind_id=:IB, vars=(IB=5.314, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0322", runid=28, tag_head="NTRC", bind_id=:IB, vars=(IB=5.316, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0322", runid=27, tag_head="NTRC", bind_id=:IB, vars=(IB=5.318, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0322", runid=26, tag_head="NTRC", bind_id=:IB, vars=(IB=5.322, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0322", runid=25, tag_head="NTRC", bind_id=:IB, vars=(IB=5.326, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0323", runid=61, tag_head="NTRC", bind_id=:IB, vars=(IB=5.332, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0323", runid=62, tag_head="NTRC", bind_id=:IB, vars=(IB=5.336, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0323", runid=63, tag_head="NTRC", bind_id=:IB, vars=(IB=5.340, rep=1:3, t_hold=6:2:200, istp)),
-#     (date="0323", runid=64, tag_head="NTRC", bind_id=:IB, vars=(IB=5.343, rep=1:3, t_hold=6:2:200, istp)),
-# ]
+runinfos_separated = [
+    (date="0325", runid=95, tag_head="CFNM", bind_id=:IB, vars=(IB=5.311, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0325", runid=82, tag_head="CFNM", bind_id=:IB, vars=(IB=5.313, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0325", runid=52, tag_head="CFNM", bind_id=:IB, vars=(IB=5.316, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0325", runid=80, tag_head="CFNM", bind_id=:IB, vars=(IB=5.318, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0325", runid=96, tag_head="CFNM", bind_id=:IB, vars=(IB=5.321, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0325", runid=67, tag_head="CFNM", bind_id=:IB, vars=(IB=5.322, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0325", runid=68, tag_head="CFNM", bind_id=:IB, vars=(IB=5.328, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0325", runid=50, tag_head="CFNM", bind_id=:IB, vars=(IB=5.328, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0325", runid=81, tag_head="CFNM", bind_id=:IB, vars=(IB=5.332, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0325", runid=51, tag_head="CFNM", bind_id=:IB, vars=(IB=5.333, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0325", runid=79, tag_head="CFNM", bind_id=:IB, vars=(IB=5.336, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0325", runid=53, tag_head="CFNM", bind_id=:IB, vars=(IB=5.338, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0322", runid=29, tag_head="NTRC", bind_id=:IB, vars=(IB=5.314, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0322", runid=28, tag_head="NTRC", bind_id=:IB, vars=(IB=5.316, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0322", runid=27, tag_head="NTRC", bind_id=:IB, vars=(IB=5.318, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0322", runid=26, tag_head="NTRC", bind_id=:IB, vars=(IB=5.322, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0322", runid=25, tag_head="NTRC", bind_id=:IB, vars=(IB=5.326, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0323", runid=61, tag_head="NTRC", bind_id=:IB, vars=(IB=5.332, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0323", runid=62, tag_head="NTRC", bind_id=:IB, vars=(IB=5.336, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0323", runid=63, tag_head="NTRC", bind_id=:IB, vars=(IB=5.340, rep=1:3, t_hold=6:2:200, istp)),
+    (date="0323", runid=64, tag_head="NTRC", bind_id=:IB, vars=(IB=5.343, rep=1:3, t_hold=6:2:200, istp)),
+]
 
 # Grouped version for comparing against the one-folder-per-runinfo list above.
-runinfos = [
+runinfos_grouped = [
     (
         tag_head="CFNM",
         bind_id=:IB,
@@ -93,8 +93,11 @@ runinfos = [
     ),
 ]
 
-# ids_runinfo = eachindex(runinfos)
-ids_runinfo = 1:1
+runinfos = runinfos_grouped
+# runinfos = runinfos_separated
+
+ids_runinfo = eachindex(runinfos)
+# ids_runinfo = 1:1
 
 title_anlz = "[05.26].53.DevTests"
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)

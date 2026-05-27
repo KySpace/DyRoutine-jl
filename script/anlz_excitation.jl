@@ -88,7 +88,7 @@ t_stage = log_step("extracting per-shot sidepeak/envelope values")
 extr_fmt = [
     begin
         # if r == first(axes(essn_2d_fmt, 2)) && (t == first(axes(essn_2d_fmt, 3)) || t % 25 == 0 || t == last(axes(essn_2d_fmt, 3)))
-            print("\r  [$tag] extracting shots IB_idx=$c t_idx=$t istp_idx=$i")
+            print("\r  [$tag] extracting shots IB_idx=$c rep-$r t_idx=$t istp_idx=$i")
             flush(stdout)
         # end
         essn_2d_fmt[c, r, t, i] |> e -> calc_solo_extr(

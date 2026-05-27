@@ -72,15 +72,15 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     clr_mark_nvlp = RGBAf(Oklch(0.52, 0.10, hue_theme + 90), 1.0)
     clr_moments = Oklch(0.52, 0.14, hue_theme)
 
-    nvlp = extr.envelope.params_asymm_2d
-    shade_mainpeak = extr.sidepeak.fit_tailess["fitfn_main"](y_modl_sm)
-    shade_peaks = extr.sidepeak.fit_tailess["fitfn"](y_modl_sm)
+    nvlp = extr.envelope.params_asymm
+    shade_mainpeak = extr.sidepeak.fit_tailess.fitfn_main(y_modl_sm)
+    shade_peaks = extr.sidepeak.fit_tailess.fitfn(y_modl_sm)
     band!(axs["upright"], y_modl_sm, 0, shade_mainpeak, color=(:gray, 0.1))
     band!(axs["upright"], y_modl_sm, shade_mainpeak, shade_peaks, color=(:darkseagreen1, 0.5))
 
     heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, 16.0), colormap=clrmap, rasterize=true)
-    draw_rotated_ellipse_corners!(axs["dens"], nvlp["cent"], nvlp["size"], nvlp["rotation"]; color=:white, linewidth=4)
-    draw_rotated_ellipse_corners!(axs["dens"], nvlp["cent"], nvlp["size"], nvlp["rotation"]; color=clr_mark_nvlp, linewidth=2)
+    draw_rotated_ellipse_corners!(axs["dens"], nvlp.cent, nvlp.size, nvlp.rotation; color=:white, linewidth=4)
+    draw_rotated_ellipse_corners!(axs["dens"], nvlp.cent, nvlp.size, nvlp.rotation; color=clr_mark_nvlp, linewidth=2)
 
     heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, 10.0), colormap=clrmap, rasterize=true)
     lines!(axs["upright"], y_modl_sm, essn.prfl_modl_norm_px[essn.smwh[2]+1:end], color=(:black, 0.4), linewidth=1)
@@ -105,25 +105,25 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     vlines!(axs["modl"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.2))
     vlines!(axs["upright"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
     hlines!(axs["upright"], 0.0; color=(:darkseagreen1, 0.5))
-    vlines!(axs["upright"], extr.sidepeak.params_tailess["wavenum"]; color=(:mediumspringgreen, 1.0))
-    vlines!(axs["sideway"], extr.sidepeak.params_tailess["height"]; color=(:mediumspringgreen, 1.0))
+    vlines!(axs["upright"], extr.sidepeak.params_tailess.wavenum; color=(:mediumspringgreen, 1.0))
+    vlines!(axs["sideway"], extr.sidepeak.params_tailess.height; color=(:mediumspringgreen, 1.0))
     mmt = extr.sidepeak.moments
     sp = extr.sidepeak.params_tailess
-    mmt_coor_min = mmt["coor"] |> minimum
-    mmt_coor_max = mmt["coor"] |> maximum
-    errorbars!(axs["upright"], [mmt["wavenum"]], [1.7], [mmt["width"]], [mmt["width"]]; direction=:x, color=clr_moments, whiskerwidth=8)
-    lines!(axs["sideway"], [mmt["height"], mmt["height"]], [mmt_coor_min, mmt_coor_max]; color=(clr_moments, 1.0))
-    band!(axs["sideway"], [0, mmt["height"]], mmt_coor_min |> a -> [a, a], mmt_coor_max |> a -> [a, a]; color=(clr_moments, 0.1))
+    mmt_coor_min = mmt.coor |> minimum
+    mmt_coor_max = mmt.coor |> maximum
+    errorbars!(axs["upright"], [mmt.wavenum], [1.7], [mmt.width], [mmt.width]; direction=:x, color=clr_moments, whiskerwidth=8)
+    lines!(axs["sideway"], [mmt.height, mmt.height], [mmt_coor_min, mmt_coor_max]; color=(clr_moments, 1.0))
+    band!(axs["sideway"], [0, mmt.height], mmt_coor_min |> a -> [a, a], mmt_coor_max |> a -> [a, a]; color=(clr_moments, 0.1))
 
     sprint2f = (x) -> @sprintf("%.2f", x)
     text!(axs["modl"], 0.35, -0.16; text="$(info_solo["t_hold"]) ms | rep $(info_solo["repeat"])", color=:black, strokewidth=0.6, strokecolor=:white, fontsize=24, align=(:center, :top))
-    text!(axs["dens"], -4.8, 9.8; text="[$(nvlp["size"][1] |> sprint2f), $(nvlp["size"][2] |> sprint2f)] μm \nrss/sum: $(nvlp["rel. residue"] |> sprint2f)", color=clr_mark_nvlp, strokewidth=0.5, strokecolor=:white, font=:bold, fontsize=11, align=(:left, :top))
-    text!(axs["sideway"], 1.45, 0.44; text="fit: $(sp["height"] |> sprint2f), $(sp["weight"] |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
-    text!(axs["sideway"], 1.45, 0.41; text="μ₀: $(mmt["height"] |> sprint2f), $(mmt["weight"] |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
+    text!(axs["dens"], -4.8, 9.8; text="[$(nvlp.size[1] |> sprint2f), $(nvlp.size[2] |> sprint2f)] μm \nrss/sum: $(nvlp.rel_residue |> sprint2f)", color=clr_mark_nvlp, strokewidth=0.5, strokecolor=:white, font=:bold, fontsize=11, align=(:left, :top))
+    text!(axs["sideway"], 1.45, 0.44; text="fit: $(sp.height |> sprint2f), $(sp.weight |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
+    text!(axs["sideway"], 1.45, 0.41; text="μ₀: $(mmt.height |> sprint2f), $(mmt.weight |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
     text!(axs["sideway"], 1.45, 0.38; text="$(mmt_coor_min |> sprint2f)-$(mmt_coor_max |> sprint2f) μm⁻¹", color=clr_moments, fontsize=14, align=(:right, :top))
-    text!(axs["upright"], 0.58, 1.4; text="fit: $(sp["wavenum"] |> sprint2f) ± $(sp["width"] |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
-    text!(axs["upright"], 0.58, 1.2; text="rss/sum: $(sp["rel. residue"] |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
-    text!(axs["upright"], 0.58, 1.6; text="μ₁, μ₂: $(mmt["wavenum"] |> sprint2f) ± $(mmt["width"] |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
+    text!(axs["upright"], 0.58, 1.4; text="fit: $(sp.wavenum |> sprint2f) ± $(sp.width |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
+    text!(axs["upright"], 0.58, 1.2; text="rss/sum: $(sp.rel_residue |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
+    text!(axs["upright"], 0.58, 1.6; text="μ₁, μ₂: $(mmt.wavenum |> sprint2f) ± $(mmt.width |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
 end
 
 function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo)
