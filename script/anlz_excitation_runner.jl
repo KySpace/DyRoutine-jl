@@ -88,9 +88,10 @@ runinfos = [
         ),
     ),
 ]
-ids_runinfo = eachindex(runinfos)
+# ids_runinfo = eachindex(runinfos)
+ids_runinfo = 1:1
 
-title_anlz = "[05.26].52.DevTests"
+title_anlz = "[05.26].53.DevTests"
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
 
@@ -133,8 +134,13 @@ fit_asymm_kwargs = NamedTuple()
 fit_round_kwargs = NamedTuple()
 query_weight_kwargs = NamedTuple()
 
+##
+
 for idx_runinfo_iter in ids_runinfo
     global idx_runinfo = idx_runinfo_iter
     global runinfo = runinfos[idx_runinfo]
+    # tag = gen_run_tag(runinfo)
+    tag = tag_head = runinfo.tag_head
+    println("Processing: $tag")
     include(path_anlz_excitation)
 end

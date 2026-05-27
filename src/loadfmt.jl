@@ -86,9 +86,9 @@ function format_dens_runinfo(
     smwh_roi::Tuple{<:Integer,<:Integer},
     len_avg_peak::Integer=10,
 )
-    val = format_vars(runinfo.vars)
-    name_dims = propertynames(val)
-    n_dim_vars = Tuple(map(length, val))
+    val_vars = format_vars(runinfo.vars)
+    name_dims = propertynames(val_vars)
+    n_dim_vars = Tuple(map(length, val_vars))
     n_variation = prod(n_dim_vars)
     dates, runids = if hasproperty(runinfo, :date_runid)
         date_runids = as_vector(runinfo.date_runid)
@@ -112,5 +112,5 @@ function format_dens_runinfo(
     dens_crop = mapslices(d -> crop_center(d, xy_peak_px, smwh_roi), dens; dims=(2, 3))
     dens_full_fmt = format_image_array(dens_crop, n_dim_vars)
 
-    return (; runinfo, val, dens_full_fmt, wh_dens=(w_dens, h_dens), xy_peak_px, n_dim_vars, name_dims)
+    return (; runinfo, val_vars, dens_full_fmt, wh_dens=(w_dens, h_dens), xy_peak_px, n_dim_vars, name_dims)
 end

@@ -1,6 +1,6 @@
 println("Processing set $idx_runinfo: $(gen_run_tag(runinfo))")
 fmt_dens = format_dens_runinfo(runinfo; path_root, year_test, wh_corner, smwh_roi, len_avg_peak)
-val_vars = fmt_dens.val
+val_vars = fmt_dens.val_vars
 (; dens_full_fmt, wh_dens, xy_peak_px, n_dim_vars) = fmt_dens
 println("  val_vars lengths ($(join(string.(propertynames(val_vars)), ", "))): $(map(length, val_vars))")
 println("  dens_full_fmt size: $(size(dens_full_fmt))")

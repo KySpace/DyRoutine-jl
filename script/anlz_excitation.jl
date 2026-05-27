@@ -1,5 +1,3 @@
-tag = gen_run_tag(runinfo)
-println("Processing: $tag")
 log_step(msg) = (println("  [$tag] $msg"); flush(stdout); time())
 log_done(msg, t_start) = (println("  [$tag] $msg ($(round(time() - t_start; digits=1)) s)"); flush(stdout))
 
@@ -18,9 +16,7 @@ get_runid_IB_runinfo(runinfo, idx_runid_IB, runid_IB) = merge(
 
 name = propertynames(runinfo.vars)
 t_stage = log_step("formatting density data")
-fmt_dens = format_dens_runinfo(runinfo; path_root, year_test, wh_corner, smwh_roi, len_avg_peak)
-val_vars = fmt_dens.val
-(; dens_full_fmt, wh_dens, xy_peak_px, n_dim_vars, name_dims) = fmt_dens
+(; val_vars, dens_full_fmt, wh_dens, xy_peak_px, n_dim_vars, name_dims) = format_dens_runinfo(runinfo; path_root, year_test, wh_corner, smwh_roi, len_avg_peak)
 n_variation = prod(n_dim_vars)
 n_dim_vars_per_runid_IB = Tuple(n_dim_vars[2:end])
 n_runid_IB, n_rep, n_main, n_istp = n_dim_vars
@@ -30,20 +26,6 @@ if hasproperty(runinfo, :date_runid)
     runids_io == runids_axis || throw(DimensionMismatch("date_runid runids $(runids_io) must match runid_IB runids $(runids_axis)."))
 end
 log_done("formatted density data: axes $(name_dims) dims $(n_dim_vars), per-runid_IB dims $(n_dim_vars_per_runid_IB), image $(size(first(dens_full_fmt)))", t_stage)
-
-# A lite version for tests
-# rng_lite = 1:50;
-# val_vars = (
-#     runid_IB=val_vars.runid_IB,
-#     rep=collect(1:3),
-#     t_hold=collect(6:2:200)[rng_lite],
-#     istp=["162", "164"],
-# )
-# n_dim_vars = (n_dim_vars[1], length(val_vars.rep), length(val_vars.t_hold), length(val_vars.istp))
-# n_variation = prod(n_dim_vars)
-# n_dim_vars_per_runid_IB = Tuple(n_dim_vars[2:end])
-# n_runid_IB, n_rep, n_main, n_istp = n_dim_vars
-# dens_full_fmt = dens_full_fmt[:, :, rng_lite, :]
 
 # Statistics on number sum
 # num_fmt = sum.(dens_full_fmt)
