@@ -180,39 +180,39 @@ log_done("analyzed stacked trends", t_stage)
 # modes_pca_modl2d
 
 ## Overall plots
-# for (c, IB) in enumerate(val_vars.IB)
-#     tag_IB = gen_run_tag(get_bind_runinfo(runinfo, val_vars, c))
-#     runinfo_plot = get_bind_runinfo(runinfo, val_vars, c)
+for (c, IB) in enumerate(val_vars.IB)
+    tag_IB = gen_run_tag(get_bind_runinfo(runinfo, val_vars, c))
+    runinfo_plot = get_bind_runinfo(runinfo, val_vars, c)
 
-#     t_stage = log_step("building trend figures for $tag_IB")
-#     fig_trend, axs_trend = set_axis_sidepeak_nvlp!(n_dim_vars_per_IB, set_panel_trend_sidepeak_nvlp!, runinfo_plot)
-#     fig_nvlp, axs_nvlp = set_axis_stack_all!(n_dim_vars_per_IB, set_panel_trend_nvlp!, runinfo_plot)
-#     log_done("built trend figures for $tag_IB", t_stage)
-#     for i in 1:n_istp
-#         t_plot_stage = log_step("plotting and saving trends for $tag_IB istp=$(val_vars.istp[i])")
-#         trend = trend_sidepeak_nvlp[c, :, i]
-#         trend_stacked = trend_stacked_over_rep[c, i]
-#         val_istp = val_vars.istp[i]
-#         plot_trend_all!(axs_trend, trend, trend_stacked, val_istp)
-#         plot_trend_nvlp!(axs_nvlp, trend, trend_stacked, val_istp)
-#         resize_to_layout!(fig_trend)
-#         resize_to_layout!(fig_nvlp)
-#         for format in ["pdf", "png"]
-#             fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.%s", tag_IB, val_istp, format)), f; backend=CairoMakie)
-#             fig_nvlp |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend_nvlp.%s", tag_IB, val_istp, format)), f; backend=CairoMakie)
-#         end
-#         log_done("saved trends for $tag_IB istp=$(val_vars.istp[i])", t_plot_stage)
-#     end
+    t_stage = log_step("building trend figures for $tag_IB")
+    fig_trend, axs_trend = set_axis_sidepeak_nvlp!(n_dim_vars_per_IB, set_panel_trend_sidepeak_nvlp!, runinfo_plot)
+    fig_nvlp, axs_nvlp = set_axis_stack_all!(n_dim_vars_per_IB, set_panel_trend_nvlp!, runinfo_plot)
+    log_done("built trend figures for $tag_IB", t_stage)
+    for i in 1:n_istp
+        t_plot_stage = log_step("plotting and saving trends for $tag_IB istp=$(val_vars.istp[i])")
+        trend = trend_sidepeak_nvlp[c, :, i]
+        trend_stacked = trend_stacked_over_rep[c, i]
+        val_istp = val_vars.istp[i]
+        plot_trend_all!(axs_trend, trend, trend_stacked, val_istp)
+        plot_trend_nvlp!(axs_nvlp, trend, trend_stacked, val_istp)
+        resize_to_layout!(fig_trend)
+        resize_to_layout!(fig_nvlp)
+        for format in ["pdf", "png"]
+            fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.%s", tag_IB, val_istp, format)), f; backend=CairoMakie)
+            fig_nvlp |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend_nvlp.%s", tag_IB, val_istp, format)), f; backend=CairoMakie)
+        end
+        log_done("saved trends for $tag_IB istp=$(val_vars.istp[i])", t_plot_stage)
+    end
 
-#     t_stage = log_step("building and saving PCA figure for $tag_IB")
-#     fig_pca, axs_pca = set_axis_pca_dual_4x2!()
-#     for idx_mode in 1:n_pca_modes, idx_istp in 1:n_istp
-#         plot_mode_evol_freq_solo!(axs_pca[idx_istp, idx_mode], modes_pca_modl2d[c, idx_istp][idx_mode], val_vars.t_hold)
-#     end
-#     resize_to_layout!(fig_pca)
-#     fig_pca |> f -> save(joinpath(path_output, @sprintf("%s_pca.pdf", tag_IB)), f; backend=CairoMakie)
-#     log_done("saved PCA figure for $tag_IB", t_stage)
-# end
+    t_stage = log_step("building and saving PCA figure for $tag_IB")
+    fig_pca, axs_pca = set_axis_pca_dual_4x2!()
+    for idx_mode in 1:n_pca_modes, idx_istp in 1:n_istp
+        plot_mode_evol_freq_solo!(axs_pca[idx_istp, idx_mode], modes_pca_modl2d[c, idx_istp][idx_mode], val_vars.t_hold)
+    end
+    resize_to_layout!(fig_pca)
+    fig_pca |> f -> save(joinpath(path_output, @sprintf("%s_pca.pdf", tag_IB)), f; backend=CairoMakie)
+    log_done("saved PCA figure for $tag_IB", t_stage)
+end
 # fig_trend |> display
 ##
 
