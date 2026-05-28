@@ -167,7 +167,7 @@ function set_panel_trend_sidepeak_nvlp!(gl::GridLayout, col::Int; extra=false)
     return dict_axs
 end
 
-function set_panel_trend_nvlp!(gl::GridLayout, col::Int; extra=false)
+function set_panel_trend_nvlp!(gl::GridLayout; col::Int=1, row_cmpl::Int=0, extra=false)
     gl |> clean_gridlayout!
     w, h = (400, 200)
     kwargs_wh = (width=w, height=h, yticklabelspace=40.0)
@@ -181,10 +181,13 @@ function set_panel_trend_nvlp!(gl::GridLayout, col::Int; extra=false)
         "freq-sizes" => ax_freq_sizes,
     )
     for ax in values(dict_axs)
-        hideydecorations!(ax; label=true, ticklabels=false, ticks=false, grid=false, minorticks=false, minorgrid=false)
+        hideydecorations!(ax; label=true, ticklabels=true, ticks=false, grid=false, minorticks=false, minorgrid=false)
         hidexdecorations!(ax; label=true, ticklabels=true, ticks=false, grid=false, minorticks=false, minorgrid=false)
         if col == 1
             ax.ylabelvisible = true
+        end
+        if row_cmpl == 0
+            ax.xlabelvisible = true
         end
     end
     ax_evol_sizes.xticklabelsvisible = true

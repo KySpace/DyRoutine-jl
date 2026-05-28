@@ -218,6 +218,11 @@ log_done("analyzed stacked trends", t_stage)
 # fig_trend |> display
 ##
 
+fig_nvlp, axs_nvlp = set_axes_2axes!(runinfo.vars |> NamedTuple{(:IB, :istp)}, set_panel_trend_nvlp!, runinfo)
+for (c, IB) in enumerate(val_vars.IB), (i, istp_iter) in enumerate(val_vars.istp)
+    trend = trend_stacked_over_rep[c, i]
+    # plot_trend_nvlp!(axs_nvlp, trend, trend_stacked, val_istp)
+end
 
 ## Large file generation for all shots
 

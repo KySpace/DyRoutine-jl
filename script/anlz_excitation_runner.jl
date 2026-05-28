@@ -72,12 +72,12 @@ runinfos_grouped = [
 runinfos = runinfos_grouped
 # runinfos = runinfos_separated
 
-ids_runinfo = eachindex(runinfos)
-# ids_runinfo = 1:1
+# ids_runinfo = eachindex(runinfos)
+ids_runinfo = 1:1
 # sel_vars = NamedTuple()
-sel_vars = (; IB=(; index=i -> i < 20, val=ib -> 5.316 < ib < 5.330), t_hold=t-> t .<= 100)
+sel_vars = (; t_hold=t-> 20 .<= t .<= 75)
 
-title_anlz = "[05.26].53.DevTests"
+title_anlz = "[05.28].54.TrendOverIB"
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
 
