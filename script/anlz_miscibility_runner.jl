@@ -37,6 +37,8 @@ runinfos = [
     (date="0513", runids=81:82, tag_head="ImbaEvol", vars=(IB=[5.392, 5.386, 5.378, 5.372], rep=1:1, bias=0.1:0.1:0.6, t_hold=6:10:116, istp)),
 ]
 ids_runinfo = eachindex(runinfos)
+sel_vars = NamedTuple()
+# sel_vars = (; IB=(; index=i -> i < 20, val=ib -> 5.305 < ib < 5.355))
 
 wh_corner = (10, 10)
 smwh_roi = (30, 30)

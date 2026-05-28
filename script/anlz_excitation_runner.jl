@@ -74,6 +74,8 @@ runinfos = runinfos_grouped
 
 ids_runinfo = eachindex(runinfos)
 # ids_runinfo = 1:1
+# sel_vars = NamedTuple()
+sel_vars = (; IB=(; index=i -> i < 20, val=ib -> 5.316 < ib < 5.330), t_hold=t-> t .<= 100)
 
 title_anlz = "[05.26].53.DevTests"
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)

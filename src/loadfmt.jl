@@ -4,12 +4,87 @@ using Statistics
 
 as_vector(x) = x isa AbstractArray ? collect(x) : [x]
 format_vars(vars::NamedTuple) = map(as_vector, vars)
+is_selector_tuple(selector) = selector isa NamedTuple && any(n -> n in propertynames(selector), (:index, :val))
+get_selector_val(selector) = is_selector_tuple(selector) ? (hasproperty(selector, :val) ? selector.val : Colon()) : selector
+get_selector_index(selector) = is_selector_tuple(selector) && hasproperty(selector, :index) ? selector.index : Colon()
 format_runids(runids::Integer) = @sprintf("%02d", runids)
 format_runids(runids::AbstractRange{<:Integer}) = runids |> a -> "$(a)" |> s -> replace(s, ":" => "-")
 format_runids(runids::AbstractVector{<:Integer}) = join(format_runids.(runids), "-")
 format_runids(runids) = runids |> a -> "$(a)" |> s -> replace(s, ":" => "-")
 get_date(date_runid::Tuple) = first(date_runid)
 get_runid_from_date_runid(date_runid::Tuple) = last(date_runid)
+
+function select_by_selector(vals::AbstractVector, selector, name_var::Symbol)
+    idx_all = collect(eachindex(vals))
+    selector_idx = get_selector_index(selector)
+    selector_val = get_selector_val(selector)
+
+    idx_from_index = if selector_idx isa Colon
+        idx_all
+    elseif selector_idx isa Function
+        [i for i in idx_all if selector_idx(i)]
+    elseif selector_idx isa AbstractVector{Bool}
+        length(selector_idx) == length(vals) || throw(DimensionMismatch("sel_vars.$name_var.index has length $(length(selector_idx)); expected $(length(vals))."))
+        idx_all[selector_idx]
+    elseif selector_idx isa AbstractArray{<:Integer} || selector_idx isa AbstractRange{<:Integer}
+        collect(selector_idx)
+    elseif selector_idx isa Integer
+        [selector_idx]
+    else
+        throw(ArgumentError("sel_vars.$name_var.index must be an index, index range, boolean mask, or predicate function; got $(typeof(selector_idx))."))
+    end
+
+    all((1 .<= idx_from_index) .& (idx_from_index .<= length(vals))) || throw(BoundsError(vals, idx_from_index))
+    idx_sel = if selector_val isa Colon
+        idx_from_index
+    elseif selector_val isa Function
+        [i for i in idx_from_index if selector_val(vals[i])]
+    elseif selector_val isa AbstractVector{Bool}
+        length(selector_val) == length(vals) || throw(DimensionMismatch("sel_vars.$name_var has length $(length(selector_val)); expected $(length(vals))."))
+        [i for i in idx_from_index if selector_val[i]]
+    elseif selector_val isa AbstractArray || selector_val isa AbstractRange
+        [i for i in idx_from_index if vals[i] in selector_val]
+    else
+        [i for i in idx_from_index if vals[i] == selector_val]
+    end
+
+    isempty(idx_sel) && throw(ArgumentError("sel_vars.$name_var selected no values from $(vals)."))
+    return idx_sel
+end
+
+function select_val_vars(val_vars::NamedTuple, sel_vars::NamedTuple)
+    names_vars = propertynames(val_vars)
+    names_sel = propertynames(sel_vars)
+    unknown = setdiff(names_sel, names_vars)
+    isempty(unknown) || throw(ArgumentError("sel_vars contains unknown variables $(unknown); expected variables are $(names_vars)."))
+
+    idx_vars = map(names_vars) do name_var
+        hasproperty(sel_vars, name_var) ? select_by_selector(getproperty(val_vars, name_var), getproperty(sel_vars, name_var), name_var) : collect(eachindex(getproperty(val_vars, name_var)))
+    end
+    val_vars_sel = NamedTuple{names_vars}(map((vals, idx) -> vals[idx], Tuple(val_vars), idx_vars))
+    return val_vars_sel, Tuple(idx_vars)
+end
+
+select_val_vars(val_vars::NamedTuple, ::Nothing) = (val_vars, Tuple(map(vals -> collect(eachindex(vals)), Tuple(val_vars))))
+
+function select_runinfo(runinfo, val_vars_sel::NamedTuple, val_vars_full::NamedTuple, idx_vars::Tuple)
+    pairs = Any[:vars => val_vars_sel, :vars_full => val_vars_full]
+    if hasproperty(runinfo, :bind_id)
+        name_bound = runinfo.bind_id
+        pos_bound = findfirst(==(name_bound), propertynames(val_vars_sel))
+        if pos_bound !== nothing
+            idx_bound = idx_vars[pos_bound]
+            if hasproperty(runinfo, :date_runid)
+                push!(pairs, :date_runid => as_vector(runinfo.date_runid)[idx_bound])
+            elseif hasproperty(runinfo, :runids)
+                push!(pairs, :runids => as_vector(runinfo.runids)[idx_bound])
+            elseif hasproperty(runinfo, :runid) && length(as_vector(runinfo.runid)) > 1
+                push!(pairs, :runid => as_vector(runinfo.runid)[idx_bound])
+            end
+        end
+    end
+    return merge(runinfo, (; pairs...))
+end
 
 function get_n_runids(runinfo)
     if hasproperty(runinfo, :runids)
@@ -100,6 +175,7 @@ function format_dens_runinfo(
     wh_corner::Tuple{<:Integer,<:Integer},
     smwh_roi::Tuple{<:Integer,<:Integer},
     len_avg_peak::Integer=10,
+    sel_vars=nothing,
 )
     val_vars = format_vars(runinfo.vars)
     name_dims = propertynames(val_vars)
@@ -127,6 +203,10 @@ function format_dens_runinfo(
     xy_peak_px = find_positive_cluster_center(dens_mean, smwh_roi; len_avg=len_avg_peak) |> cent -> round.(Int, cent)
     dens_crop = mapslices(d -> crop_center(d, xy_peak_px, smwh_roi), dens; dims=(2, 3))
     dens_full_fmt = format_image_array(dens_crop, n_dim_vars)
+    val_vars_sel, idx_vars = select_val_vars(val_vars, sel_vars)
+    dens_full_fmt_sel = dens_full_fmt[idx_vars...]
+    n_dim_vars_sel = Tuple(map(length, val_vars_sel))
+    runinfo_sel = select_runinfo(runinfo, val_vars_sel, val_vars, idx_vars)
 
-    return (; runinfo, val_vars, dens_full_fmt, wh_dens=(w_dens, h_dens), xy_peak_px, n_dim_vars, name_dims)
+    return (; runinfo=runinfo_sel, val_vars=val_vars_sel, val_vars_full=val_vars, dens_full_fmt=dens_full_fmt_sel, wh_dens=(w_dens, h_dens), xy_peak_px, n_dim_vars=n_dim_vars_sel, name_dims)
 end
