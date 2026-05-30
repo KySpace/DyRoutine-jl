@@ -1,4 +1,5 @@
 using MultivariateStats: PCA, fit, predict, projection
+using Statistics: mean
 
 struct ModeWeight{TProfile<:AbstractArray,TWeight<:AbstractArray}
     profile::TProfile
@@ -51,7 +52,7 @@ function query_weight(evo, mask, t_vec, freq_query; scaling::Real=1000.0)
     weight = evo[mask] |> e -> e .- mean(e) |> e -> [
         sum(@. e * exp(-2im * pi * freq_query[f] * t_vec[mask] / scaling))
         for f in freq_query] |> e -> abs.(e) .^ 2
-    return weight / sum(weight)
+    return weight / maximum(weight)
 end
 
 function anlz_trend_from_extr(
@@ -118,5 +119,31 @@ function anlz_trend_from_extr(
         "freq-sel-moment-width" => ft_moment_width,
         "freq-sel-fit-size-x" => ft_fit_size_x,
         "freq-sel-fit-size-y" => ft_fit_size_y,
+    )
+end
+
+function matches_pattern(pattern, key)
+    key_str = string(key)
+    if pattern isa AbstractVector || pattern isa Tuple
+        return any(p -> matches_pattern(p, key_str), pattern)
+    end
+    return occursin(Regex(pattern), key_str)
+end
+
+function mean_dict(dicts::AbstractArray{<:AbstractDict}; pattern_incl=".*", pattern_excl="(?!)")
+    !isempty(dicts) || throw(ArgumentError("dicts must contain at least one dictionary."))
+
+    keys_sel = dicts |>
+               ds -> map(keys, ds) |>
+                     Iterators.flatten |>
+                     unique |>
+                     ks -> filter(k -> matches_pattern(pattern_incl, k) && !matches_pattern(pattern_excl, k), ks)
+
+    return Dict(
+        key => begin
+            all(d -> haskey(d, key), dicts) || throw(ArgumentError("selected key $key is not present in every dictionary."))
+            mean([d[key] for d in dicts])
+        end
+        for key in keys_sel
     )
 end

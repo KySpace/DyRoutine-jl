@@ -2,13 +2,14 @@ log_step(msg) = (println("  [$tag] $msg"); flush(stdout); time())
 log_done(msg, t_start) = (println("  [$tag] $msg ($(round(time() - t_start; digits=1)) s)"); flush(stdout))
 
 get_bind_date(runinfo, idx_bind) = hasproperty(runinfo, :date_runid) ? first(runinfo.date_runid[idx_bind]) : runinfo.date
-get_bind_runid(runinfo, idx_bind) = if hasproperty(runinfo, :date_runid)
-    last(runinfo.date_runid[idx_bind])
-elseif hasproperty(runinfo, :runids)
-    as_vector(runinfo.runids)[idx_bind]
-else
-    as_vector(runinfo.runid)[idx_bind]
-end
+get_bind_runid(runinfo, idx_bind) =
+    if hasproperty(runinfo, :date_runid)
+        last(runinfo.date_runid[idx_bind])
+    elseif hasproperty(runinfo, :runids)
+        as_vector(runinfo.runids)[idx_bind]
+    else
+        as_vector(runinfo.runid)[idx_bind]
+    end
 get_bind_runinfo(runinfo, val_vars, idx_bind) = merge(
     runinfo,
     (;
@@ -90,8 +91,8 @@ t_stage = log_step("extracting per-shot sidepeak/envelope values")
 extr_fmt = [
     begin
         # if r == first(axes(essn_2d_fmt, 2)) && (t == first(axes(essn_2d_fmt, 3)) || t % 25 == 0 || t == last(axes(essn_2d_fmt, 3)))
-            print("\r  [$tag] extracting shots IB_idx=$c rep-$r t_idx=$t istp_idx=$i")
-            flush(stdout)
+        print("\r  [$tag] extracting shots IB_idx=$c rep-$r t_idx=$t istp_idx=$i")
+        flush(stdout)
         # end
         essn_2d_fmt[c, r, t, i] |> e -> calc_solo_extr(
             e,
@@ -162,11 +163,42 @@ trend_sidepeak_nvlp = [
 log_done("analyzed per-shot trends", t_stage)
 
 t_stage = log_step("analyzing stacked trends")
-trend_stacked_over_rep = [
+trend_extr_stacked_over_rep = [
     extr_stacked_over_rep[c, :, i] |> e -> anlz_trend_from_extr(val_vars.t_hold, e, freq_query; selector_t_sidepeak, selector_t_envelope, query_weight_kwargs)
     for c in axes(extr_stacked_over_rep, 1), i in axes(extr_stacked_over_rep, 3)
 ]
 log_done("analyzed stacked trends", t_stage)
+
+trend_stacked_over_rep = [
+    trend_sidepeak_nvlp[c, :, i] |> mean_dict
+    for c in axes(trend_sidepeak_nvlp, 1), i in axes(trend_sidepeak_nvlp, 3)
+]
+
+get_freq_trend = dir ->
+    freq_ib_size_x = [trend_stacked_over_rep[c, i]["freq-sel-fit-size-"*dir]
+                      for c in axes(trend_stacked_over_rep, 1), i in axes(trend_stacked_over_rep, 2)] |>
+                     stack
+freq_ib_size_x = get_freq_trend("x")
+freq_ib_size_y = get_freq_trend("y")
+fig_spectrum_ib = Figure()
+for (i, istp) in enumerate(val_vars.istp)
+    clrmap = gen_clrmap_solo(hue_theme_istp[istp])
+    ax_x, ax_y = (Axis(fig_spectrum_ib[1, i]), Axis(fig_spectrum_ib[2, i]))
+    hm = heatmap!(ax_x, val_vars.IB, freq_query, freq_ib_size_x[:, :, i]'; colormap=clrmap, colorrange=(0.3, 1.00))
+    hm = heatmap!(ax_y, val_vars.IB, freq_query, freq_ib_size_y[:, :, i]'; colormap=clrmap, colorrange=(0.3, 1.00))
+    ax_x.ylabel = "size y"
+    ax_y.ylabel = "size x"
+    ax_x.xlabel = "frequency (Hz)"
+    ax_y.xlabel = "frequency (Hz)"
+end
+fig_spectrum_ib.layout |> l -> [
+    colsize!(l, 1, 600),
+    colsize!(l, 2, 600),
+    rowsize!(l, 1, 500),
+    rowsize!(l, 2, 500),
+]
+fig_spectrum_ib |> resize_to_layout!
+fig_spectrum_ib |> f -> save(joinpath(path_output, @sprintf("%s_spectrum_ib.png", tag)), f; backend=CairoMakie)
 ##  saving data, still problematic
 
 # @save joinpath(path_output, @sprintf("%s_data.jld2", tag))
@@ -193,7 +225,7 @@ log_done("analyzed stacked trends", t_stage)
 #     for i in 1:n_istp
 #         t_plot_stage = log_step("plotting and saving trends for $tag_IB istp=$(val_vars.istp[i])")
 #         trend = trend_sidepeak_nvlp[c, :, i]
-#         trend_stacked = trend_stacked_over_rep[c, i]
+#         trend_stacked = trend_extr_stacked_over_rep[c, i]
 #         val_istp = val_vars.istp[i]
 #         plot_trend_all!(axs_trend, trend, trend_stacked, val_istp)
 #         plot_trend_nvlp!(axs_nvlp, trend, trend_stacked, val_istp)
@@ -221,8 +253,10 @@ log_done("analyzed stacked trends", t_stage)
 fig_nvlp, axs_nvlp = set_axes_2axes!(runinfo.vars |> NamedTuple{(:IB, :istp)}, set_panel_trend_nvlp!, runinfo)
 for (c, IB) in enumerate(val_vars.IB), (i, istp_iter) in enumerate(val_vars.istp)
     trend = trend_stacked_over_rep[c, i]
-    # plot_trend_nvlp!(axs_nvlp, trend, trend_stacked, val_istp)
+    plot_trends_nvlp!(axs_nvlp[c, i], trend, istp_iter; to_clean=true)
 end
+fig_nvlp |> resize_to_layout!
+fig_nvlp |> f -> save(joinpath(path_output, @sprintf("%s_nvlp_trend.pdf", tag)), f; backend=CairoMakie)
 
 ## Large file generation for all shots
 

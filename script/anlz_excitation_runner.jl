@@ -75,9 +75,9 @@ runinfos = runinfos_grouped
 # ids_runinfo = eachindex(runinfos)
 ids_runinfo = 1:1
 # sel_vars = NamedTuple()
-sel_vars = (; t_hold=t-> 20 .<= t .<= 75)
+sel_vars = (; t_hold=t-> 20 .<= t .<= 80)
 
-title_anlz = "[05.28].54.TrendOverIB"
+title_anlz = "[05.28].55.TrendOverIB"
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
 
@@ -104,7 +104,7 @@ idx_rep_axis = 2
 idx_t_hold_axis = 3
 idx_istp_axis = 4
 n_pca_modes = 8
-freq_query = 1:1:100
+freq_query = 1:1:140
 
 proc_sidepeak = true
 proc_envelope = true
