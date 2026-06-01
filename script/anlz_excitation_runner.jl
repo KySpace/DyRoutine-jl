@@ -75,9 +75,9 @@ runinfos = runinfos_grouped
 # ids_runinfo = eachindex(runinfos)
 ids_runinfo = 1:1
 # sel_vars = NamedTuple()
-sel_vars = (; t_hold=t-> 20 .<= t .<= 80)
+sel_vars = (; t_hold=t -> 0 .<= t .<= 30)
 
-title_anlz = "[05.28].55.TrendOverIB"
+title_anlz = "[05.28].57.TrendOverIB"
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
 
@@ -110,8 +110,8 @@ proc_sidepeak = true
 proc_envelope = true
 selector_moment = y -> (y .> 0.10) .& (y .< 0.50)
 selector_sidepeak = y -> (y .> 0.1) .& (y .< 0.5)
-selector_t_sidepeak = t -> 20 .< t .< 80
-selector_t_envelope = t -> 20 .< t .< 80
+selector_t_sidepeak = t -> 0 .< t .< 80
+selector_t_envelope = t -> 0 .< t .< 80
 selector_tail_stack = y -> y .> 0.02
 
 fit_stack_kwargs = NamedTuple()
