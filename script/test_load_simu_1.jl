@@ -16,19 +16,27 @@ include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
+tag = "SIMU-NTRC"
+log_step(msg) = (println("  [$tag] $msg"); flush(stdout); time())
+log_done(msg, t_start) = (println("  [$tag] $msg ($(round(time() - t_start; digits=1)) s)"); flush(stdout))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations"
 dir_test = raw"01.[2025.06.01]"
 step_t = 0.1798
 step_in_μm = 0.2613
+freq_query = 1:1:140
 
+title = "Anlz.01.Simu-01.[2025.06.01].trials"
 path_test = joinpath(path_root, dir_test)
+path_output = joinpath(path_root, title)
+isdir(path_output) || mkpath(path_output)
 
 pattern_filename_data = Regex(raw"nxy_t=(?<idx_time>\d+).mat")
 filename_xy = "XY.mat"
 
 filenames_data = readdir(path_test) |> fs -> filter(f -> occursin(pattern_filename_data, f), fs)
 ids_t = Vector{Int}(undef, length(filenames_data))
+(w, h) = wh = (256, 256)
 dens_raw = Array{Float64}(undef, (length(filenames_data), 2, w, h))
 
 for (i, fn) in enumerate(filenames_data)
@@ -49,7 +57,6 @@ end
             y_mat[2, :] |> diff |> unique |> y -> y[1]
         )
     end
-(w, h) = wh = (256, 256)
 px_in_um = (0.7812, 0.2344) .* step_in_μm
 smwh_core = smwh_roi = (50, 100)
 step_posi = px_in_um
@@ -73,20 +80,21 @@ ids_t = ids_t[perm_t]
 dens_raw = dens_raw[perm_t, :, :, :]
 istp = ["162", "164"]
 
-var_vals = (;
+val_vars = (;
     t_hold=ids_t .* step_t,
     istp,
 )
-xy_peak_roi = (w, h) |> s -> map(s -> round((s + 1) / 2), s)
+n_dim_vars = val_vars |> vs -> map(length, vs) |> Tuple
+xy_peak_roi = (w, h) |> s -> map(s -> round((s + 1) / 2) |> Int, s)
 dens_full_fmt = [copy(@view dens_raw[t, i, :, :]) for t in axes(dens_raw, 1), i in axes(dens_raw, 2)] |>
-                ds -> map(d -> crop_center(xy_peak_roi, smwh_roi), ds)
+                ds -> map(d -> crop_center(d, xy_peak_roi, smwh_roi), ds)
 info_fmt = [
     Dict(
         "repeat" => 1,
         "istp" => istp[i],
         "t_hold" => ids_t[t] * step_t,
     )
-    for t in 1:n_dim_vars[3], i in 1:n_dim_vars[4]
+    for t in 1:n_dim_vars[1], i in 1:n_dim_vars[2]
 ]
 
 t_stage = log_step("calculating solo essentials for $(length(dens_full_fmt)) shots")
@@ -98,7 +106,7 @@ log_done("calculated solo essentials", t_stage)
 essn_stacked_over_rep_t = [
     begin
         essns_t = [essn_2d_fmt[t, i] for t in axes(essn_2d_fmt, 1)] |> vec
-        print("\r  [$tag] stacking over t istp_idx=$i n=$(length(essns_rt))")
+        print("\r  [$tag] stacking over t istp_idx=$i n=$(length(essns_t))")
         flush(stdout)
         calc_stacked_essn(essns_t)
     end
@@ -110,16 +118,16 @@ t_stage = log_step("fitting stacked modulation tails")
 fit_prfl_modl_over_rep_t_1d = [
     essn_stacked_over_rep_t[istp] |>
     e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl_norm_px, selector_tail_stack(y_modl))
-    for istp in axes(essn_stacked_over_rep_t, 2)
+    for istp in axes(essn_stacked_over_rep_t, 1)
 ]
 log_done("fit stacked modulation tails", t_stage)
 
 t_stage = log_step("extracting per-shot sidepeak/envelope values")
 extr_fmt = [
     begin
-        print("\r  [$tag] extracting shots IB_idx=$c rep-$r t_idx=$t istp_idx=$i")
+        print("\r  [$tag] extracting shots t_idx=$t istp_idx=$i")
         flush(stdout)
-        essn_2d_fmt[c, r, t, i] |> e -> calc_solo_extr(
+        essn_2d_fmt[t, i] |> e -> calc_solo_extr(
             e,
             fit_prfl_modl_over_rep_t_1d[i];
             proc_sidepeak,
@@ -133,18 +141,47 @@ extr_fmt = [
 println()
 log_done("extracted per-shot sidepeak/envelope values", t_stage)
 
-fig_live = Figure()
-axs_162 = Axis(fig_live[1, 1], title="162")
-axs_164 = Axis(fig_live[1, 2], title="164")
-clrmap = [gen_clrmap_solo(hue_theme) for hue_theme in [hue_theme_istp["162"], hue_theme_istp["164"]]]
-for (t, timestamp) in enumerate(ids_t), i in axes(dens_raw, 2)
-    ax = i == 1 ? axs_162 : axs_164
-    [ax] |> clear_axes!
-    heatmap!(ax, imgs[t, i]; colorrange=(0, 36), colormap=clrmap[i])
-    ax.aspect = DataAspect()
-    fig_live |> resize_to_layout!
-    if i == 2
-        fig_live |> display
-        sleep(0.2)
+t_stage = log_step("analyzing per-shot trends")
+trend_sidepeak_nvlp = [
+    extr_fmt[:, i] |> e -> anlz_trend_from_extr(val_vars.t_hold, e, freq_query; selector_t_sidepeak, selector_t_envelope)
+    for r in axes(extr_fmt, 2), i in axes(extr_fmt, 4)
+]
+log_done("analyzed per-shot trends", t_stage)
+
+t_stage = log_step("building trend figures for $tag")
+fig_trend, axs_trend = begin
+    fig = Figure()
+    axs = Array{Dict}(undef, length(val_vars.istp))
+    for i = 1:length(val_vars.istp)
+        gl = GridLayout()
+        fig[1, i] = gl
+        axs[i] = set_panel_trend_sidepeak_nvlp!(gl, i)
     end
+    (fig, axs)
 end
+log_done("built trend figures for $tag", t_stage)
+t_plot_stage = log_step("plotting and saving trends for $tag ")
+for i in 1:length(val_vars.istp)
+    trend = trend_sidepeak_nvlp[i]
+    val_istp = val_vars.istp[i]
+    plot_trends_sidepeak!(axs_trend[i], trend, val_istp; to_clean=true, alpha=1.0, to_legend=true)
+    plot_trends_nvlp!(axs_trend[i], trend, val_istp; to_clean=true, alpha=1.0, to_legend=true)
+end
+resize_to_layout!(fig_trend)
+for format in ["pdf", "png"]
+    fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_trend.%s", tag, format)), f; backend=CairoMakie)
+end
+log_done("saved trends for $tag", t_plot_stage)
+
+fig_full, axs_solo = set_axis_full((1, n_dim_vars...), set_panel_solo_modl!; to_plot_stacked=false)
+println("Full axes ready: dimensions $(n_dim_vars)")
+for t in 1:n_dim_vars[1], i in 1:n_dim_vars[2]
+    info = info_fmt[t, i]
+    print("\r\033[2Kplotting for $(info["t_hold"]) ms, $(info["istp"])")
+    draw_solo_modl!(axs_solo[1, t, i], extr_fmt[t, i], info)
+end
+println("Full modulation table drawn.")
+resize_to_layout!(fig_full)
+
+fig_full |> f -> save(joinpath(path_output, @sprintf("%s_essn_table.pdf", tag)), f; backend=CairoMakie)
+println("Full modulation plot saved.")

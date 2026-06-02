@@ -308,20 +308,44 @@ struct SoloExtract
     envelope::Union{SoloEnvelope,Nothing}
 end
 
-function calc_solo_essn_2d(dens::AbstractMatrix, cent::Tuple{<:Real,<:Real}, smwh::Tuple{<:Real,<:Real}, smw_modl::Integer, px_in_um::Union{Real,Tuple{<:Real,<:Real}}, cent_core::Tuple{<:Real,<:Real}, smwh_core::Tuple{<:Real,<:Real}; smwh_strip::Tuple{<:Real,<:Real}=smwh)
-    px_in_um = length(px_in_um) == 1 ? px_in_um : (px_in_um, px_in_um)
+function calc_solo_essn_2d(
+    dens::AbstractMatrix,
+    cent::Tuple{<:Real,<:Real},
+    smwh::Tuple{<:Real,<:Real},
+    smw_modl::Integer,
+    px_in_um::Union{Real,Tuple{<:Real,<:Real}},
+    cent_core::Tuple{<:Real,<:Real},
+    smwh_core::Tuple{<:Real,<:Real};
+    smwh_strip::Tuple{<:Real,<:Real}=smwh
+)
+    px_in_um = length(px_in_um) == 1 ? (px_in_um, px_in_um) : px_in_um
     dens_roi = crop_center(dens, cent, smwh)
     sum_dens = sum(dens)
     x_cent = smwh[1] + 1
     step_posi = px_in_um
-    step_modl = 1 ./ (2 .* smwh_roi .* px_in_um)
+    step_modl = 1 ./ (2 .* smwh .* px_in_um)
     x_posi, y_posi = map(u -> (-u:1:u), smwh) .* step_posi
     prfl_strip = crop_center(dens, cent_core, smwh_strip) |> m -> mean(m, dims=2) |> vec
     modl_roi = dens_roi .* gen_win_hann_2d(smwh) |> fft |> fftshift |> c -> abs.(c)
     prfl_modl = modl_roi[:, x_cent-smw_modl:x_cent+smw_modl] |> m -> sum(m, dims=2) ./ (smw_modl * 2 + 1) |> vec
     prfl_modl_norm_px = prfl_modl ./ (sum(prfl_modl) * step_modl[2] / 2)
     dens2d_core = crop_center(dens, cent_core, smwh_core)
-    return SoloEssentials(dens_roi, modl_roi, dens2d_core, (x_posi[cent_core[1]], y_posi[cent_core[2]]), smwh_core, prfl_strip, prfl_modl, prfl_modl_norm_px, smwh, smwh_strip, smw_modl, step_posi, step_modl, sum_dens)
+    return SoloEssentials(
+        dens_roi,
+        modl_roi,
+        dens2d_core,
+        (x_posi[cent_core[1]], y_posi[cent_core[2]]),
+        smwh_core,
+        prfl_strip,
+        prfl_modl,
+        prfl_modl_norm_px,
+        smwh,
+        smwh_strip,
+        smw_modl,
+        step_posi,
+        step_modl,
+        sum_dens
+    )
 end
 
 function calc_solo_extr(

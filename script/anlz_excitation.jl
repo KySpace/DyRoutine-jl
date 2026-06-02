@@ -227,14 +227,14 @@ fig_spectrum_ib |> f -> save(joinpath(path_output, @sprintf("%s_spectrum_ib.png"
 #         val_istp = val_vars.istp[i]
 #         plot_trend_all!(axs_trend, trend, trend_stacked, val_istp)
 #         plot_trend_nvlp!(axs_nvlp, trend, trend_stacked, val_istp)
-#         resize_to_layout!(fig_trend)
-#         resize_to_layout!(fig_nvlp)
-#         for format in ["pdf", "png"]
-#             fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.%s", tag_IB, val_istp, format)), f; backend=CairoMakie)
-#             fig_nvlp |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend_nvlp.%s", tag_IB, val_istp, format)), f; backend=CairoMakie)
-#         end
-#         log_done("saved trends for $tag_IB istp=$(val_vars.istp[i])", t_plot_stage)
 #     end
+#     resize_to_layout!(fig_trend)
+#     resize_to_layout!(fig_nvlp)
+#     for format in ["pdf", "png"]
+#         fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.%s", tag_IB, val_istp, format)), f; backend=CairoMakie)
+#         fig_nvlp |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend_nvlp.%s", tag_IB, val_istp, format)), f; backend=CairoMakie)
+#     end
+#     log_done("saved trends for $tag_IB istp=$(val_vars.istp[i])", t_plot_stage)
 
 #     t_stage = log_step("building and saving PCA figure for $tag_IB")
 #     fig_pca, axs_pca = set_axis_pca_dual_4x2!()

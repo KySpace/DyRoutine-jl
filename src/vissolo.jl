@@ -5,7 +5,7 @@ using CairoMakie, GLMakie
 using Colors: Oklch
 using LaTeXStrings
 
-function set_axis_full(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer}, panel_setter::Function)
+function set_axis_full(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer}, panel_setter::Function; to_plot_stacked=true)
     CairoMakie.activate!()
     CairoMakie.activate!()
     fig = Figure()
@@ -19,11 +19,13 @@ function set_axis_full(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer}, panel_s
         fig[1, 3*(i-1)+1][t, r] = gl
         axs_solo[r, t, i] = panel_setter(gl)
     end
-    for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
-        print("\r\033[2Kbuilding stack axis for $t")
-        gl = GridLayout()
-        fig[1, 3*(i-1)+2][t, 1] = gl
-        axs_stacked[t, i] = panel_setter(gl)
+    if to_plot_stacked
+        for t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
+            print("\r\033[2Kbuilding stack axis for $t")
+            gl = GridLayout()
+            fig[1, 3*(i-1)+2][t, 1] = gl
+            axs_stacked[t, i] = panel_setter(gl)
+        end
     end
     colsize!(fig.layout, 3, Fixed(2))
     return fig, axs_solo, axs_stacked
@@ -62,11 +64,11 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
 
     foreach(empty!, values(axs))
     essn = extr.essentials
-    modl2d_norm = essn.modl2d |> m -> m ./ (sum(m) * (essn.step_modl / 2)^2)
+    modl2d_norm = essn.modl2d |> m -> m ./ (sum(m) * (essn.step_modl[2] / 2)^2)
     x, y = essn.smwh |> s -> map(u -> (-u:1:u), s)
     x_posi, y_posi = (x, y) .* essn.step_posi
     x_modl, y_modl = (x, y) .* essn.step_modl
-    y_modl_sm = (0:1:essn.smwh[2]) * essn.step_modl
+    y_modl_sm = (0:1:essn.smwh[2]) * essn.step_modl[2]
     hue_theme = hue_theme_istp[info_solo["istp"]]
     clrmap = gen_clrmap_solo(hue_theme)
     clr_mark_nvlp = RGBAf(Oklch(0.52, 0.10, hue_theme + 90), 1.0)
