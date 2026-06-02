@@ -51,7 +51,7 @@ px_in_um = 6.5 / 22.06
 len_avg_peak = 10
 
 step_posi = px_in_um
-step_modl = 1 / (2 * smwh_roi[2] * px_in_um)
+step_modl = 1 ./ (2 .* smwh_roi .* px_in_um)
 x_vec, y_vec = smwh_roi |> s -> map(u -> (-u:1:u), s)
 x_posi, y_posi = (x_vec, y_vec) .* step_posi
 x_modl, y_modl = (x_vec, y_vec) .* step_modl

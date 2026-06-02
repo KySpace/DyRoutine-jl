@@ -108,7 +108,7 @@ Name change notice: the excitation workflow scripts formerly named `script/anlz_
   - size bounds multipliers `/10` and `*10`
 - `calc_solo_essn_2d` internal formulas:
   - modulation step formula `1 / (2 * smwh[2] * px_in_um)`
-  - profile normalization `sum(prfl_modl) * step_modl / 2`
+  - profile normalization `sum(prfl_modl) * step_modl[2] / 2`
 - `fit_pca_modes`: `pratio=1.0`
 - `query_weight` internals:
   - Fourier phase divisor `1000.0`

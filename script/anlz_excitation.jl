@@ -90,10 +90,8 @@ log_done("fit stacked modulation tails", t_stage)
 t_stage = log_step("extracting per-shot sidepeak/envelope values")
 extr_fmt = [
     begin
-        # if r == first(axes(essn_2d_fmt, 2)) && (t == first(axes(essn_2d_fmt, 3)) || t % 25 == 0 || t == last(axes(essn_2d_fmt, 3)))
         print("\r  [$tag] extracting shots IB_idx=$c rep-$r t_idx=$t istp_idx=$i")
         flush(stdout)
-        # end
         essn_2d_fmt[c, r, t, i] |> e -> calc_solo_extr(
             e,
             fit_prfl_modl_over_rep_t_1d[c, i];

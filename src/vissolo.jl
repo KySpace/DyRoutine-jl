@@ -149,6 +149,6 @@ function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_s
     lines!(axs["prfl_ft"], y_modl_sm, essn.prfl_modl_norm_px |> fold_symmetric; color=:black)
     vlines!(axs["prfl_ft"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
     vlines!(axs["modl"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
-    hlines!(axs["modl"], [-10.5, 10.5] .* essn.step_modl; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
+    hlines!(axs["modl"], [-1, 1] .* essn.smw_modl .* essn.step_modl[2]; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
     text!(axs["dens"], 0, 14; text=@sprintf("%i ms | rep %i", info_solo["t_hold"], info_solo["repeat"]), color=:black, fontsize=24, align=(:center, :bottom))
 end
