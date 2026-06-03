@@ -26,7 +26,7 @@ step_t = 0.1798
 step_in_μm = 0.2613
 freq_query = 1:1:140
 
-title = "Anlz.01.Simu-01.[2025.06.01].trials"
+title = "Anlz.03.Simu-01.[2025.06.01].trials"
 path_test = joinpath(path_root, dir_test)
 path_output = joinpath(path_root, title)
 isdir(path_output) || mkpath(path_output)
@@ -58,7 +58,7 @@ end
         )
     end
 px_in_um = (0.2344, 0.7812) .* step_in_μm
-smwh_core = smwh_roi = (80, 120)
+smwh_core = smwh_roi = (80, 125)
 step_posi = px_in_um
 step_modl = 1 ./ (2 .* smwh_roi .* px_in_um)
 smw_ft = 5
@@ -69,10 +69,10 @@ x_modl, y_modl = (x_vec, y_vec) .* step_modl
 
 proc_sidepeak = true
 proc_envelope = true
-selector_moment = y -> (y .> 0.10) .& (y .< 0.50)
+selector_moment = y -> (y .> 0.20) .& (y .< 0.50)
 selector_sidepeak = y -> (y .> 0.1) .& (y .< 0.5)
-selector_t_sidepeak = t -> 0 .< t .< 80
-selector_t_envelope = t -> 0 .< t .< 80
+selector_t_sidepeak = t -> 30 .< t 
+selector_t_envelope = t -> 30 .< t 
 selector_tail_stack = y -> y .> 0.02
 
 perm_t = sortperm(ids_t)

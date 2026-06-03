@@ -271,8 +271,8 @@ function plot_trends_sidepeak!(axs::Dict, trend::Dict, istp; to_clean=false, alp
     lines!(axs["freq-height"], trend["freq_query"], trend["freq-sel-moment-height"]; color=(clr_mmt, alpha), label="moment")
     lines!(axs["freq-width"], trend["freq_query"], trend["freq-sel-moment-width"]; color=(clr_mmt, alpha), label="moment")
     lines!(axs["freq-wavenum"], trend["freq_query"], trend["freq-sel-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
-    ylims!(axs["evol-weight"], -0.02, 0.22)
-    ylims!(axs["evol-height"], -0.1, 1.1)
+    ylims!(axs["evol-weight"], -0.02, 0.52)
+    ylims!(axs["evol-height"], -0.1, 3.1)
     ylims!(axs["evol-width"], 0.02, 0.205)
     ylims!(axs["evol-wavenum"], 0.22, 0.38)
     if to_legend
@@ -280,8 +280,8 @@ function plot_trends_sidepeak!(axs::Dict, trend::Dict, istp; to_clean=false, alp
         axislegend(axs["freq-weight"]; position=:lt, framevisible=false, labelsize=14)
     end
     if to_overlay
-        ylims!(axs["evol-extra-weight"], -0.02, 0.22)
-        ylims!(axs["evol-extra-height"], -0.1, 1.1)
+        ylims!(axs["evol-extra-weight"], -0.02, 0.52)
+        ylims!(axs["evol-extra-height"], -0.1, 3.1)
         ylims!(axs["evol-extra-width"], 0.02, 0.205)
         ylims!(axs["evol-extra-wavenum"], 0.22, 0.38)
     end

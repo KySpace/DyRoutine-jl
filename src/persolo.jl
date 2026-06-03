@@ -247,7 +247,7 @@ function fit_prfl_modl_twinpeak_1d(
     coor, prfl, mask;
     M_hint=(max=Inf, min=2.0, init=3.0),
     σ0_hint=(max=0.30, min=0.05, init=0.1),
-    P_hint=(max=2.0, min=0.0, init=0.5),
+    P_hint=(max=10.0, min=0.0, init=0.5),
     σ_hint=(max=0.200, min=0.018, init=0.05),
     p_hint=(max=0.37, min=0.23, init=0.3),
 )
