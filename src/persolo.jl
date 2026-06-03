@@ -136,7 +136,7 @@ function calc_prfl_moment(coor, prfl)
     weight = prfl |> ntgr_over_coor
     height = weight / (coor[end] - coor[1])
     expval = coor .* prfl |> ntgr_over_coor |> u -> u ./ weight
-    var = (coor .- expval) .^ 2 .* prfl |> ntgr_over_coor |> sqrt |> u -> u / sqrt(weight)
+    var = (coor .- expval) .^ 2 .* prfl |> ntgr_over_coor |> i -> clamp(i, 0, Inf) |> sqrt |> u -> u / sqrt(weight)
     return (; weight, wavenum=expval, width=var, height, coor)
 end
 
