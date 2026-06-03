@@ -49,16 +49,16 @@ end
 (step_x, step_y) =
     begin
         file_xy = matopen(joinpath(path_test, filename_xy))
-        x_mat = read(file_xy, "X")
-        y_mat = read(file_xy, "Y")
+        x_mat = read(file_xy, "Y")
+        y_mat = read(file_xy, "X")
         close(file_xy)
         (
             x_mat[1, :] |> diff |> unique |> x -> x[1],
             y_mat[2, :] |> diff |> unique |> y -> y[1]
         )
     end
-px_in_um = (0.7812, 0.2344) .* step_in_μm
-smwh_core = smwh_roi = (50, 100)
+px_in_um = (0.2344, 0.7812) .* step_in_μm
+smwh_core = smwh_roi = (80, 120)
 step_posi = px_in_um
 step_modl = 1 ./ (2 .* smwh_roi .* px_in_um)
 smw_ft = 5
@@ -80,13 +80,14 @@ ids_t = ids_t[perm_t]
 dens_raw = dens_raw[perm_t, :, :, :]
 istp = ["162", "164"]
 
+sel_t = 1:2:201
 val_vars = (;
-    t_hold=ids_t .* step_t,
+    t_hold=ids_t[sel_t] .* step_t,
     istp,
 )
 n_dim_vars = val_vars |> vs -> map(length, vs) |> Tuple
 xy_peak_roi = (w, h) |> s -> map(s -> round((s + 1) / 2) |> Int, s)
-dens_full_fmt = [copy(@view dens_raw[t, i, :, :]) for t in axes(dens_raw, 1), i in axes(dens_raw, 2)] |>
+dens_full_fmt = [copy(@view dens_raw[t, i, :, :]) |> transpose for t in axes(dens_raw, 1)[sel_t], i in axes(dens_raw, 2)] |>
                 ds -> map(d -> crop_center(d, xy_peak_roi, smwh_roi), ds)
 info_fmt = [
     Dict(
@@ -178,7 +179,7 @@ println("Full axes ready: dimensions $(n_dim_vars)")
 for t in 1:n_dim_vars[1], i in 1:n_dim_vars[2]
     info = info_fmt[t, i]
     print("\r\033[2Kplotting for $(info["t_hold"]) ms, $(info["istp"])")
-    draw_solo_modl!(axs_solo[1, t, i], extr_fmt[t, i], info)
+    draw_solo_modl!(axs_solo[1, t, i], extr_fmt[t, i], info; dens_max=64.0)
 end
 println("Full modulation table drawn.")
 resize_to_layout!(fig_full)

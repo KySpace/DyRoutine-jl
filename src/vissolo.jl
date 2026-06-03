@@ -58,7 +58,7 @@ function set_panel_solo_modl!(gl::GridLayout)
     return Dict("dens" => ax_dens, "modl" => ax_modl, "upright" => ax_prfl_ft_upright, "sideway" => ax_prfl_ft_sideway)
 end
 
-function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
+function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo; dens_max=16.0)
     isnothing(extr.envelope) && return
     isnothing(extr.sidepeak) && return
 
@@ -80,11 +80,11 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     band!(axs["upright"], y_modl_sm, 0, shade_mainpeak, color=(:gray, 0.1))
     band!(axs["upright"], y_modl_sm, shade_mainpeak, shade_peaks, color=(:darkseagreen1, 0.5))
 
-    heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, 16.0), colormap=clrmap, rasterize=true)
+    heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, dens_max), colormap=clrmap, rasterize=true)
     draw_rotated_ellipse_corners!(axs["dens"], nvlp.cent, nvlp.size, nvlp.rotation; color=:white, linewidth=4)
     draw_rotated_ellipse_corners!(axs["dens"], nvlp.cent, nvlp.size, nvlp.rotation; color=clr_mark_nvlp, linewidth=2)
 
-    heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, 10.0), colormap=clrmap, rasterize=true)
+    heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, dens_max * 5 / 8), colormap=clrmap, rasterize=true)
     lines!(axs["upright"], y_modl_sm, essn.prfl_modl_norm_px[essn.smwh[2]+1:end], color=(:black, 0.4), linewidth=1)
     lines!(axs["sideway"], essn.prfl_modl_norm_px[essn.smwh[2]+1:end], y_modl_sm, color=(:black, 0.4), linewidth=1)
     lines!(axs["upright"], y_modl_sm, extr.sidepeak.prfl_norm_tailess_px[essn.smwh[2]+1:end], color=:black, linewidth=1)
@@ -101,7 +101,7 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     xlims!(axs["dens"], -5, 5)
     ylims!(axs["dens"], -10, 10)
     ylims!(axs["upright"], -0.2, 1.8)
-    ylims!(axs["modl"], (-10.5, 10.5) .* essn.step_modl)
+    ylims!(axs["modl"], (-10.5, 10.5) .* essn.step_modl[1])
     ylims!(axs["sideway"], 0.15, 0.45)
     xlims!(axs["sideway"], 0.0, 1.5)
     vlines!(axs["modl"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.2))
@@ -118,7 +118,7 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     band!(axs["sideway"], [0, mmt.height], mmt_coor_min |> a -> [a, a], mmt_coor_max |> a -> [a, a]; color=(clr_moments, 0.1))
 
     sprint2f = (x) -> @sprintf("%.2f", x)
-    text!(axs["modl"], 0.35, -0.16; text="$(info_solo["t_hold"]) ms | rep $(info_solo["repeat"])", color=:black, strokewidth=0.6, strokecolor=:white, fontsize=24, align=(:center, :top))
+    text!(axs["modl"], 0.35, -0.16; text="$(@sprintf("%.1f", info_solo["t_hold"])) ms | rep $(info_solo["repeat"])", color=:black, strokewidth=0.6, strokecolor=:white, fontsize=24, align=(:center, :top))
     text!(axs["dens"], -4.8, 9.8; text="[$(nvlp.size[1] |> sprint2f), $(nvlp.size[2] |> sprint2f)] μm \nrss/sum: $(nvlp.rel_residue |> sprint2f)", color=clr_mark_nvlp, strokewidth=0.5, strokecolor=:white, font=:bold, fontsize=11, align=(:left, :top))
     text!(axs["sideway"], 1.45, 0.44; text="fit: $(sp.height |> sprint2f), $(sp.weight |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
     text!(axs["sideway"], 1.45, 0.41; text="μ₀: $(mmt.height |> sprint2f), $(mmt.weight |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
@@ -128,7 +128,7 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo)
     text!(axs["upright"], 0.58, 1.6; text="μ₁, μ₂: $(mmt.wavenum |> sprint2f) ± $(mmt.width |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
 end
 
-function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo)
+function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo; dens_max=16.0)
     foreach(empty!, values(axs))
     modl2d_norm = essn.modl2d |> m -> m ./ (sum(m) * (essn.step_modl / 2)^2)
     x, y = essn.smwh |> s -> map(u -> (-u:1:u), s)
@@ -136,8 +136,8 @@ function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_s
     x_modl, y_modl = (x, y) .* essn.step_modl
     y_modl_sm = (0:1:essn.smwh[2]) * essn.step_modl
     clrmap = gen_clrmap_solo(hue_theme_istp[info_solo["istp"]])
-    heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, 16.0), colormap=clrmap)
-    heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, 10.0), colormap=:binary)
+    heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, dens_max), colormap=clrmap)
+    heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, dens_max * 5 / 8), colormap=:binary)
     axs["dens"].aspect = DataAspect()
     # axs["modl"].aspect = DataAspect()
     ylims!(axs["prfl_ft"], 0, 2.5)
