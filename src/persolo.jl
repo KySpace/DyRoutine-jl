@@ -131,12 +131,12 @@ end
 
 function calc_prfl_moment(coor, prfl)
     @assert length(coor) == length(prfl) "coordinate and profile length mismatch"
-    # prfl = prfl .- minimum(prfl)
+    prfl = clamp.(prfl, 0, Inf)
     ntgr_over_coor = y -> integrate(coor, y)
     weight = prfl |> ntgr_over_coor
     height = weight / (coor[end] - coor[1])
     expval = coor .* prfl |> ntgr_over_coor |> u -> u ./ weight
-    var = (coor .- expval) .^ 2 .* prfl |> ntgr_over_coor |> i -> clamp(i, 0, Inf) |> sqrt |> u -> u / sqrt(weight)
+    var = (coor .- expval) .^ 2 .* prfl |> ntgr_over_coor |> sqrt |> u -> u / sqrt(weight)
     return (; weight, wavenum=expval, width=var, height, coor)
 end
 

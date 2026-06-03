@@ -26,8 +26,8 @@ step_t = 0.1798
 step_in_μm = 0.2613
 freq_query = 1:1:140
 
-# commit b1a0dc97f29384c502c3483748078537304441ba
-title = "Anlz.05.Simu-01.[2025.06.01].[around50ms].MomentBaseline"
+# commit 
+title = "Anlz.06.Simu-01.[2025.06.01].[around50ms].clamped"
 path_test = joinpath(path_root, dir_test)
 path_this = @__FILE__
 cp(path_this, joinpath(path_output, basename(path_this)); force=true)
