@@ -131,7 +131,7 @@ end
 
 function calc_prfl_moment(coor, prfl)
     @assert length(coor) == length(prfl) "coordinate and profile length mismatch"
-    prfl = prfl .- minimum(prfl)
+    # prfl = prfl .- minimum(prfl)
     ntgr_over_coor = y -> integrate(coor, y)
     weight = prfl |> ntgr_over_coor
     height = weight / (coor[end] - coor[1])
