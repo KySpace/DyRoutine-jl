@@ -58,7 +58,7 @@ function set_panel_solo_modl!(gl::GridLayout)
     return Dict("dens" => ax_dens, "modl" => ax_modl, "upright" => ax_prfl_ft_upright, "sideway" => ax_prfl_ft_sideway)
 end
 
-function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo; dens_max=16.0)
+function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo; dens_max=16.0, peak_height_max=2)
     isnothing(extr.envelope) && return
     isnothing(extr.sidepeak) && return
 
@@ -100,10 +100,10 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo; d
     xlims!(axs["modl"], 0, 0.6)
     xlims!(axs["dens"], -5, 5)
     ylims!(axs["dens"], -10, 10)
-    ylims!(axs["upright"], -0.2, 3.2)
+    ylims!(axs["upright"], -0.2, peak_height_max + 0.2)
     ylims!(axs["modl"], (-10.5, 10.5) .* essn.step_modl[1])
     ylims!(axs["sideway"], 0.15, 0.45)
-    xlims!(axs["sideway"], 0.0, 3.0)
+    xlims!(axs["sideway"], 0.0, peak_height_max)
     vlines!(axs["modl"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.2))
     vlines!(axs["upright"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
     hlines!(axs["upright"], 0.0; color=(:darkseagreen1, 0.5))
@@ -123,9 +123,9 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo; d
     text!(axs["sideway"], 1.45, 0.44; text="fit: $(sp.height |> sprint2f), $(sp.weight |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
     text!(axs["sideway"], 1.45, 0.41; text="μ₀: $(mmt.height |> sprint2f), $(mmt.weight |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
     text!(axs["sideway"], 1.45, 0.38; text="$(mmt_coor_min |> sprint2f)-$(mmt_coor_max |> sprint2f) μm⁻¹", color=clr_moments, fontsize=14, align=(:right, :top))
-    text!(axs["upright"], 0.58, 1.4; text="fit: $(sp.wavenum |> sprint2f) ± $(sp.width |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
-    text!(axs["upright"], 0.58, 1.2; text="rss/sum: $(sp.rel_residue |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
-    text!(axs["upright"], 0.58, 1.6; text="μ₁, μ₂: $(mmt.wavenum |> sprint2f) ± $(mmt.width |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
+    text!(axs["upright"], 0.58, peak_height_max * 0.6; text="rss/sum: $(sp.rel_residue |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
+    text!(axs["upright"], 0.58, peak_height_max * 0.7; text="fit: $(sp.wavenum |> sprint2f) ± $(sp.width |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
+    text!(axs["upright"], 0.58, peak_height_max * 0.8; text="μ₁, μ₂: $(mmt.wavenum |> sprint2f) ± $(mmt.width |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
 end
 
 function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo; dens_max=16.0)
