@@ -27,12 +27,12 @@ step_in_μm = 0.2613
 freq_query = 1:1:140
 
 # commit 
-title = "Anlz.06.Simu-01.[2025.06.01].[around50ms].clamped"
+title = "Anlz.09.Simu-01.[2025.06.01].[100-200ms]"
 path_test = joinpath(path_root, dir_test)
 path_this = @__FILE__
-cp(path_this, joinpath(path_output, basename(path_this)); force=true)
 path_output = joinpath(path_root, title)
 isdir(path_output) || mkpath(path_output)
+cp(path_this, joinpath(path_output, basename(path_this)); force=true)
 
 pattern_filename_data = Regex(raw"nxy_t=(?<idx_time>\d+).mat")
 filename_xy = "XY.mat"
@@ -72,8 +72,8 @@ x_modl, y_modl = (x_vec, y_vec) .* step_modl
 
 proc_sidepeak = true
 proc_envelope = true
-selector_moment = y -> (y .> 0.10) .& (y .< 0.50)
-selector_sidepeak = y -> (y .> 0.1) .& (y .< 0.5)
+selector_moment = y -> (y .> 0.10) .& (y .< 0.60)
+selector_sidepeak = y -> (y .> 0.1) .& (y .< 0.6)
 selector_t_sidepeak = t -> 30 .< t 
 selector_t_envelope = t -> 30 .< t 
 selector_tail_stack = y -> y .> 0.02
@@ -83,7 +83,7 @@ ids_t = ids_t[perm_t]
 dens_raw = dens_raw[perm_t, :, :, :]
 istp = ["162", "164"]
 
-sel_t = ids_t |> ids -> findall(i -> 30 < i * step_t .< 70, ids)
+sel_t = ids_t |> ids -> findall(i -> (i * step_t > 100) & (mod(i, 12) == 0), ids)
 val_vars = (;
     t_hold=ids_t[sel_t] .* step_t,
     istp,
@@ -177,14 +177,14 @@ for format in ["pdf", "png"]
 end
 log_done("saved trends for $tag", t_plot_stage)
 
-fig_full, axs_solo = set_axis_full((1, n_dim_vars...), set_panel_solo_modl!; to_plot_stacked=false)
-println("Full axes ready: dimensions $(n_dim_vars)")
-for t in 1:n_dim_vars[1], i in 1:n_dim_vars[2]
-    info = info_fmt[t, i]
-    print("\r\033[2Kplotting for $(info["t_hold"]) ms, $(info["istp"])")
-    draw_solo_modl!(axs_solo[1, t, i], extr_fmt[t, i], info; dens_max=64.0, peak_height_max=3.0)
-end
-println("Full modulation table drawn.")
-resize_to_layout!(fig_full)
-fig_full |> f -> save(joinpath(path_output, @sprintf("%s_essn_table.pdf", tag)), f; backend=CairoMakie)
-println("Full modulation plot saved.")
+# fig_full, axs_solo = set_axis_full((1, n_dim_vars...), set_panel_solo_modl!; to_plot_stacked=false)
+# println("Full axes ready: dimensions $(n_dim_vars)")
+# for t in 1:n_dim_vars[1], i in 1:n_dim_vars[2]
+#     info = info_fmt[t, i]
+#     print("\r\033[2Kplotting for $(info["t_hold"]) ms, $(info["istp"])")
+#     draw_solo_modl!(axs_solo[1, t, i], extr_fmt[t, i], info; dens_max=64.0, peak_height_max=3.0)
+# end
+# println("Full modulation table drawn.")
+# resize_to_layout!(fig_full)
+# fig_full |> f -> save(joinpath(path_output, @sprintf("%s_essn_table.pdf", tag)), f; backend=CairoMakie)
+# println("Full modulation plot saved.")
