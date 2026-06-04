@@ -27,7 +27,7 @@ step_in_μm = 0.2613
 freq_query = 1:1:140
 
 # commit 
-title = "Anlz.09.Simu-01.[2025.06.01].[100-200ms]"
+title = "Anlz.08.Simu-01.[2025.06.01].[30-100ms]"
 path_test = joinpath(path_root, dir_test)
 path_this = @__FILE__
 path_output = joinpath(path_root, title)
@@ -74,8 +74,8 @@ proc_sidepeak = true
 proc_envelope = true
 selector_moment = y -> (y .> 0.10) .& (y .< 0.60)
 selector_sidepeak = y -> (y .> 0.1) .& (y .< 0.6)
-selector_t_sidepeak = t -> 30 .< t 
-selector_t_envelope = t -> 30 .< t 
+selector_t_sidepeak = t -> 30 .< t .< 100
+selector_t_envelope = t -> 30 .< t .< 100
 selector_tail_stack = y -> y .> 0.02
 
 perm_t = sortperm(ids_t)
@@ -83,7 +83,7 @@ ids_t = ids_t[perm_t]
 dens_raw = dens_raw[perm_t, :, :, :]
 istp = ["162", "164"]
 
-sel_t = ids_t |> ids -> findall(i -> (i * step_t > 100) & (mod(i, 12) == 0), ids)
+sel_t = 1:2:201 # ids_t |> ids -> findall(i -> (i * step_t > 100) & (mod(i, 12) == 0), ids)
 val_vars = (;
     t_hold=ids_t[sel_t] .* step_t,
     istp,
