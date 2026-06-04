@@ -199,33 +199,6 @@ function set_panel_trend_nvlp!(gl::GridLayout; col::Int=1, row_cmpl::Int=0, extr
     return dict_axs
 end
 
-function plot_mode_evol_freq_duet!(axs::Dict{String,Axis}, mode::ModeWeight, val_t::AbstractVector)
-    ndims(mode.profile) == 3 && size(mode.profile, 1) == 2 || throw(ArgumentError("mode.profile must be a 3D array with size[1]==2."))
-    clrmap = gen_clrmap_posneg(0.60 * 360, 0.96 * 360)
-    c = maximum(abs, mode.profile)
-    heatmap!(axs["l"], mode.profile[1, :, :]'; colormap=clrmap, colorrange=(-c, c))
-    heatmap!(axs["r"], mode.profile[2, :, :]'; colormap=clrmap, colorrange=(-c, c))
-    axs["l"].aspect = DataAspect()
-    axs["r"].aspect = DataAspect()
-    axs["l"] |> hidedecorations!
-    axs["r"] |> hidedecorations!
-    for rep = 1:size(mode.weight, 1)
-        lines!(axs["evol"], val_t, mode.weight[rep, :]; color=(:black, 0.2))
-    end
-end
-
-function plot_mode_evol_freq_solo!(axs::Dict{String,Axis}, mode::ModeWeight, val_t::AbstractVector)
-    ndims(mode.profile) == 2 || throw(ArgumentError("mode.profile must be a 2D array. "))
-    clrmap = gen_clrmap_posneg(0.60 * 360, 0.96 * 360)
-    c = maximum(abs, mode.profile)
-    heatmap!(axs["mode"], mode.profile[:, :]; colormap=clrmap, colorrange=(-c, c))
-    axs["mode"].aspect = DataAspect()
-    axs["mode"] |> hidedecorations!
-    for rep = 1:size(mode.weight, 1)
-        lines!(axs["evol"], val_t, mode.weight[rep, :]; color=(:black, 0.2))
-    end
-end
-
 function plot_shade_range!(axs, sample, clr)
     step = sample |> diff |> s -> filter(!iszero, s) |> minimum
     head = minimum(sample) - step / 2

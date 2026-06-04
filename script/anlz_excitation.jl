@@ -143,13 +143,15 @@ modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
 log_done("prepared PCA samples", t_stage)
 
 t_stage = log_step("fitting PCA modes")
-modes_pca_modl2d = [
+# per IB
+modes_pca_dens2d = [
     begin
-        println("  [$tag] fitting PCA IB_idx=$c istp_idx=$i")
+        println("  [$tag] fitting PCA IB_idx=$c")
         flush(stdout)
-        modl2d_side[c, :, :, i] |> m -> fit_pca_modes(n_pca_modes, m)
+        # packed by image, istp, bunched by rep, t_hold
+        essn_2d_fmt |> es -> map(a -> a.dens2d_core, es) |> es -> eachslice(es; dims=(1, 2, 3)) |> m -> fit_pca_modes(n_pca_modes, m)
     end
-    for c in axes(modl2d_side, 1), i in axes(modl2d_side, 4)
+    for c in axes(essn_2d_fmt, 1)
 ]
 log_done("fit PCA modes", t_stage)
 

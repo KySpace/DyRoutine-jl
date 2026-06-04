@@ -77,7 +77,7 @@ ids_runinfo = 1:1
 # sel_vars = NamedTuple()
 sel_vars = (; t_hold=t -> 0 .<= t .<= 30)
 
-title_anlz = "[05.28].57.TrendOverIB"
+title_anlz = "[05.28].58.Tests"
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
 
@@ -86,7 +86,7 @@ cp(path_anlz_excitation, joinpath(path_output, basename(path_anlz_excitation)); 
 
 wh_corner = (10, 10)
 smwh_roi = (30, 60)
-smwh_core = smwh_roi
+smwh_core = (20, 40)
 wh_peak = smwh_roi .* 2 .+ 1
 smw_peak, smh_peak = smwh_roi
 smw_ft = 5
