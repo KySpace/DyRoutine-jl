@@ -213,8 +213,8 @@ fig_spectrum_ib |> f -> save(joinpath(path_output, @sprintf("%s_spectrum_ib.png"
 # modl2d_side
 # modes_pca_modl2d
 
-## Overall plots
-# for (c, IB) in enumerate(val_vars.IB)
+# Overall plots
+for (c, IB) in enumerate(val_vars.IB)
 #     tag_IB = gen_run_tag(get_bind_runinfo(runinfo, val_vars, c))
 #     runinfo_plot = get_bind_runinfo(runinfo, val_vars, c)
 
@@ -238,17 +238,17 @@ fig_spectrum_ib |> f -> save(joinpath(path_output, @sprintf("%s_spectrum_ib.png"
 #     end
 #     log_done("saved trends for $tag_IB istp=$(val_vars.istp[i])", t_plot_stage)
 
-#     t_stage = log_step("building and saving PCA figure for $tag_IB")
-#     fig_pca, axs_pca = set_axis_pca_dual_4x2!()
-#     for idx_mode in 1:n_pca_modes, idx_istp in 1:n_istp
-#         plot_mode_evol_freq_solo!(axs_pca[idx_istp, idx_mode], modes_pca_modl2d[c, idx_istp][idx_mode], val_vars.t_hold)
-#     end
-#     resize_to_layout!(fig_pca)
-#     fig_pca |> f -> save(joinpath(path_output, @sprintf("%s_pca.pdf", tag_IB)), f; backend=CairoMakie)
-#     log_done("saved PCA figure for $tag_IB", t_stage)
-# end
+    t_stage = log_step("building and saving PCA figure for $tag_IB")
+    fig_pca_mode = Figure()
+    for idx_mode in 1:n_pca_modes
+        plot_mode_evol_freq_solo!(axs_pca[idx_istp, idx_mode], modes_pca_modl2d[c, idx_istp][idx_mode], val_vars.t_hold)
+    end
+    resize_to_layout!(fig_pca)
+    fig_pca |> f -> save(joinpath(path_output, @sprintf("%s_pca.pdf", tag_IB)), f; backend=CairoMakie)
+    log_done("saved PCA figure for $tag_IB", t_stage)
+end
 # fig_trend |> display
-##
+#
 
 fig_nvlp, axs_nvlp = set_axes_2axes!(runinfo.vars |> NamedTuple{(:IB, :istp)}, set_panel_trend_nvlp!, runinfo)
 for (c, IB) in enumerate(val_vars.IB), (i, istp_iter) in enumerate(val_vars.istp)
