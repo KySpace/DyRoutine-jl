@@ -6,45 +6,49 @@ struct ModeWeight{TProfile<:AbstractArray,TWeight<:AbstractArray}
     weight::TWeight
 end
 
-function build_pca_matrix(samples::AbstractArray{<:AbstractArray{<:Real}})
-
+function build_pca_matrix(samples::AbstractArray)
     n_sample = length(samples)
     n_sample > 0 || throw(ArgumentError("samples must contain at least one sample array."))
-
     sample_first = first(samples)
-    sz_sample = size(sample_first)
-    n_feature = length(sample_first)
+    sample_flat, rebuilder = flatten_with_rebuilder(sample_first)
+    n_feature = length(sample_flat)
     n_feature > 0 || throw(ArgumentError("sample arrays must contain at least one value."))
-
     mat_sample = Matrix{Float64}(undef, n_feature, n_sample)
-    for (idx_sample, sample) in pairs(samples)
-        size(sample) == sz_sample || throw(DimensionMismatch("sample at index $idx_sample has size $(size(sample)); expected $sz_sample."))
-        mat_sample[:, LinearIndices(samples)[idx_sample]] .= vec(sample)
+    for (idx_sample, sample) in enumerate(samples)
+        sample_flat, _ = flatten_with_rebuilder(sample)
+        mat_sample[:, idx_sample] .= sample_flat
     end
-
-    return mat_sample, sz_sample
+    return mat_sample, rebuilder
 end
 
-function fit_pca_modes(n_mode::Integer, samples::AbstractArray{<:AbstractArray{<:Real}})
+"""
+`function fit_pca_modes(n_mode::Int, samples::AbstractArray)`
+    samples can have an outer dimension (nd array) and an inner dimension (inner being an array or an nd array of arrays),
+     - the outer dimension is where the variation is queried
+     - the inner dimension is bunched together as one vector
+    returns a vector of modes, where
+     - the profile is reshaped into the format of the inner dimension
+     - the weight is reshaped into the format of the outer dimension
+"""
+function fit_pca_modes(n_mode::Int, samples::AbstractArray)
     n_mode > 0 || throw(ArgumentError("n_mode=$n_mode must be positive."))
-    n_mode_int = Int(n_mode)
 
-    mat_sample, sample_shape = build_pca_matrix(samples)
-    n_feature, n_sample = size(mat_sample)
+    mat_samples, rebuilder = build_pca_matrix(samples)
+    n_feature, n_sample = size(mat_samples)
     n_sample > 1 || throw(ArgumentError("PCA requires at least two samples; got n_sample=$n_sample."))
-    n_mode_int <= min(n_feature, n_sample - 1) || throw(ArgumentError("n_mode=$n_mode exceeds min(n_feature=$n_feature, n_sample - 1=$(n_sample - 1))."))
+    n_mode <= min(n_feature, n_sample - 1) || throw(ArgumentError("n_mode=$n_mode exceeds min(n_feature=$n_feature, n_sample - 1=$(n_sample - 1))."))
 
-    pca_fit = fit(PCA, mat_sample; maxoutdim=n_mode_int, pratio=1.0)
-    mat_profile = projection(pca_fit)
-    mat_weight = predict(pca_fit, mat_sample)
-    size(mat_profile, 2) >= n_mode_int || throw(ArgumentError("PCA returned only $(size(mat_profile, 2)) modes; requested n_mode=$n_mode. Check for low-rank or constant sample data."))
+    pca_fit_lin = fit(PCA, mat_samples; maxoutdim=n_mode, pratio=1.0)
+    mat_profile_lin = projection(pca_fit_lin) # (fmt of flattened sample, n_mode)
+    mat_weight_lin = predict(pca_fit_lin, mat_samples) # (n_mode, n_sample)
 
+    # returns a list of modes
     return [
         ModeWeight(
-            reshape(copy(@view mat_profile[:, idx_mode]), sample_shape),
-            reshape(copy(@view mat_weight[idx_mode, :]), size(samples)),
+            copy(@view mat_profile_lin[:, idx_mode]) |> rebuilder,
+            reshape(copy(@view mat_weight_lin[idx_mode, :]), size(samples)),
         )
-        for idx_mode in 1:n_mode_int
+        for idx_mode in 1:n_mode
     ]
 end
 
