@@ -75,7 +75,8 @@ runinfos = runinfos_grouped
 # ids_runinfo = eachindex(runinfos)
 ids_runinfo = 1:1
 # sel_vars = NamedTuple()
-sel_vars = (; t_hold=t -> 0 .<= t .<= 30)
+# sel_vars = (; t_hold=t -> 0 .<= t .<= 30)
+sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318)
 
 title_anlz = "[05.28].58.Tests"
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
@@ -103,7 +104,7 @@ idx_IB_axis = 1
 idx_rep_axis = 2
 idx_t_hold_axis = 3
 idx_istp_axis = 4
-n_pca_modes = 8
+n_pca_modes = 16
 freq_query = 1:1:140
 
 proc_sidepeak = true

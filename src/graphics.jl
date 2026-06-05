@@ -30,8 +30,10 @@ function set_axis!(title::String)
 end
 
 function clean_gridlayout!(gl::GridLayout)
-    for obj in contents(gl)
+    for obj in reverse(contents(gl))
+        obj isa GridLayout && clean_gridlayout!(obj)
         obj isa Axis && delete!(obj)
+        obj isa Label && delete!(obj)
     end
     trim!(gl)
 end

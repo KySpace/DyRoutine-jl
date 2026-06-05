@@ -55,7 +55,7 @@ end
 function query_weight(evo, mask, t_vec, freq_query; scaling::Real=1000.0)
     weight = evo[mask] |> e -> e .- mean(e) |> e -> [
         sum(@. e * exp(-2im * pi * freq_query[f] * t_vec[mask] / scaling))
-        for f in freq_query] |> e -> abs.(e) .^ 2
+        for f in freq_query] |> e -> abs2.(e)
     return weight / maximum(weight)
 end
 
