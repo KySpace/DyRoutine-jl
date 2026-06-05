@@ -52,6 +52,19 @@ function fit_pca_modes(n_mode::Int, samples::AbstractArray)
     ]
 end
 
+function anlz_pca_weight_rep_evo(mode::ModeWeight, val_t::AbstractVector, freq_query::AbstractVector, sel_evol::Function)
+    n_rep = size(mode.weight, 1)
+    mask_evol = map(sel_evol, val_t)
+    evol_mean = mean(mode.weight, dims=1) |> vec
+    spct_mean_full = evol_mean |> evo -> query_weight(evo, :, val_t, freq_query)
+    spct_mean_mask = evol_mean |> evo -> query_weight(evo, mask_evo, val_t, freq_query)
+    spectra = [
+        mode.weight[r, :] |> evo -> query_weight(evo, mask_evo, val_t, freq_query)
+        for r in 1:n_rep
+    ]
+    return spectra, spct_mean_full, spct_mean_mask
+end
+
 function query_weight(evo, mask, t_vec, freq_query; scaling::Real=1000.0)
     weight = evo[mask] |> e -> e .- mean(e) |> e -> [
         sum(@. e * exp(-2im * pi * freq_query[f] * t_vec[mask] / scaling))

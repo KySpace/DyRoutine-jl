@@ -245,7 +245,6 @@ for (c, IB) in enumerate(val_vars.IB)
     for idx_mode in 1:n_pca_modes
         fig_pca_mode.layout |> clean_gridlayout!
         gl_pca_mode = GridLayout(); fig_pca_mode[1, 1] = gl_pca_mode; 
-        set_panel_pca_duet!(gl_pca_mode)
         axs_pca_mode = set_panel_pca_duet!(gl_pca_mode)
         gl_pca_mode[0, 1] = Label(fig_pca_mode, "$tag_IB | #$idx_mode"; tellwidth=false, tellheight=true, halign=:left, valign=:top)
         plot_mode_evol_spct_duet!(axs_pca_mode, modes_pca_dens2d[c][idx_mode], val_vars.t_hold, 1:120, t -> t > 20; step_posi=px_in_um, smwh=smwh_core)
