@@ -71,10 +71,11 @@ function set_panel_pca_duet!(gl::GridLayout)
 end
 
 function gen_clrmap_posneg_nonlin(hue_pos, hue_neg)
-    thres_alpha = 0.15
+    thres_alpha = 0.6
+    alpha_base = 0.2
     return [
         begin
-            alpha = abs(t) > thres_alpha ? 1.0 : (abs(t) / thres_alpha)
+            alpha = abs(t) > thres_alpha ? 1.0 : (abs(t) / thres_alpha * (1 - alpha_base) + alpha_base)
             Oklch(1 - 0.6 * abs(t), 0.4 * abs2(t), t > 0 ? hue_pos : hue_neg) |> c -> RGBAf(c, alpha)
         end
         for t in range(-1, 1; length=256)
@@ -91,6 +92,8 @@ function plot_mode_evol_spct_duet!(axs::Dict{String}, mode::ModeWeight, val_t::A
     clr_grid = RGBAf(Oklch(0.84, 0.0, 262), 1)
     c = maximum(abs, mode.profile |> stack)
     mask_evo = map(sel_evo, val_t)
+    step_t = val_t |> diff |> minimum
+    t_span_lim = val_t[mask_evo] |> t -> (minimum(t) - step_t / 2, maximum(t) + step_t / 2)
     for i in 1:2
         ax = axs["mode"][i]
         hm = heatmap!(ax, x_posi, y_posi, mode.profile[i]'; colormap=clrmap, colorrange=(-c, c))
@@ -111,6 +114,7 @@ function plot_mode_evol_spct_duet!(axs::Dict{String}, mode::ModeWeight, val_t::A
     weight_mean_evol = mean(mode.weight, dims=1) |> vec
     weight_mean_spec_full = weight_mean_evol |> evo -> query_weight(evo, :, val_t, freq_query)
     weight_mean_spec_mask = weight_mean_evol |> evo -> query_weight(evo, mask_evo, val_t, freq_query)
+    vspan!(axs["evol"], t_span_lim...; color=RGBAf(Oklch(0.4, 0.01, 240), 0.04))
     for rep = 1:n_rep
         clr = Oklch(0.86, 0.053, mod(rep / 6 - 0.1, 1) * 360) |> c -> RGBAf(c, 1)
         scatter!(axs["evol"], val_t, mode.weight[rep, :]; color=clr)
@@ -119,6 +123,9 @@ function plot_mode_evol_spct_duet!(axs::Dict{String}, mode::ModeWeight, val_t::A
     lines!(axs["evol"], val_t, weight_mean_evol; color=(:black, 1))
     lines!(axs["spct"], freq_query, weight_mean_spec_full; color=(:black, 0.5))
     lines!(axs["spct"], freq_query, weight_mean_spec_mask; color=(:black, 1.0))
+    for ax in [axs["evol"], axs["spct"]]
+        ax.yticklabelspace=40.0
+    end
 end
 
 function plot_mode_evol_freq_solo!(axs::Dict{String,Axis}, mode::ModeWeight, val_t::AbstractVector)

@@ -77,7 +77,7 @@ runinfos = runinfos_grouped
 ids_runinfo = 1:1
 # sel_vars = NamedTuple()
 # sel_vars = (; t_hold=t -> 0 .<= t .<= 30)
-sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318)
+# sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318)
 
 title_anlz = "[05.28].58.Tests"
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
@@ -118,7 +118,7 @@ selector_t_sidepeak = t -> 0 .< t .< 80
 selector_t_envelope = t -> 0 .< t .< 80
 selector_t_pca = t -> 20 .< t .< 80
 selector_tail_stack = y -> y .> 0.02
-filter_core_pca = im -> imfilter(im, Kernel.gaussian(3))
+filter_core_pca = im -> imfilter(im, Kernel.gaussian(1.5))
 
 fit_stack_kwargs = NamedTuple()
 fit_tailess_kwargs = NamedTuple()
