@@ -246,7 +246,7 @@ for (c, IB) in enumerate(val_vars.IB)
     #     log_done("saved trends for $tag_IB istp=$(val_vars.istp[i])", t_plot_stage)
 
     t_stage = log_step("building and saving PCA figure for $tag_IB")
-    path_pca = joinpath(path_output, "PCA modes")
+    path_pca = joinpath(path_output, "PCA modes", tag_IB)
     isdir(path_pca) || mkpath(path_pca)
     fig_pca_mode = Figure();
     for idx_mode in 1:n_pca_modes

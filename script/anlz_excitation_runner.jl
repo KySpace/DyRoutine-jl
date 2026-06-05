@@ -17,6 +17,8 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
 path_runner = @__FILE__
 path_anlz_excitation = joinpath(@__DIR__, "anlz_excitation.jl")
+# commit 73d564bbf35beaa3910e30f1553f887e3fdf13ab
+title_anlz = "[05.28].59.PCAModes"
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
@@ -75,11 +77,11 @@ runinfos = runinfos_grouped
 
 # ids_runinfo = eachindex(runinfos)
 ids_runinfo = 1:1
-# sel_vars = NamedTuple()
+sel_vars = NamedTuple()
 # sel_vars = (; t_hold=t -> 0 .<= t .<= 30)
 # sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318)
 
-title_anlz = "[05.28].58.Tests"
+
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
 
