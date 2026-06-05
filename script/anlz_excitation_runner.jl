@@ -3,6 +3,7 @@ using CairoMakie: Figure, Axis, Colorbar, DataAspect, heatmap!, lines!, scatter!
 using GLMakie
 using JLD2
 using Printf
+using ImageFiltering
 GLMakie.activate!()
 include(joinpath(@__DIR__, "..", "src", "helper.jl"))
 include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
@@ -86,7 +87,8 @@ cp(path_runner, joinpath(path_output, basename(path_runner)); force=true)
 cp(path_anlz_excitation, joinpath(path_output, basename(path_anlz_excitation)); force=true)
 
 wh_corner = (10, 10)
-smwh_roi = (30, 60)
+smwh_roi = (40, 80)
+smwh_essn = (30, 60)
 smwh_core = (20, 40)
 wh_peak = smwh_roi .* 2 .+ 1
 smw_peak, smh_peak = smwh_roi
@@ -106,6 +108,7 @@ idx_t_hold_axis = 3
 idx_istp_axis = 4
 n_pca_modes = 16
 freq_query = 1:1:140
+freq_query_pca = 1:1:140
 
 proc_sidepeak = true
 proc_envelope = true
@@ -113,7 +116,9 @@ selector_moment = y -> (y .> 0.10) .& (y .< 0.50)
 selector_sidepeak = y -> (y .> 0.1) .& (y .< 0.5)
 selector_t_sidepeak = t -> 0 .< t .< 80
 selector_t_envelope = t -> 0 .< t .< 80
+selector_t_pca = t -> 20 .< t .< 80
 selector_tail_stack = y -> y .> 0.02
+filter_core_pca = im -> imfilter(im, Kernel.gaussian(3))
 
 fit_stack_kwargs = NamedTuple()
 fit_tailess_kwargs = NamedTuple()

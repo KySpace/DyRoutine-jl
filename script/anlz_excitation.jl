@@ -39,11 +39,18 @@ log_done("formatted density data: axes $(name_dims) dims $(n_dim_vars), per-IB d
 # end
 # display(fig_num)
 
-xy_peak_core = smwh_roi .+ 1
+xy_peak_core_per_IB_rep = [
+    dens_full_fmt[c, r, :, :] |> mean |> ds ->
+        find_positive_cluster_center(ds, smwh_core; len_avg=len_avg_peak) |> cent -> round.(Int, cent)
+    for c in 1:n_IB, r in 1:n_rep
+]
+# defined within roi
+xy_peak_core = xy_peak_core_per_IB_rep |> p -> repeat(p, inner=ntuple(i -> i in (3, 4) ? n_dim_vars[i] : 1, length(n_dim_vars)))
 t_stage = log_step("calculating solo essentials for $(length(dens_full_fmt)) shots")
 essn_2d_fmt = map(
-    d -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, smw_ft, px_in_um, xy_peak_core, smwh_core),
+    (d, xy) -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, smw_ft, px_in_um, xy, smwh_core; smwh_strip=smwh_core),
     dens_full_fmt,
+    xy_peak_core
 )
 log_done("calculated solo essentials", t_stage)
 info_fmt = [
@@ -149,7 +156,7 @@ modes_pca_dens2d = [
         println("  [$tag] fitting PCA IB_idx=$c")
         flush(stdout)
         # packed by image, istp, bunched by rep, t_hold
-        essn_2d_fmt[c, :, :, :] |> es -> map(a -> a.dens2d_core, es) |> es -> eachslice(es; dims=(1, 2)) |> m -> fit_pca_modes(n_pca_modes, m)
+        essn_2d_fmt[c, :, :, :] |> es -> map(a -> a.dens2d_core |> filter_core_pca, es) |> es -> eachslice(es; dims=(1, 2)) |> m -> fit_pca_modes(n_pca_modes, m)
     end
     for c in axes(essn_2d_fmt, 1)
 ]
@@ -241,13 +248,13 @@ for (c, IB) in enumerate(val_vars.IB)
     t_stage = log_step("building and saving PCA figure for $tag_IB")
     path_pca = joinpath(path_output, "PCA modes")
     isdir(path_pca) || mkpath(path_pca)
-    fig_pca_mode = Figure(); 
+    fig_pca_mode = Figure();
     for idx_mode in 1:n_pca_modes
         fig_pca_mode.layout |> clean_gridlayout!
-        gl_pca_mode = GridLayout(); fig_pca_mode[1, 1] = gl_pca_mode; 
+        gl_pca_mode = GridLayout(); fig_pca_mode[1, 1] = gl_pca_mode;
         axs_pca_mode = set_panel_pca_duet!(gl_pca_mode)
         gl_pca_mode[0, 1] = Label(fig_pca_mode, "$tag_IB | #$idx_mode"; tellwidth=false, tellheight=true, halign=:left, valign=:top)
-        plot_mode_evol_spct_duet!(axs_pca_mode, modes_pca_dens2d[c][idx_mode], val_vars.t_hold, 1:120, t -> t > 20; step_posi=px_in_um, smwh=smwh_core)
+        plot_mode_evol_spct_duet!(axs_pca_mode, modes_pca_dens2d[c][idx_mode], val_vars.t_hold, freq_query_pca, selector_t_pca; step_posi=px_in_um, smwh=smwh_core)
         gl_pca_mode |> l -> rowgap!(l, 0)
         resize_to_layout!(fig_pca_mode)
         fig_pca_mode |> f -> save(joinpath(path_pca, @sprintf("%s_%d.png", tag_IB, idx_mode)), f; backend=CairoMakie)

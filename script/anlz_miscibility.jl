@@ -10,12 +10,12 @@ println("  xy_peak_px: $(xy_peak_px), wh_dens: $(wh_dens)")
 
 xy_peak_duet = dens_full_fmt |>
                ds -> mapslices(
-    imgs -> mean(imgs) |>
-            d -> fit_dens2d_gaussian_round_disk(1:wh_peak[1], 1:wh_peak[2], d, :; fit_round_kwargs...).params |>
-                 p -> (round(Int, p[2]), round(Int, p[3])),
-    ds;
-    dims=ndims(ds),
-) |> p -> repeat(p, inner=ntuple(i -> i == idx_istp_axis ? n_istp_per_condition : 1, length(n_dim_vars)))
+                    imgs -> mean(imgs) |>
+                            d -> fit_dens2d_gaussian_round_disk(1:wh_peak[1], 1:wh_peak[2], d, :; fit_round_kwargs...).params |>
+                                p -> (round(Int, p[2]), round(Int, p[3])),
+                    ds;
+                    dims=ndims(ds),
+                ) |> p -> repeat(p, inner=ntuple(i -> i == idx_istp_axis ? n_istp_per_condition : 1, length(n_dim_vars)))
 
 essn_2d_fmt = map(
     (d, xy) -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, smw_ft, px_in_um, xy, smwh_core; smwh_strip),
