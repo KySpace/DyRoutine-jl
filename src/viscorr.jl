@@ -100,11 +100,11 @@ function set_axis_stack_all!(_, panel_setter::Function, runinfo)
     gl = GridLayout()
     fig[1, 1] = Label(fig, text="Processed after stacked"; tellwidth=false, tellheight=true, halign=:center, valign=:bottom)
     fig[2, 1] = gl
-    axs_stacked = panel_setter(gl, 1)
+    axs_stacked = panel_setter(gl; col=1)
     gl = GridLayout()
     fig[1, 2] = Label(fig, text="Reps overlayed"; tellwidth=false, tellheight=true, halign=:center, valign=:bottom)
     fig[2, 2] = gl
-    axs_all = panel_setter(gl, 2)
+    axs_all = panel_setter(gl; col=2)
     return fig, Dict("stacked" => axs_stacked, "all" => axs_all)
 end
 
