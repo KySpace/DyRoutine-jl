@@ -69,7 +69,8 @@ function query_weight(evo, mask, t_vec, freq_query; scaling::Real=1000.0)
     weight = evo[mask] |> e -> e .- mean(e) |> e -> [
         sum(@. e * exp(-2im * pi * freq_query[f] * t_vec[mask] / scaling))
         for f in freq_query] |> e -> abs2.(e)
-    return weight / maximum(weight)
+    weight_max = maximum(weight)
+    return isfinite(weight_max) && weight_max > 0 ? weight ./ weight_max : zeros(eltype(weight), size(weight))
 end
 
 function anlz_trend_from_extr(
@@ -109,6 +110,7 @@ function anlz_trend_from_extr(
     ft_moment_width = evo_moment_width |> query_weight_sel_sp
     ft_fit_size_x = evo_fit_size_x |> query_weight_sel_nvlp
     ft_fit_size_y = evo_fit_size_y |> query_weight_sel_nvlp
+    ft_dens_sum = evo_dens_sum |> query_weight_sel_sp
     return Dict(
         "t_vec" => t_vec,
         "t_vec_sel_sp" => t_vec_sel_sp,
@@ -126,6 +128,7 @@ function anlz_trend_from_extr(
         "evol-all-moment-width" => evo_moment_width,
         "evol-all-fit-size-x" => evo_fit_size_x,
         "evol-all-fit-size-y" => evo_fit_size_y,
+        "freq-sel-dens-sum" => ft_dens_sum,
         "freq-sel-fit-weight" => ft_fit_weight,
         "freq-sel-fit-height" => ft_fit_height,
         "freq-sel-fit-wavenum" => ft_fit_wavenum,

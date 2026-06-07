@@ -18,7 +18,7 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 path_runner = @__FILE__
 path_anlz_excitation = joinpath(@__DIR__, "anlz_excitation.jl")
 # commit 73d564bbf35beaa3910e30f1553f887e3fdf13ab
-title_anlz = "[05.28].59.PCAModes"
+title_anlz = "[05.28].60.DevTestPropertyTrends"
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
@@ -77,9 +77,9 @@ runinfos = runinfos_grouped
 
 # ids_runinfo = eachindex(runinfos)
 ids_runinfo = 1:1
-sel_vars = NamedTuple()
+# sel_vars = NamedTuple()
 # sel_vars = (; t_hold=t -> 0 .<= t .<= 30)
-# sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318)
+sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 80)
 
 
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
@@ -127,6 +127,9 @@ fit_tailess_kwargs = NamedTuple()
 fit_asymm_kwargs = NamedTuple()
 fit_round_kwargs = NamedTuple()
 query_weight_kwargs = NamedTuple()
+trend_property_specs = default_trend_property_specs()
+trend_panel_kwargs = (width_evol=400, width_freq=400, height=200)
+trend_all_IB_groups = (:repeats, :stacked, :all)
 
 ##
 
