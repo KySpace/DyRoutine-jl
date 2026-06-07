@@ -129,7 +129,7 @@ fit_round_kwargs = NamedTuple()
 query_weight_kwargs = NamedTuple()
 trend_property_specs = default_trend_property_specs()
 trend_panel_kwargs = (width_evol=400, width_freq=400, height=200)
-trend_all_IB_groups = (:repeats, :stacked, :all)
+trend_all_IB_groups = (:stacked, :all)
 
 ##
 

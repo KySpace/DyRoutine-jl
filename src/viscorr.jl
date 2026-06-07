@@ -121,7 +121,7 @@ function default_trend_property_specs()
         (
             name="weight",
             ylabel="side peak \nweight",
-            ylim=(-0.02, 0.52),
+            ylim=(-0.02, 0.22),
             selection_key="t_vec_sel_sp",
             overlay_evol_col=1,
             variants=[
@@ -132,7 +132,7 @@ function default_trend_property_specs()
         (
             name="height",
             ylabel="side peak \nheight",
-            ylim=(-0.1, 3.1),
+            ylim=(-0.1, 1.1),
             selection_key="t_vec_sel_sp",
             overlay_evol_col=1,
             variants=[
@@ -449,14 +449,14 @@ function set_axis_trend_property_IB_istp!(
                 gl_istp[row, idx_col] = gl_panel
                 if column.group == :repeats
                     axs_repeats[column.rep] = set_panel_trend_properties!(
-                            gl_panel,
-                            [spec];
-                            col=column.rep,
-                            row_cmpl=length(val_IB) - row_IB,
-                            width_evol,
-                            width_freq,
-                            height,
-                        )
+                        gl_panel,
+                        [spec];
+                        col=column.rep,
+                        row_cmpl=length(val_IB) - row_IB,
+                        width_evol,
+                        width_freq,
+                        height,
+                    )
                 else
                     axs_groups[string(column.group)] = set_panel_trend_properties!(
                         gl_panel,

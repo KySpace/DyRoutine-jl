@@ -119,10 +119,8 @@ log_done("extracted per-shot sidepeak/envelope values", t_stage)
 t_stage = log_step("extracting stacked-over-repeat values")
 extr_stacked_over_rep = [
     begin
-        if t == first(axes(essn_stacked_over_rep, 2)) || t % 25 == 0 || t == last(axes(essn_stacked_over_rep, 2))
-            print("\r  [$tag] extracting stacked IB_idx=$c t_idx=$t istp_idx=$i")
-            flush(stdout)
-        end
+        print("\r  [$tag] extracting stacked IB_idx=$c t_idx=$t istp_idx=$i")
+        flush(stdout)
         essn_stacked_over_rep[c, t, i] |> e -> calc_solo_extr(
             e,
             fit_prfl_modl_over_rep_t_1d[c, i];
