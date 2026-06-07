@@ -121,7 +121,7 @@ function default_trend_property_specs()
         (
             name="weight",
             ylabel="side peak \nweight",
-            ylim=(-0.02, 0.22),
+            ylim=(-0.02, 0.17),
             selection_key="t_vec_sel_sp",
             overlay_evol_col=1,
             variants=[
@@ -165,7 +165,7 @@ function default_trend_property_specs()
         (
             name="sizes",
             ylabel="envelope size (μm)",
-            ylim=(1, 11),
+            ylim=(1, 8),
             selection_key="t_vec_sel_nvlp",
             overlay_evol_col=2,
             variants=[
