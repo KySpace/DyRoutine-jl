@@ -182,6 +182,7 @@ function set_panel_trend_properties!(
     col::Int=1,
     row_cmpl::Int=0,
     extra::Bool=false,
+    align_overlay::Bool=true,
     width_evol::Real=400,
     width_freq::Real=400,
     height::Real=200,
@@ -190,11 +191,13 @@ function set_panel_trend_properties!(
     isempty(property_specs) && throw(ArgumentError("property_specs must not be empty"))
     kwargs_evol = (width=width_evol, height=height, yticklabelspace=40.0)
     kwargs_freq = (width=width_freq, height=height, yticklabelspace=40.0)
-    col_freq = extra ? 3 : 2
+    has_extra_variant = any(spec -> any(v.extra for v in spec.variants), property_specs)
+    use_extra_col = extra && (align_overlay || has_extra_variant)
+    col_freq = use_extra_col ? 3 : 2
     dict_axs = Dict{String,Axis}()
     for (row, spec) in enumerate(property_specs)
         name = spec.name
-        col_evol = extra ? spec.overlay_evol_col : 1
+        col_evol = use_extra_col ? spec.overlay_evol_col : 1
         dict_axs["evol-$name"] = Axis(gl[row, col_evol]; kwargs_evol..., ylabel=spec.ylabel)
         dict_axs["freq-$name"] = Axis(gl[row, col_freq]; kwargs_freq...)
         if extra && any(v.extra for v in spec.variants)
@@ -203,7 +206,7 @@ function set_panel_trend_properties!(
         rowsize!(gl, row, Fixed(height))
     end
     colsize!(gl, 1, Fixed(width_evol))
-    if extra
+    if use_extra_col
         colsize!(gl, 2, Fixed(width_evol))
         colsize!(gl, 3, Fixed(width_freq))
     else
@@ -362,6 +365,7 @@ function set_axis_trend_property_IB_istp!(
     spec,
     title::AbstractString;
     groups::Tuple=(:repeats, :stacked, :all),
+    align_overlay::Bool=false,
     width_evol::Real=400,
     width_freq::Real=400,
     height::Real=200,
@@ -450,6 +454,7 @@ function set_axis_trend_property_IB_istp!(
                         col=1,
                         row_cmpl=length(val_IB) - row_IB,
                         extra=column.group == :all,
+                        align_overlay,
                         width_evol,
                         width_freq,
                         height,
