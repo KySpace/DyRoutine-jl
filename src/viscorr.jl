@@ -305,7 +305,7 @@ function set_trend_tick_grid!(axs::AbstractDict)
             ax.xminorgridvisible = true
             ax.xminorticks = IntervalsBetween(5)
         elseif startswith(key, "freq-")
-            ax.xticks = 0:10:100
+            ax.xticks = 0:10:200
             ax.xminorticksvisible = true
             ax.xminorgridvisible = true
             ax.xminorticks = IntervalsBetween(2)
@@ -620,7 +620,7 @@ function plot_trend_nvlp!(axs_trend::Dict, trend_reps::AbstractVector, trend_sta
             ax.xminorticks = IntervalsBetween(5)
         end
         for ax in axs_sidepeaks_freq
-            ax.xticks = 0:10:100
+            ax.xticks = 0:10:200
             ax.xminorticksvisible = true
             ax.xminorgridvisible = true
             ax.xminorticks = IntervalsBetween(2)

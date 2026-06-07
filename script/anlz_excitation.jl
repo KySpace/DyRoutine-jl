@@ -229,7 +229,7 @@ for (c, IB) in enumerate(val_vars.IB)
         trend_property_specs;
         col,
         extra,
-        trend_panel_kwargs...,
+        trend_panel_per_IB_kwargs...,
     )
     fig_trend, axs_trend = set_axis_sidepeak_nvlp!(n_dim_vars_per_IB, panel_setter, runinfo_plot)
     log_done("built trend figures for $tag_IB", t_stage)
@@ -275,7 +275,7 @@ for spec in trend_property_specs
         spec,
         title_property;
         groups=trend_all_IB_groups,
-        trend_panel_kwargs...,
+        trend_panel_per_prop_kwargs...,
     )
     for c in axes(trend_sidepeak_nvlp, 1), i in axes(trend_sidepeak_nvlp, 3)
         plot_trend_all!(
