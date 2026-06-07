@@ -42,7 +42,7 @@ function set_axis_sidepeak_nvlp!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer
         axs_repeats[r] = panel_setter(gl, r)
     end
     println("\r\033[2K\raxes built for trends.")
-    fig[2, n_dim_vars[1]+1] |> Box
+    Box(fig[2, n_dim_vars[1]+1]; color=:black, strokewidth=0)
     colsize!(fig.layout, n_dim_vars[1] + 1, Fixed(2))
     gl = GridLayout()
     fig[1, n_dim_vars[1]+2] = Label(fig, text="Processed after stacked"; tellwidth=false, tellheight=false, halign=:center, valign=:bottom)
@@ -388,7 +388,11 @@ function set_axis_trend_property_IB_istp!(
         fig[1, idx_istp] = gl_istp
 
         column_plan = NamedTuple[]
+        has_repeat_separator = :repeats in groups && any(group -> group in (:stacked, :all), groups)
         for (idx_group, group) in enumerate(groups)
+            if group == :repeats && has_repeat_separator && idx_group > 1
+                push!(column_plan, (; group=:separator, rep=0, label=""))
+            end
             if group == :repeats
                 append!(column_plan, [(; group, rep=r, label="repeat $r") for r in 1:n_rep])
             elseif group == :stacked
@@ -396,8 +400,9 @@ function set_axis_trend_property_IB_istp!(
             else
                 push!(column_plan, (; group, rep=0, label="Reps overlayed"))
             end
-            group == :repeats && idx_group < length(groups) &&
-                push!(column_plan, (; group=:spacer, rep=0, label=""))
+            if group == :repeats && has_repeat_separator && idx_group < length(groups)
+                push!(column_plan, (; group=:separator, rep=0, label=""))
+            end
         end
         n_col_block = length(column_plan)
         Label(
@@ -409,8 +414,13 @@ function set_axis_trend_property_IB_istp!(
             valign=:bottom,
         )
         for (idx_col, column) in enumerate(column_plan)
-            if column.group == :spacer
-                colsize!(gl_istp, idx_col, Fixed(16))
+            if column.group == :separator
+                Box(
+                    gl_istp[2:length(val_IB)+1, idx_col];
+                    color=:black,
+                    strokewidth=0,
+                )
+                colsize!(gl_istp, idx_col, Fixed(2))
             else
                 Label(
                     gl_istp[1, idx_col],
@@ -434,7 +444,7 @@ function set_axis_trend_property_IB_istp!(
             axs_groups = Dict{String,Any}()
             axs_repeats = :repeats in groups ? Vector{Dict}(undef, n_rep) : nothing
             for (idx_col, column) in enumerate(column_plan)
-                column.group == :spacer && continue
+                column.group == :separator && continue
                 gl_panel = GridLayout()
                 gl_istp[row, idx_col] = gl_panel
                 if column.group == :repeats

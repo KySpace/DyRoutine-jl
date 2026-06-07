@@ -1,6 +1,11 @@
 ## Local Notes
 - Julia launcher path to try first on this machine if the default doesn't work:
   `C:\Users\ky\AppData\Local\Microsoft\WindowsApps\julia.exe`
+- When a task focuses on plotting or a late data-processing stage, prefer loading
+  and processing the selected data once in a persistent Julia REPL, then rerun
+  only the relevant later script section against the variables already in that
+  REPL. Keep that REPL alive across related tests instead of repeating the
+  expensive upstream processing.
 
 ## Packaging
 for now, some codes are not packaged, just included. Do package them in the future to decouple function calls from the environment by using `module`
