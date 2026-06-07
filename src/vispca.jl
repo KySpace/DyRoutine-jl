@@ -58,21 +58,27 @@ end
 
 function set_panel_pca_duet!(gl::GridLayout)
     gl |> clean_gridlayout!
-    ax_mode_l = Axis(gl[1:2, 1])
-    ax_mode_r = Axis(gl[1:2, 2])
-    ax_evol = Axis(gl[1, 3])
-    ax_spct = Axis(gl[2, 3])
-    colsize!(gl, 1, Fixed(200))
-    colsize!(gl, 2, Fixed(200))
-    colsize!(gl, 3, Fixed(400))
-    rowsize!(gl, 1, Fixed(240))
-    rowsize!(gl, 2, Fixed(240))
-    return Dict("mode" => [ax_mode_l, ax_mode_r], "evol" => ax_evol, "spct" => ax_spct)
+    gl_dens_modl = GridLayout()
+    gl_evol_spct = GridLayout()
+    gl[1, 1] = gl_dens_modl
+    gl[1, 2] = gl_evol_spct
+    ax_mode_l = Axis(gl_dens_modl[1, 1], aspect=DataAspect())
+    ax_mode_r = Axis(gl_dens_modl[1, 2], aspect=DataAspect())
+    ax_modl_l = Axis(gl_dens_modl[2, 1], aspect=DataAspect())
+    ax_modl_r = Axis(gl_dens_modl[2, 2], aspect=DataAspect())
+    ax_evol = Axis(gl[1, 2][1, 1])
+    ax_spct = Axis(gl[1, 2][2, 1])
+    colsize!(gl_dens_modl, 1, Fixed(200))
+    colsize!(gl_dens_modl, 2, Fixed(200))
+    colsize!(gl, 2, Fixed(400))
+    rowsize!(gl_evol_spct, 1, Fixed(240))
+    rowsize!(gl_evol_spct, 2, Fixed(240))
+    rowsize!(gl_dens_modl, 1, Fixed(400))
+    rowsize!(gl_dens_modl, 2, Fixed(120))
+    return Dict("mode" => [ax_mode_l, ax_mode_r], "modl" => [ax_modl_l, ax_modl_r], "evol" => ax_evol, "spct" => ax_spct)
 end
 
-function gen_clrmap_posneg_nonlin(hue_pos, hue_neg)
-    thres_alpha = 0.6
-    alpha_base = 0.2
+function gen_clrmap_posneg_nonlin(hue_pos, hue_neg; thres_alpha=0.6, alpha_base=0.2)
     return [
         begin
             alpha = abs(t) > thres_alpha ? 1.0 : (abs(t) / thres_alpha * (1 - alpha_base) + alpha_base)
@@ -82,19 +88,22 @@ function gen_clrmap_posneg_nonlin(hue_pos, hue_neg)
     ]
 end
 
-function plot_mode_evol_spct_duet!(axs::Dict{String}, mode::ModeWeight, val_t::AbstractVector, freq_query::AbstractVector, sel_evo::Function; step_posi::Real=1, smwh=(0, 0))
+function plot_mode_evol_spct_duet!(axs::Dict{String}, mode::ModeWeight, spectral::NamedTuple, val_istp; step_posi::Real=1, smwh=(0, 0))
+    step_modl = 1 ./ (2 .* smwh .* step_posi)
     x_vec, y_vec = smwh |> s -> map(u -> (-u:1:u), s)
     x_posi, y_posi = (x_vec, y_vec) .* step_posi
+    x_modl, y_modl = (x_vec, y_vec) .* step_modl
+    n_rep, val_t, freq_query, sel_evol, mask_evol, evols_weight, evol_weight_mean, spectra_reps_mask, spct_mean_full, spct_mean_mask = spectral
     axs |> clear_axes!
     axs["mode"] |> clear_axes!
     length(mode.profile) == 2 || throw(ArgumentError("mode.profile must have 2 components."))
     clrmap = gen_clrmap_posneg_nonlin(0.57 * 360, 0.96 * 360)
     clr_grid = RGBAf(Oklch(0.84, 0.0, 262), 1)
     c = maximum(abs, mode.profile |> stack)
-    mask_evo = map(sel_evo, val_t)
     step_t = val_t |> diff |> minimum
-    t_span_lim = val_t[mask_evo] |> t -> (minimum(t) - step_t / 2, maximum(t) + step_t / 2)
+    t_span_lim = val_t[mask_evol] |> t -> (minimum(t) - step_t / 2, maximum(t) + step_t / 2)
     for i in 1:2
+        clrmap_modl = gen_clrmap_solo(hue_theme_istp[val_istp[i]]; thres_alpha=0.6, alpha_base=0.2)
         ax = axs["mode"][i]
         hm = heatmap!(ax, x_posi, y_posi, mode.profile[i]'; colormap=clrmap, colorrange=(-c, c))
         # translate!(hm, 0, 0, -100)
@@ -105,26 +114,28 @@ function plot_mode_evol_spct_duet!(axs::Dict{String}, mode::ModeWeight, val_t::A
         ax.yminorgridvisible = true
         ax.ygridcolor = clr_grid
         ax.yminorgridcolor = clr_grid
+        ax = axs["modl"][i]
+        modl = mode.profile[i] |> d -> d .* gen_win_hann_2d(smwh) |> fft |> fftshift |> c -> abs2.(c)
+        hm = heatmap!(ax, x_modl, y_modl, modl'; colormap=clrmap_modl)
+        ylims!(ax, (0, 0.6))
+        xlims!(ax, (-0.5, 0.5))
+        ax |> ax -> hidedecorations!(ax, ticks=false, label=true, grid=false)
+        ax.ygridvisible = true
+        ax.xgridvisible = true
+        ax.yticks = 0:0.1:0.6
+        ax.ygridcolor = clr_grid
     end
-    n_rep = size(mode.weight, 1)
-    spectra = [
-        mode.weight[r, :] |> evo -> query_weight(evo, mask_evo, val_t, freq_query)
-        for r in 1:n_rep
-    ]
-    weight_mean_evol = mean(mode.weight, dims=1) |> vec
-    weight_mean_spec_full = weight_mean_evol |> evo -> query_weight(evo, :, val_t, freq_query)
-    weight_mean_spec_mask = weight_mean_evol |> evo -> query_weight(evo, mask_evo, val_t, freq_query)
     vspan!(axs["evol"], t_span_lim...; color=RGBAf(Oklch(0.4, 0.01, 240), 0.04))
     for rep = 1:n_rep
         clr = Oklch(0.86, 0.053, mod(rep / 6 - 0.1, 1) * 360) |> c -> RGBAf(c, 1)
-        scatter!(axs["evol"], val_t, mode.weight[rep, :]; color=clr)
-        lines!(axs["spct"], freq_query, spectra[rep]; color=clr)
+        scatter!(axs["evol"], val_t, evols_weight[rep]; color=clr)
+        lines!(axs["spct"], freq_query, spectra_reps_mask[rep]; color=clr)
     end
-    lines!(axs["evol"], val_t, weight_mean_evol; color=(:black, 1))
-    lines!(axs["spct"], freq_query, weight_mean_spec_full; color=(:black, 0.5))
-    lines!(axs["spct"], freq_query, weight_mean_spec_mask; color=(:black, 1.0))
+    lines!(axs["evol"], val_t, evol_weight_mean; color=(:black, 1))
+    lines!(axs["spct"], freq_query, spct_mean_full; color=(:black, 0.5))
+    lines!(axs["spct"], freq_query, spct_mean_mask; color=(:black, 1.0))
     for ax in [axs["evol"], axs["spct"]]
-        ax.yticklabelspace=40.0
+        ax.yticklabelspace = 40.0
     end
 end
 
