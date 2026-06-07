@@ -162,14 +162,14 @@ log_done("fit PCA modes", t_stage)
 
 t_stage = log_step("analyzing per-shot trends")
 trend_sidepeak_nvlp = [
-    extr_fmt[c, r, :, i] |> e -> anlz_trend_from_extr(val_vars.t_hold, e, freq_query; selector_t_sidepeak, selector_t_envelope, query_weight_kwargs)
+    extr_fmt[c, r, :, i] |> e -> anlz_trend_from_extr(val_vars.t_hold, e, freq_query; selector_t_spectrum, query_weight_kwargs)
     for c in axes(extr_fmt, 1), r in axes(extr_fmt, 2), i in axes(extr_fmt, 4)
 ]
 log_done("analyzed per-shot trends", t_stage)
 
 t_stage = log_step("analyzing stacked trends")
 trend_extr_stacked_over_rep = [
-    extr_stacked_over_rep[c, :, i] |> e -> anlz_trend_from_extr(val_vars.t_hold, e, freq_query; selector_t_sidepeak, selector_t_envelope, query_weight_kwargs)
+    extr_stacked_over_rep[c, :, i] |> e -> anlz_trend_from_extr(val_vars.t_hold, e, freq_query; selector_t_spectrum, query_weight_kwargs)
     for c in axes(extr_stacked_over_rep, 1), i in axes(extr_stacked_over_rep, 3)
 ]
 log_done("analyzed stacked trends", t_stage)
@@ -179,31 +179,38 @@ trend_stacked_over_rep = [
     for c in axes(trend_sidepeak_nvlp, 1), i in axes(trend_sidepeak_nvlp, 3)
 ]
 
-get_freq_trend = dir ->
-    freq_ib_size_x = [trend_stacked_over_rep[c, i]["freq-sel-fit-size-"*dir]
-                      for c in axes(trend_stacked_over_rep, 1), i in axes(trend_stacked_over_rep, 2)] |>
-                     stack
-freq_ib_size_x = get_freq_trend("x")
-freq_ib_size_y = get_freq_trend("y")
-fig_spectrum_ib = Figure()
-for (i, istp) in enumerate(val_vars.istp)
-    clrmap = gen_clrmap_solo(hue_theme_istp[istp])
-    ax_x, ax_y = (Axis(fig_spectrum_ib[1, i]), Axis(fig_spectrum_ib[2, i]))
-    hm = heatmap!(ax_x, val_vars.IB, freq_query, freq_ib_size_x[:, :, i]'; colormap=clrmap, colorrange=(0.3, 1.00))
-    hm = heatmap!(ax_y, val_vars.IB, freq_query, freq_ib_size_y[:, :, i]'; colormap=clrmap, colorrange=(0.3, 1.00))
-    ax_x.ylabel = "size y"
-    ax_y.ylabel = "size x"
-    ax_x.xlabel = "frequency (Hz)"
-    ax_y.xlabel = "frequency (Hz)"
+t_stage = log_step("building and saving spectrum-vs-IB figures")
+trend_spectrum_groups = (;
+    stacked=trend_extr_stacked_over_rep,
+    all=trend_stacked_over_rep,
+)
+for spec in trend_property_specs
+    fig_spectrum, axs_spectrum = set_axis_spectrum_property_IB_istp!(
+        val_vars.IB,
+        val_vars.istp,
+        spec,
+        "$tag | spectrum vs IB | $(spec.name)";
+        groups=trend_spectrum_IB_groups,
+        trend_spectrum_IB_kwargs...,
+    )
+    plot_spectrum_property_IB_istp!(
+        axs_spectrum,
+        trend_spectrum_groups,
+        val_vars.IB,
+        val_vars.istp,
+        spec;
+        trend_spectrum_IB_plot_kwargs...,
+    )
+    resize_to_layout!(fig_spectrum)
+    for format in ["pdf", "png"]
+        fig_spectrum |> f -> save(
+            joinpath(path_output, @sprintf("%s_spectrum_%s_IB.%s", tag, spec.name, format)),
+            f;
+            backend=CairoMakie,
+        )
+    end
 end
-fig_spectrum_ib.layout |> l -> [
-    colsize!(l, 1, 600),
-    colsize!(l, 2, 600),
-    rowsize!(l, 1, 500),
-    rowsize!(l, 2, 500),
-]
-fig_spectrum_ib |> resize_to_layout!
-fig_spectrum_ib |> f -> save(joinpath(path_output, @sprintf("%s_spectrum_ib.png", tag)), f; backend=CairoMakie)
+log_done("saved spectrum-vs-IB figures", t_stage)
 ##  saving data, still problematic
 
 # @save joinpath(path_output, @sprintf("%s_data.jld2", tag))

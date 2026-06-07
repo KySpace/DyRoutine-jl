@@ -73,21 +73,65 @@ function query_weight(evo, mask, t_vec, freq_query; scaling::Real=1000.0)
     return isfinite(weight_max) && weight_max > 0 ? weight ./ weight_max : zeros(eltype(weight), size(weight))
 end
 
+function default_selector_t_spectrum(;
+    selector_t_sidepeak::Function=t -> trues(length(t)),
+    selector_t_envelope::Function=t -> trues(length(t)),
+)
+    return (;
+        number=selector_t_sidepeak,
+        sp_weight=selector_t_sidepeak,
+        sp_height=selector_t_sidepeak,
+        sp_width=selector_t_sidepeak,
+        sp_wavenum=selector_t_sidepeak,
+        nvlp_size=selector_t_envelope,
+    )
+end
+
+function normalize_selector_t_spectrum(
+    selector_t_spectrum::NamedTuple;
+    selector_t_sidepeak::Union{Nothing,Function}=nothing,
+    selector_t_envelope::Union{Nothing,Function}=nothing,
+)
+    selector_default = default_selector_t_spectrum(
+        ;
+        selector_t_sidepeak=isnothing(selector_t_sidepeak) ? (t -> trues(length(t))) : selector_t_sidepeak,
+        selector_t_envelope=isnothing(selector_t_envelope) ? (t -> trues(length(t))) : selector_t_envelope,
+    )
+    return merge(selector_default, selector_t_spectrum)
+end
+
+function calc_selector_mask(selector::Function, t_vec::AbstractVector, name_selector)
+    mask = selector(t_vec)
+    mask isa AbstractVector{Bool} ||
+        throw(ArgumentError("selector_t_spectrum.$name_selector must return a boolean vector for t_vec input."))
+    length(mask) == length(t_vec) ||
+        throw(DimensionMismatch("selector_t_spectrum.$name_selector returned length $(length(mask)), expected $(length(t_vec))."))
+    any(mask) ||
+        throw(ArgumentError("selector_t_spectrum.$name_selector selected no time points."))
+    return mask
+end
+
 function anlz_trend_from_extr(
     t_vec::AbstractVector{<:Real},
     extr::AbstractVector{SoloExtract},
     freq_query::AbstractVector{<:Real};
-    selector_t_sidepeak::Function,
-    selector_t_envelope::Function,
+    selector_t_spectrum::NamedTuple=NamedTuple(),
+    selector_t_sidepeak::Union{Nothing,Function}=nothing,
+    selector_t_envelope::Union{Nothing,Function}=nothing,
     query_weight_kwargs::NamedTuple=NamedTuple(),
 )
-    mask_sel_sp = selector_t_sidepeak(t_vec)
-    t_vec_sel_sp = t_vec[mask_sel_sp]
-    mask_sel_nvlp = selector_t_envelope(t_vec)
-    t_vec_sel_nvlp = t_vec[mask_sel_nvlp]
+    selector_t_spectrum = normalize_selector_t_spectrum(
+        selector_t_spectrum;
+        selector_t_sidepeak,
+        selector_t_envelope,
+    )
+    mask_sel = Dict(
+        key => calc_selector_mask(selector_t_spectrum[key], t_vec, key)
+        for key in propertynames(selector_t_spectrum)
+    )
+    t_vec_sel = Dict(key => t_vec[mask] for (key, mask) in mask_sel)
 
-    query_weight_sel_sp = evo -> query_weight(evo, mask_sel_sp, t_vec, freq_query; query_weight_kwargs...)
-    query_weight_sel_nvlp = evo -> query_weight(evo, mask_sel_nvlp, t_vec, freq_query; query_weight_kwargs...)
+    query_weight_sel = key -> evo -> query_weight(evo, mask_sel[key], t_vec, freq_query; query_weight_kwargs...)
     evo_dens_sum = extr |> e -> map(t -> t.essentials.sum_dens_full, e)
     evo_fit_weight = extr |> e -> map(t -> t.sidepeak.params_tailess.weight, e)
     evo_fit_height = extr |> e -> map(t -> t.sidepeak.params_tailess.height, e)
@@ -100,22 +144,28 @@ function anlz_trend_from_extr(
     evo_moment_wavenum = extr |> e -> map(t -> t.sidepeak.moments.wavenum, e)
     evo_moment_width = extr |> e -> map(t -> t.sidepeak.moments.width, e)
 
-    ft_fit_weight = evo_fit_weight |> query_weight_sel_sp
-    ft_fit_height = evo_fit_height |> query_weight_sel_sp
-    ft_fit_wavenum = evo_fit_wavenum |> query_weight_sel_sp
-    ft_fit_width = evo_fit_width |> query_weight_sel_sp
-    ft_moment_weight = evo_moment_weight |> query_weight_sel_sp
-    ft_moment_height = evo_moment_height |> query_weight_sel_sp
-    ft_moment_wavenum = evo_moment_wavenum |> query_weight_sel_sp
-    ft_moment_width = evo_moment_width |> query_weight_sel_sp
-    ft_fit_size_x = evo_fit_size_x |> query_weight_sel_nvlp
-    ft_fit_size_y = evo_fit_size_y |> query_weight_sel_nvlp
-    ft_dens_sum = evo_dens_sum |> query_weight_sel_sp
+    ft_dens_sum = evo_dens_sum |> query_weight_sel(:number)
+    ft_fit_weight = evo_fit_weight |> query_weight_sel(:sp_weight)
+    ft_fit_height = evo_fit_height |> query_weight_sel(:sp_height)
+    ft_fit_wavenum = evo_fit_wavenum |> query_weight_sel(:sp_wavenum)
+    ft_fit_width = evo_fit_width |> query_weight_sel(:sp_width)
+    ft_moment_weight = evo_moment_weight |> query_weight_sel(:sp_weight)
+    ft_moment_height = evo_moment_height |> query_weight_sel(:sp_height)
+    ft_moment_wavenum = evo_moment_wavenum |> query_weight_sel(:sp_wavenum)
+    ft_moment_width = evo_moment_width |> query_weight_sel(:sp_width)
+    ft_fit_size_x = evo_fit_size_x |> query_weight_sel(:nvlp_size)
+    ft_fit_size_y = evo_fit_size_y |> query_weight_sel(:nvlp_size)
     return Dict(
         "t_vec" => t_vec,
-        "t_vec_sel_sp" => t_vec_sel_sp,
-        "t_vec_sel_nvlp" => t_vec_sel_nvlp,
-        "mask_sel" => mask_sel_sp,
+        "t_vec_sel_number" => t_vec_sel[:number],
+        "t_vec_sel_sp_weight" => t_vec_sel[:sp_weight],
+        "t_vec_sel_sp_height" => t_vec_sel[:sp_height],
+        "t_vec_sel_sp_width" => t_vec_sel[:sp_width],
+        "t_vec_sel_sp_wavenum" => t_vec_sel[:sp_wavenum],
+        "t_vec_sel_nvlp_size" => t_vec_sel[:nvlp_size],
+        "t_vec_sel_sp" => t_vec_sel[:sp_weight],
+        "t_vec_sel_nvlp" => t_vec_sel[:nvlp_size],
+        "mask_sel" => mask_sel[:sp_weight],
         "freq_query" => freq_query,
         "evol-all-dens-sum" => evo_dens_sum,
         "evol-all-fit-weight" => evo_fit_weight,

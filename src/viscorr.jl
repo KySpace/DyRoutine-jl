@@ -111,10 +111,10 @@ end
 function default_trend_property_specs()
     return [
         (
-            name="dens-sum",
+            name="number",
             ylabel="density sum",
             ylim=nothing,
-            selection_key="t_vec_sel_sp",
+            selection_key="t_vec_sel_number",
             overlay_evol_col=1,
             variants=[(name="dens-sum", evol_freq=("all", "sel"), color=:theme, label="sum", extra=false)],
         ),
@@ -122,7 +122,7 @@ function default_trend_property_specs()
             name="weight",
             ylabel="side peak \nweight",
             ylim=(-0.02, 0.17),
-            selection_key="t_vec_sel_sp",
+            selection_key="t_vec_sel_sp_weight",
             overlay_evol_col=1,
             variants=[
                 (name="fit-weight", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
@@ -133,7 +133,7 @@ function default_trend_property_specs()
             name="height",
             ylabel="side peak \nheight",
             ylim=(-0.1, 1.1),
-            selection_key="t_vec_sel_sp",
+            selection_key="t_vec_sel_sp_height",
             overlay_evol_col=1,
             variants=[
                 (name="fit-height", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
@@ -144,7 +144,7 @@ function default_trend_property_specs()
             name="width",
             ylabel="side peak \nwidth (μm⁻¹)",
             ylim=(0.02, 0.205),
-            selection_key="t_vec_sel_sp",
+            selection_key="t_vec_sel_sp_width",
             overlay_evol_col=1,
             variants=[
                 (name="fit-width", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
@@ -155,7 +155,7 @@ function default_trend_property_specs()
             name="wavenum",
             ylabel="side peak \nwavenum (μm⁻¹)",
             ylim=(0.22, 0.38),
-            selection_key="t_vec_sel_sp",
+            selection_key="t_vec_sel_sp_wavenum",
             overlay_evol_col=1,
             variants=[
                 (name="fit-wavenum", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
@@ -163,10 +163,10 @@ function default_trend_property_specs()
             ],
         ),
         (
-            name="sizes",
+            name="nvlp-size",
             ylabel="envelope size (μm)",
             ylim=(1, 8),
-            selection_key="t_vec_sel_nvlp",
+            selection_key="t_vec_sel_nvlp_size",
             overlay_evol_col=2,
             variants=[
                 (name="fit-size-x", evol_freq=("all", "sel"), color=:variant_low, label="fit size x", extra=false),
@@ -240,7 +240,7 @@ function set_panel_trend_sidepeak_nvlp!(gl::GridLayout, col::Int; extra=false, k
 end
 
 function set_panel_trend_nvlp!(gl::GridLayout; col::Int=1, row_cmpl::Int=0, extra=false)
-    spec = filter(s -> s.name == "sizes", default_trend_property_specs())
+    spec = filter(s -> s.name in ("nvlp-size", "sizes"), default_trend_property_specs())
     return set_panel_trend_properties!(gl, spec; col, row_cmpl, extra)
 end
 
@@ -482,6 +482,133 @@ function set_axis_trend_property_IB_istp!(
     return fig, axs_IB_istp
 end
 
+function set_axis_spectrum_property_IB_istp!(
+    val_IB::AbstractVector,
+    val_istp::AbstractVector,
+    spec,
+    title::AbstractString;
+    groups::Tuple=(:stacked, :all),
+    width::Real=360,
+    height::Real=180,
+)
+    isempty(val_IB) && throw(ArgumentError("val_IB must not be empty"))
+    isempty(val_istp) && throw(ArgumentError("val_istp must not be empty"))
+    isempty(spec.variants) && throw(ArgumentError("spec $(spec.name) must contain at least one variant"))
+    valid_groups = (:stacked, :all)
+    all(group -> group in valid_groups, groups) ||
+        throw(ArgumentError("spectrum groups must contain only $valid_groups, got $groups"))
+    length(unique(groups)) == length(groups) ||
+        throw(ArgumentError("spectrum groups must not contain duplicates, got $groups"))
+
+    fig = Figure()
+    fig[0, 1:length(val_istp)] = Label(fig, title; tellwidth=false, tellheight=true, halign=:left, valign=:top)
+    axs_istp = Dict{Any,Dict{Symbol,Vector{Axis}}}()
+    for (idx_istp, istp) in enumerate(val_istp)
+        gl_istp = GridLayout()
+        fig[1, idx_istp] = gl_istp
+        Label(
+            gl_istp[0, 1:length(groups)],
+            "istp=$istp";
+            tellwidth=false,
+            tellheight=true,
+            halign=:center,
+            valign=:bottom,
+        )
+        for (idx_group, group) in enumerate(groups)
+            label = group == :stacked ? "Processed after stacked" : "Mean of rep spectra"
+            Label(
+                gl_istp[1, idx_group],
+                label;
+                tellwidth=false,
+                tellheight=true,
+                halign=:center,
+                valign=:bottom,
+            )
+        end
+
+        axs_group = Dict{Symbol,Vector{Axis}}()
+        for (idx_group, group) in enumerate(groups)
+            axs_variant = Axis[]
+            for (idx_variant, variant) in enumerate(spec.variants)
+                ax = Axis(
+                    gl_istp[idx_variant+1, idx_group];
+                    width,
+                    height,
+                    xlabel="IB (A)",
+                    ylabel=idx_group == 1 ? variant.label : "",
+                )
+                if idx_variant < length(spec.variants)
+                    hidexdecorations!(ax; label=true, ticklabels=true, ticks=false, grid=false, minorticks=false, minorgrid=false)
+                end
+                if idx_group > 1
+                    hideydecorations!(ax; label=true, ticklabels=false, ticks=false, grid=false, minorticks=false, minorgrid=false)
+                end
+                push!(axs_variant, ax)
+                rowsize!(gl_istp, idx_variant + 1, Fixed(height))
+            end
+            axs_group[group] = axs_variant
+            colsize!(gl_istp, idx_group, Fixed(width))
+        end
+        rowgap!(gl_istp, 4)
+        colgap!(gl_istp, 8)
+        axs_istp[istp] = axs_group
+    end
+    rowgap!(fig.layout, 4)
+    colgap!(fig.layout, 32)
+    return fig, axs_istp
+end
+
+function calc_freq_IB_matrix(
+    trends::AbstractMatrix{<:AbstractDict},
+    variant;
+    freq_kind::AbstractString="sel",
+)
+    key_freq = "freq-$freq_kind-$(variant.name)"
+    return [
+        begin
+            haskey(trends[c, i], key_freq) || throw(KeyError(key_freq))
+            trends[c, i][key_freq]
+        end
+        for c in axes(trends, 1), i in axes(trends, 2)
+    ] |> stack
+end
+
+function plot_spectrum_property_IB_istp!(
+    axs_istp::AbstractDict,
+    trends_by_group::NamedTuple,
+    val_IB::AbstractVector,
+    val_istp::AbstractVector,
+    spec;
+    freq_kind::AbstractString="sel",
+    colorrange=(0.3, 1.0),
+)
+    for (idx_istp, istp) in enumerate(val_istp)
+        hue_theme = hue_theme_istp[istp]
+        clrmap = gen_clrmap_solo(hue_theme)
+        for (group, axs_variant) in axs_istp[istp]
+            trends = trends_by_group[group]
+            size(trends, 1) == length(val_IB) ||
+                throw(DimensionMismatch("group $group has $(size(trends, 1)) IB rows, expected $(length(val_IB))"))
+            size(trends, 2) == length(val_istp) ||
+                throw(DimensionMismatch("group $group has $(size(trends, 2)) istp columns, expected $(length(val_istp))"))
+            for (idx_variant, variant) in enumerate(spec.variants)
+                ax = axs_variant[idx_variant]
+                mat_freq_IB_istp = calc_freq_IB_matrix(trends, variant; freq_kind)
+                freq_query = trends[1, idx_istp]["freq_query"]
+                heatmap!(
+                    ax,
+                    val_IB,
+                    freq_query,
+                    mat_freq_IB_istp[:, :, idx_istp]';
+                    colormap=clrmap,
+                    colorrange,
+                )
+            end
+        end
+    end
+    return nothing
+end
+
 function plot_trends_sidepeak!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1.0, is_stacked=false, to_legend=false, to_overlay=false)
     hue_theme = hue_theme_istp[istp]
     clr_mmt = Oklch(0.52, 0.14, hue_theme)
@@ -491,10 +618,11 @@ function plot_trends_sidepeak!(axs::Dict, trend::Dict, istp; to_clean=false, alp
     axs_sidepeaks_evol = axs |> a -> matching_axes(a, r"(evol(-extra)?)-(weight|width|height|wavenum)")
     axs_sidepeaks_freq = axs |> a -> matching_axes(a, r"freq-(weight|width|height|wavenum)")
     if to_clean
-        axs |> a -> matching_axes(a, r"(freq|(evol(-extra)?))-(dens-sum|weight|width|height|wavenum)") |> clear_axes!
+        axs |> a -> matching_axes(a, r"(freq|(evol(-extra)?))-(number|dens-sum|weight|width|height|wavenum)") |> clear_axes!
         plot_shade_range!(axs_sidepeaks_evol, trend["t_vec_sel_sp"], clr_shade_selected)
     end
-    lines!(axs["evol-dens-sum"], trend["t_vec"], trend["evol-all-dens-sum"]; color=(clr_theme, alpha), label="sum")
+    key_number_evol = haskey(axs, "evol-number") ? "evol-number" : "evol-dens-sum"
+    lines!(axs[key_number_evol], trend["t_vec"], trend["evol-all-dens-sum"]; color=(clr_theme, alpha), label="sum")
     lines!(axs["evol-weight"], trend["t_vec"], trend["evol-all-fit-weight"]; color=(clr_fit, alpha), label="fit")
     lines!(axs["evol-height"], trend["t_vec"], trend["evol-all-fit-height"]; color=(clr_fit, alpha), label="fit")
     lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-fit-width"]; color=(clr_fit, alpha), label="fit")
@@ -523,7 +651,7 @@ function plot_trends_sidepeak!(axs::Dict, trend::Dict, istp; to_clean=false, alp
     ylims!(axs["evol-width"], 0.02, 0.205)
     ylims!(axs["evol-wavenum"], 0.22, 0.38)
     if to_legend
-        axislegend(axs["evol-dens-sum"]; position=:rt, framevisible=false, labelsize=14)
+        axislegend(axs[key_number_evol]; position=:rt, framevisible=false, labelsize=14)
         axislegend(axs["freq-weight"]; position=:lt, framevisible=false, labelsize=14)
     end
     if to_overlay
@@ -540,17 +668,18 @@ function plot_trends_nvlp!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1
     clr_shade_selected = RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2)
     clr_theme1 = Oklch(0.52, 0.14, hue_theme - 20)
     clr_theme2 = Oklch(0.52, 0.14, hue_theme + 20)
+    key_nvlp = haskey(axs, "evol-nvlp-size") ? "nvlp-size" : "sizes"
     if to_clean
-        axs |> a -> matching_axes(a, r"(freq|evol)-(sizes)") |> clear_axes!
-        plot_shade_range!([axs["evol-sizes"]], trend["t_vec_sel_nvlp"], clr_shade_selected)
+        axs |> a -> matching_axes(a, r"(freq|evol)-(nvlp-size|sizes)") |> clear_axes!
+        plot_shade_range!([axs["evol-$key_nvlp"]], trend["t_vec_sel_nvlp"], clr_shade_selected)
     end
-    lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-x"]; color=(clr_theme1, alpha), label="fit")
-    lines!(axs["evol-sizes"], trend["t_vec"], trend["evol-all-fit-size-y"]; color=(clr_theme2, alpha), label="fit")
-    lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-x"]; color=(clr_theme1, alpha), label="fit size x")
-    lines!(axs["freq-sizes"], trend["freq_query"], trend["freq-sel-fit-size-y"]; color=(clr_theme2, alpha), label="fit size y")
-    ylims!(axs["evol-sizes"], 1, 11)
+    lines!(axs["evol-$key_nvlp"], trend["t_vec"], trend["evol-all-fit-size-x"]; color=(clr_theme1, alpha), label="fit")
+    lines!(axs["evol-$key_nvlp"], trend["t_vec"], trend["evol-all-fit-size-y"]; color=(clr_theme2, alpha), label="fit")
+    lines!(axs["freq-$key_nvlp"], trend["freq_query"], trend["freq-sel-fit-size-x"]; color=(clr_theme1, alpha), label="fit size x")
+    lines!(axs["freq-$key_nvlp"], trend["freq_query"], trend["freq-sel-fit-size-y"]; color=(clr_theme2, alpha), label="fit size y")
+    ylims!(axs["evol-$key_nvlp"], 1, 11)
     if to_legend
-        axislegend(axs["freq-sizes"]; position=:lt, framevisible=false, labelsize=14)
+        axislegend(axs["freq-$key_nvlp"]; position=:lt, framevisible=false, labelsize=14)
     end
 end
 
@@ -611,8 +740,8 @@ end
 
 function plot_trend_nvlp!(axs_trend::Dict, trend_reps::AbstractVector, trend_stacked_over_rep::Dict, istp)
     function set_tick_grid!(axs)
-        axs_sidepeaks_evol = axs |> a -> matching_axes(a, r"(evol(-extra)?)-(weight|width|height|wavenum|dens-sum|sizes)")
-        axs_sidepeaks_freq = axs |> a -> matching_axes(a, r"freq-(weight|width|height|wavenum|dens-sum|sizes)")
+        axs_sidepeaks_evol = axs |> a -> matching_axes(a, r"(evol(-extra)?)-(weight|width|height|wavenum|number|dens-sum|nvlp-size|sizes)")
+        axs_sidepeaks_freq = axs |> a -> matching_axes(a, r"freq-(weight|width|height|wavenum|number|dens-sum|nvlp-size|sizes)")
         for ax in axs_sidepeaks_evol
             ax.xticks = 0:50:200
             ax.xminorticksvisible = true

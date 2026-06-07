@@ -76,7 +76,7 @@ runinfos = runinfos_grouped
 # runinfos = runinfos_separated
 
 # ids_runinfo = eachindex(runinfos)
-ids_runinfo = 1:2
+ids_runinfo = 1:1
 sel_vars = NamedTuple()
 # sel_vars = (; t_hold=t -> 0 .<= t .<= 30)
 # sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 80)
@@ -116,8 +116,14 @@ proc_sidepeak = true
 proc_envelope = true
 selector_moment = y -> (y .> 0.10) .& (y .< 0.50)
 selector_sidepeak = y -> (y .> 0.1) .& (y .< 0.5)
-selector_t_sidepeak = t -> 0 .< t .< 80
-selector_t_envelope = t -> 0 .< t .< 80
+selector_t_spectrum = (;
+    number=t -> 0 .< t .< 80,
+    sp_weight=t -> 0 .< t .< 80,
+    sp_height=t -> 0 .< t .< 80,
+    sp_width=t -> 0 .< t .< 80,
+    sp_wavenum=t -> 0 .< t .< 80,
+    nvlp_size=t -> 0 .< t .< 80,
+)
 selector_t_pca = t -> 20 .< t .< 80
 selector_tail_stack = y -> y .> 0.02
 filter_core_pca = im -> imfilter(im, Kernel.gaussian(1.5))
@@ -127,10 +133,77 @@ fit_tailess_kwargs = NamedTuple()
 fit_asymm_kwargs = NamedTuple()
 fit_round_kwargs = NamedTuple()
 query_weight_kwargs = NamedTuple()
-trend_property_specs = default_trend_property_specs()
+trend_property_specs = [
+    (
+        name="number",
+        ylabel="density sum",
+        ylim=nothing,
+        selection_key="t_vec_sel_number",
+        overlay_evol_col=1,
+        variants=[(name="dens-sum", evol_freq=("all", "sel"), color=:theme, label="sum", extra=false)],
+    ),
+    (
+        name="weight",
+        ylabel="side peak \nweight",
+        ylim=(-0.02, 0.17),
+        selection_key="t_vec_sel_sp_weight",
+        overlay_evol_col=1,
+        variants=[
+            (name="fit-weight", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
+            (name="moment-weight", evol_freq=("all", "sel"), color=:moment, label="moment", extra=true),
+        ],
+    ),
+    (
+        name="height",
+        ylabel="side peak \nheight",
+        ylim=(-0.1, 1.1),
+        selection_key="t_vec_sel_sp_height",
+        overlay_evol_col=1,
+        variants=[
+            (name="fit-height", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
+            (name="moment-height", evol_freq=("all", "sel"), color=:moment, label="moment", extra=true),
+        ],
+    ),
+    (
+        name="width",
+        ylabel="side peak \nwidth (um^-1)",
+        ylim=(0.02, 0.205),
+        selection_key="t_vec_sel_sp_width",
+        overlay_evol_col=1,
+        variants=[
+            (name="fit-width", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
+            (name="moment-width", evol_freq=("all", "sel"), color=:moment, label="moment", extra=true),
+        ],
+    ),
+    (
+        name="wavenum",
+        ylabel="side peak \nwavenum (um^-1)",
+        ylim=(0.22, 0.38),
+        selection_key="t_vec_sel_sp_wavenum",
+        overlay_evol_col=1,
+        variants=[
+            (name="fit-wavenum", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
+            (name="moment-wavenum", evol_freq=("all", "sel"), color=:moment, label="moment", extra=true),
+        ],
+    ),
+    (
+        name="nvlp-size",
+        ylabel="envelope size (um)",
+        ylim=(1, 8),
+        selection_key="t_vec_sel_nvlp_size",
+        overlay_evol_col=2,
+        variants=[
+            (name="fit-size-x", evol_freq=("all", "sel"), color=:variant_low, label="fit size x", extra=false),
+            (name="fit-size-y", evol_freq=("all", "sel"), color=:variant_high, label="fit size y", extra=false),
+        ],
+    ),
+]
 trend_panel_per_IB_kwargs = (width_evol=400, width_freq=400, height=200)
 trend_panel_per_prop_kwargs = (width_evol=400, width_freq=400, height=120)
 trend_all_IB_groups = (:stacked, :all)
+trend_spectrum_IB_groups = (:stacked, :all)
+trend_spectrum_IB_kwargs = (width=360, height=180)
+trend_spectrum_IB_plot_kwargs = (colorrange=(0.3, 1.00),)
 
 ##
 
