@@ -1,9 +1,19 @@
 using MultivariateStats: PCA, fit, predict, projection
 using Statistics: mean
+using Peaks
 
 struct ModeWeight{TProfile<:AbstractArray,TWeight<:AbstractArray}
     profile::TProfile
     weight::TWeight
+end
+
+function get_spectrum_peaks(freq, spct; min_prom=0.2)
+    pks = spct |> findmaxima |> peakproms!(; min=min_prom) |> peakwidths!
+    height_max = sum(pks.heights)
+    pks_record = map(
+        (idx, height) -> (freq=freq[idx], value=height, value_reduced=height / height_max), pks.indices, pks.heights
+    ) |> p -> sort(p; by=x -> x.value_reduced, rev=true)
+    return pks_record
 end
 
 function build_pca_matrix(samples::AbstractArray)

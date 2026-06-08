@@ -88,7 +88,7 @@ function gen_clrmap_posneg_nonlin(hue_pos, hue_neg; thres_alpha=0.6, alpha_base=
     ]
 end
 
-function plot_mode_evol_spct_duet!(axs::Dict{String}, mode::ModeWeight, spectral::NamedTuple, val_istp; step_posi::Real=1, smwh=(0, 0))
+function plot_mode_evol_spct_duet!(axs::Dict{String}, mode::ModeWeight, spectral::NamedTuple, rcrd_pks, val_istp; step_posi::Real=1, smwh=(0, 0))
     step_modl = 1 ./ (2 .* smwh .* step_posi)
     x_vec, y_vec = smwh |> s -> map(u -> (-u:1:u), s)
     x_posi, y_posi = (x_vec, y_vec) .* step_posi
@@ -104,26 +104,40 @@ function plot_mode_evol_spct_duet!(axs::Dict{String}, mode::ModeWeight, spectral
     t_span_lim = val_t[mask_evol] |> t -> (minimum(t) - step_t / 2, maximum(t) + step_t / 2)
     for i in 1:2
         clrmap_modl = gen_clrmap_solo(hue_theme_istp[val_istp[i]]; thres_alpha=0.6, alpha_base=0.2)
-        ax = axs["mode"][i]
-        hm = heatmap!(ax, x_posi, y_posi, mode.profile[i]'; colormap=clrmap, colorrange=(-c, c))
+        ax_dens = axs["mode"][i]
+        hm = heatmap!(ax_dens, x_posi, y_posi, mode.profile[i]'; colormap=clrmap, colorrange=(-c, c))
         # translate!(hm, 0, 0, -100)
-        ax.aspect = DataAspect()
-        ax |> ax -> hidedecorations!(ax, ticks=false, label=true, grid=false, minorgrid=false)
-        ax.yticks = -10:5:10
-        ax.yminorticks = IntervalsBetween(5)
-        ax.yminorgridvisible = true
-        ax.ygridcolor = clr_grid
-        ax.yminorgridcolor = clr_grid
-        ax = axs["modl"][i]
+        ax_dens.aspect = DataAspect()
+        ax_dens |> ax -> hidedecorations!(ax, ticks=false, label=true, grid=false, minorgrid=false)
+        ax_dens.yticks = -10:5:10
+        ax_dens.yminorticks = IntervalsBetween(5)
+        ax_dens.yminorgridvisible = true
+        ax_dens.ygridcolor = clr_grid
+        ax_dens.yminorgridcolor = clr_grid
+        ax_modl = axs["modl"][i]
         modl = mode.profile[i] |> d -> d .* gen_win_hann_2d(smwh) |> fft |> fftshift |> c -> abs2.(c)
-        hm = heatmap!(ax, x_modl, y_modl, modl'; colormap=clrmap_modl)
-        ylims!(ax, (0, 0.6))
-        xlims!(ax, (-0.5, 0.5))
-        ax |> ax -> hidedecorations!(ax, ticks=false, label=true, grid=false)
-        ax.ygridvisible = true
-        ax.xgridvisible = true
-        ax.yticks = 0:0.1:0.6
-        ax.ygridcolor = clr_grid
+        hm = heatmap!(ax_modl, x_modl, y_modl, modl'; colormap=clrmap_modl)
+        ylims!(ax_modl, (0, 0.6))
+        xlims!(ax_modl, (-0.5, 0.5))
+        ax_modl |> ax -> hidedecorations!(ax, ticks=false, label=false, grid=false)
+        ax_modl.ygridvisible = true
+        ax_modl.xgridvisible = true
+        ax_modl.yticks = 0:0.1:0.6
+        ax_modl.ygridcolor = clr_grid
+        if i == 1
+            ax_dens.yticklabelsvisible = true
+            ax_modl.yticklabelsvisible = true
+            ax_dens.ylabelvisible = true
+            ax_modl.ylabelvisible = true
+            ax_dens.ylabel = "x (μm)"
+            ax_modl.ylabel = rich("k", subscript("y"), " (μm⁻¹)")
+        end
+        ax_modl.xlabel = val_istp[i]
+    end
+    for pk in rcrd_pks
+        scatter!(axs["spct"], pk.freq, pk.value; color=(:darkorchid4, 1))
+        str_val_rel = @sprintf("%.2f", pk.value_reduced) |> s -> replace(s, r"^0" => "")
+        text!(axs["spct"], pk.freq, pk.value; text=@sprintf("%.0f Hz \n%s", pk.freq, str_val_rel), color=(:darkorchid4, 1), fontsize=14, align=(:left, :bottom))
     end
     vspan!(axs["evol"], t_span_lim...; color=RGBAf(Oklch(0.4, 0.01, 240), 0.04))
     for rep = 1:n_rep
@@ -132,11 +146,14 @@ function plot_mode_evol_spct_duet!(axs::Dict{String}, mode::ModeWeight, spectral
         lines!(axs["spct"], freq_query, spectra_reps_mask[rep]; color=clr)
     end
     lines!(axs["evol"], val_t, evol_weight_mean; color=(:black, 1))
-    lines!(axs["spct"], freq_query, spct_mean_full; color=(:black, 0.5))
+    lines!(axs["spct"], freq_query, spct_mean_full; color=(:black, 0.5), linestyle=:dash)
     lines!(axs["spct"], freq_query, spct_mean_mask; color=(:black, 1.0))
     for ax in [axs["evol"], axs["spct"]]
         ax.yticklabelspace = 40.0
     end
+    axs["evol"].xlabel = "time (ms)"
+    axs["spct"].xlabel = "frequency (Hz)"
+    ylims!(axs["spct"], (-0.05, 1.15))
 end
 
 function plot_mode_evol_freq_solo!(axs::Dict{String,Axis}, mode::ModeWeight, val_t::AbstractVector)
