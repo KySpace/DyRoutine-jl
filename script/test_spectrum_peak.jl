@@ -18,7 +18,7 @@ title_anlz = "[06.08].64.PCATests.[t=0-100ms]"
 
 path_pca = joinpath(path_root, "AnlzRoutine", title_anlz, "PCA modes")
 path_pca_data = joinpath(path_root, "AnlzRoutine", title_anlz, "CFNM_pca_modes.jld2")
-@load path_pca_data modes_pca_dens2d runinfo val_vars n_pca_modes freq_query_pca px_in_um smwh_core 
+@load path_pca_data modes_pca_dens2d runinfo val_vars n_pca_modes freq_query_pca px_in_um smwh_core pca_spectra
 selector_t_pca = t -> 20 .< t .< 80
 
 tag = "CFNM"
