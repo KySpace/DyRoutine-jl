@@ -18,7 +18,7 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 path_runner = @__FILE__
 path_anlz_excitation = joinpath(@__DIR__, "anlz_excitation.jl")
 # commit 27852b8c472628062235279abcf694530cb46dd1
-title_anlz = "[06.08].64.PCATests.[t=0-100ms]"
+title_anlz = "[06.08].65.FullTime.AdjustedB"
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
@@ -33,8 +33,8 @@ runinfos_grouped = [
             ("0325", 82),
             ("0325", 52),
             ("0325", 80),
-            ("0325", 96),
             ("0325", 67),
+            ("0325", 96),
             ("0325", 68),
             ("0325", 50),
             ("0325", 81),
@@ -43,7 +43,7 @@ runinfos_grouped = [
             ("0325", 53),
         ],
         vars=(
-            IB=[5.311, 5.313, 5.316, 5.318, 5.321, 5.322, 5.328, 5.328, 5.332, 5.333, 5.336, 5.338],
+            IB=[5.311, 5.313, 5.316, 5.318, 5.322, 5.325, 5.326, 5.328, 5.332, 5.333, 5.336, 5.338],
             rep=1:3,
             t_hold=6:2:200,
             istp,
@@ -76,9 +76,9 @@ runinfos = runinfos_grouped
 # runinfos = runinfos_separated
 
 # ids_runinfo = eachindex(runinfos)
-ids_runinfo = 1:1
-# sel_vars = NamedTuple()
-sel_vars = (; t_hold=t -> 0 .<= t .<= 100)
+ids_runinfo = 1:2
+sel_vars = NamedTuple()
+# sel_vars = (; t_hold=t -> 0 .<= t .<= 100)
 # sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 80)
 
 
