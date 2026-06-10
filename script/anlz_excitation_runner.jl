@@ -18,7 +18,7 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 path_runner = @__FILE__
 path_anlz_excitation = joinpath(@__DIR__, "anlz_excitation.jl")
 # commit 27852b8c472628062235279abcf694530cb46dd1
-title_anlz = "[06.08].66.SelT"
+title_anlz = "[06.08].67.LimTimeRange.CFNM"
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
@@ -77,8 +77,8 @@ runinfos = runinfos_grouped
 
 # ids_runinfo = eachindex(runinfos)
 ids_runinfo = 1:1
-sel_vars = NamedTuple()
-# sel_vars = (; t_hold=t -> 0 .<= t .<= 100)
+# sel_vars = NamedTuple()
+sel_vars = (; t_hold=t -> 0 .<= t .<= 80)
 # sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 80)
 
 
@@ -117,12 +117,12 @@ proc_envelope = true
 selector_moment = y -> (y .> 0.10) .& (y .< 0.50)
 selector_sidepeak = y -> (y .> 0.1) .& (y .< 0.5)
 selector_t_spectrum = (;
-    number=t -> 0 .< t .< 80,
+    number=t -> 0 .< t .< 120,
     sp_weight=t -> 0 .< t .< 80,
     sp_height=t -> 0 .< t .< 80,
-    sp_width=t -> 0 .< t .< 80,
-    sp_wavenum=t -> 0 .< t .< 80,
-    nvlp_size=t -> 0 .< t .< 80,
+    sp_width=t -> 0 .< t .< 40,
+    sp_wavenum=t -> 0 .< t .< 60,
+    nvlp_size=t -> 0 .< t .< 60,
 )
 selector_t_pca = t -> 20 .< t .< 80
 selector_tail_stack = y -> y .> 0.02

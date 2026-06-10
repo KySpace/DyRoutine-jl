@@ -240,28 +240,28 @@ for (c, IB) in enumerate(val_vars.IB)
     tag_IB = gen_run_tag(get_bind_runinfo(runinfo, val_vars, c))
     runinfo_plot = get_bind_runinfo(runinfo, val_vars, c)
 
-    # local t_stage = log_step("building trend figures for $tag_IB")
-    # panel_setter = (gl, col; extra=false) -> set_panel_trend_properties!(
-    #     gl,
-    #     trend_property_specs;
-    #     col,
-    #     extra,
-    #     trend_panel_per_IB_kwargs...,
-    # )
-    # fig_trend, axs_trend = set_axis_sidepeak_nvlp!(n_dim_vars_per_IB, panel_setter, runinfo_plot)
-    # log_done("built trend figures for $tag_IB", t_stage)
-    # for i in 1:n_istp
-    #     val_istp = val_vars.istp[i]
-    #     t_plot_stage = log_step("plotting and saving trends for $tag_IB istp=$val_istp")
-    #     trend_reps = trend_sidepeak_nvlp[c, :, i]
-    #     trend_stacked = trend_extr_stacked_over_rep[c, i]
-    #     plot_trend_all!(axs_trend, trend_reps, trend_stacked, val_istp; property_specs=trend_property_specs)
-    #     resize_to_layout!(fig_trend)
-    #     for format in ["pdf", "png"]
-    #         fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.%s", tag_IB, val_istp, format)), f; backend=CairoMakie)
-    #     end
-    #     log_done("saved trends for $tag_IB istp=$val_istp", t_plot_stage)
-    # end
+    local t_stage = log_step("building trend figures for $tag_IB")
+    panel_setter = (gl, col; extra=false) -> set_panel_trend_properties!(
+        gl,
+        trend_property_specs;
+        col,
+        extra,
+        trend_panel_per_IB_kwargs...,
+    )
+    fig_trend, axs_trend = set_axis_sidepeak_nvlp!(n_dim_vars_per_IB, panel_setter, runinfo_plot)
+    log_done("built trend figures for $tag_IB", t_stage)
+    for i in 1:n_istp
+        val_istp = val_vars.istp[i]
+        t_plot_stage = log_step("plotting and saving trends for $tag_IB istp=$val_istp")
+        trend_reps = trend_sidepeak_nvlp[c, :, i]
+        trend_stacked = trend_extr_stacked_over_rep[c, i]
+        plot_trend_all!(axs_trend, trend_reps, trend_stacked, val_istp; property_specs=trend_property_specs)
+        resize_to_layout!(fig_trend)
+        for format in ["pdf", "png"]
+            fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.%s", tag_IB, val_istp, format)), f; backend=CairoMakie)
+        end
+        log_done("saved trends for $tag_IB istp=$val_istp", t_plot_stage)
+    end
     t_stage = log_step("building and saving PCA figure for $tag_IB")
     path_pca = joinpath(path_output, "PCA modes", tag_IB)
     isdir(path_pca) || mkpath(path_pca)

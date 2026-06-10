@@ -300,7 +300,7 @@ end
 function set_trend_tick_grid!(axs::AbstractDict)
     for (key, ax) in axs
         if startswith(key, "evol-")
-            ax.xticks = 0:50:200
+            ax.xticks = 0:10:200
             ax.xminorticksvisible = true
             ax.xminorgridvisible = true
             ax.xminorticks = IntervalsBetween(5)
@@ -743,7 +743,7 @@ function plot_trend_nvlp!(axs_trend::Dict, trend_reps::AbstractVector, trend_sta
         axs_sidepeaks_evol = axs |> a -> matching_axes(a, r"(evol(-extra)?)-(weight|width|height|wavenum|number|dens-sum|nvlp-size|sizes)")
         axs_sidepeaks_freq = axs |> a -> matching_axes(a, r"freq-(weight|width|height|wavenum|number|dens-sum|nvlp-size|sizes)")
         for ax in axs_sidepeaks_evol
-            ax.xticks = 0:50:200
+            ax.xticks = 0:10:200
             ax.xminorticksvisible = true
             ax.xminorgridvisible = true
             ax.xminorticks = IntervalsBetween(5)
