@@ -11,7 +11,7 @@ for t_min in 0:10:100, t_max in 20:20:240
         sp_height=selector_t_common,
         sp_width=selector_t_common,
         sp_wavenum=selector_t_common,
-        nvlp_size=selector_t_common,
+        nvlp=selector_t_common,
     )
     t_stage = log_step("analyzing per-shot trends")
     trend_sidepeak_nvlp = [

@@ -315,14 +315,6 @@ end
 # fig_trend |> display
 #
 
-# fig_nvlp, axs_nvlp = set_axes_2axes!(runinfo.vars |> NamedTuple{(:IB, :istp)}, set_panel_trend_nvlp!, runinfo)
-# for (c, IB) in enumerate(val_vars.IB), (i, istp_iter) in enumerate(val_vars.istp)
-#     trend = trend_stacked_over_rep[c, i]
-#     plot_trends_nvlp!(axs_nvlp[c, i], trend, istp_iter; to_clean=true)
-# end
-# fig_nvlp |> resize_to_layout!
-# fig_nvlp |> f -> save(joinpath(path_output, @sprintf("%s_nvlp_trend.pdf", tag)), f; backend=CairoMakie)
-
 ## Large file generation for all shots
 
 # fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars_per_IB, set_panel_solo_essn_2d!)

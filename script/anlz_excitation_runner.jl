@@ -17,8 +17,8 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
 path_runner = @__FILE__
 path_anlz_excitation = joinpath(@__DIR__, "anlz_excitation.jl")
-# commit 27852b8c472628062235279abcf694530cb46dd1
-title_anlz = "[06.08].67.LimTimeRange.CFNM"
+# commit 75523c60a103bbfc0654a8af7edc5339ecee054d
+title_anlz = "[06.08].70.LimTimeRange.Cent.NTRC"
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
@@ -76,7 +76,7 @@ runinfos = runinfos_grouped
 # runinfos = runinfos_separated
 
 # ids_runinfo = eachindex(runinfos)
-ids_runinfo = 1:1
+ids_runinfo = 2:2
 # sel_vars = NamedTuple()
 sel_vars = (; t_hold=t -> 0 .<= t .<= 80)
 # sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 80)
@@ -118,11 +118,11 @@ selector_moment = y -> (y .> 0.10) .& (y .< 0.50)
 selector_sidepeak = y -> (y .> 0.1) .& (y .< 0.5)
 selector_t_spectrum = (;
     number=t -> 0 .< t .< 120,
-    sp_weight=t -> 0 .< t .< 80,
-    sp_height=t -> 0 .< t .< 80,
-    sp_width=t -> 0 .< t .< 40,
-    sp_wavenum=t -> 0 .< t .< 60,
-    nvlp_size=t -> 0 .< t .< 60,
+    sp_weight=t -> 0 .< t .< 40,
+    sp_height=t -> 0 .< t .< 40,
+    sp_width=t -> 0 .< t .< 60,
+    sp_wavenum=t -> 0 .< t .< 40,
+    nvlp=t -> 0 .< t .< 60,
 )
 selector_t_pca = t -> 20 .< t .< 80
 selector_tail_stack = y -> y .> 0.02
@@ -188,13 +188,24 @@ trend_property_specs = [
     ),
     (
         name="nvlp-size",
-        ylabel="envelope size (um)",
+        ylabel="envelope size (μm)",
         ylim=(1, 8),
         selection_key="t_vec_sel_nvlp_size",
         overlay_evol_col=2,
         variants=[
-            (name="fit-size-x", evol_freq=("all", "sel"), color=:variant_low, label="fit size x", extra=false),
-            (name="fit-size-y", evol_freq=("all", "sel"), color=:variant_high, label="fit size y", extra=false),
+            (name="fit-size-x", evol_freq=("all", "sel"), color=:variant_low, label="fit size radial", extra=false),
+            (name="fit-size-y", evol_freq=("all", "sel"), color=:variant_high, label="fit size axial", extra=false),
+        ],
+    ),
+    (
+        name="nvlp-center",
+        ylabel="envelope center (μm)",
+        ylim=(-10, 10),
+        selection_key="t_vec_sel_nvlp_cent",
+        overlay_evol_col=2,
+        variants=[
+            (name="fit-cent-x", evol_freq=("all", "sel"), color=:variant_low, label="fit cent radial", extra=false),
+            (name="fit-cent-y", evol_freq=("all", "sel"), color=:variant_high, label="fit cent axial", extra=false),
         ],
     ),
 ]

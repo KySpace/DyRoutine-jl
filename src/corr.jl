@@ -93,7 +93,7 @@ function default_selector_t_spectrum(;
         sp_height=selector_t_sidepeak,
         sp_width=selector_t_sidepeak,
         sp_wavenum=selector_t_sidepeak,
-        nvlp_size=selector_t_envelope,
+        nvlp=selector_t_envelope,
     )
 end
 
@@ -149,6 +149,8 @@ function anlz_trend_from_extr(
     evo_fit_width = extr |> e -> map(t -> t.sidepeak.params_tailess.width, e)
     evo_fit_size_x = extr |> e -> map(t -> t.envelope.params_asymm.size[1], e)
     evo_fit_size_y = extr |> e -> map(t -> t.envelope.params_asymm.size[2], e)
+    evo_fit_cent_x = extr |> e -> map(t -> t.envelope.params_asymm.cent[1], e)
+    evo_fit_cent_y = extr |> e -> map(t -> t.envelope.params_asymm.cent[2], e)
     evo_moment_weight = extr |> e -> map(t -> t.sidepeak.moments.weight, e)
     evo_moment_height = extr |> e -> map(t -> t.sidepeak.moments.height, e)
     evo_moment_wavenum = extr |> e -> map(t -> t.sidepeak.moments.wavenum, e)
@@ -163,8 +165,10 @@ function anlz_trend_from_extr(
     ft_moment_height = evo_moment_height |> query_weight_sel(:sp_height)
     ft_moment_wavenum = evo_moment_wavenum |> query_weight_sel(:sp_wavenum)
     ft_moment_width = evo_moment_width |> query_weight_sel(:sp_width)
-    ft_fit_size_x = evo_fit_size_x |> query_weight_sel(:nvlp_size)
-    ft_fit_size_y = evo_fit_size_y |> query_weight_sel(:nvlp_size)
+    ft_fit_size_x = evo_fit_size_x |> query_weight_sel(:nvlp)
+    ft_fit_size_y = evo_fit_size_y |> query_weight_sel(:nvlp)
+    ft_fit_cent_x = evo_fit_cent_x |> query_weight_sel(:nvlp)
+    ft_fit_cent_y = evo_fit_cent_y |> query_weight_sel(:nvlp)
     return Dict(
         "t_vec" => t_vec,
         "t_vec_sel_number" => t_vec_sel[:number],
@@ -172,9 +176,10 @@ function anlz_trend_from_extr(
         "t_vec_sel_sp_height" => t_vec_sel[:sp_height],
         "t_vec_sel_sp_width" => t_vec_sel[:sp_width],
         "t_vec_sel_sp_wavenum" => t_vec_sel[:sp_wavenum],
-        "t_vec_sel_nvlp_size" => t_vec_sel[:nvlp_size],
+        "t_vec_sel_nvlp_size" => t_vec_sel[:nvlp],
+        "t_vec_sel_nvlp_cent" => t_vec_sel[:nvlp],
         "t_vec_sel_sp" => t_vec_sel[:sp_weight],
-        "t_vec_sel_nvlp" => t_vec_sel[:nvlp_size],
+        "t_vec_sel_nvlp" => t_vec_sel[:nvlp],
         "mask_sel" => mask_sel[:sp_weight],
         "freq_query" => freq_query,
         "evol-all-dens-sum" => evo_dens_sum,
@@ -188,6 +193,8 @@ function anlz_trend_from_extr(
         "evol-all-moment-width" => evo_moment_width,
         "evol-all-fit-size-x" => evo_fit_size_x,
         "evol-all-fit-size-y" => evo_fit_size_y,
+        "evol-all-fit-cent-x" => evo_fit_cent_x,
+        "evol-all-fit-cent-y" => evo_fit_cent_y,
         "freq-sel-dens-sum" => ft_dens_sum,
         "freq-sel-fit-weight" => ft_fit_weight,
         "freq-sel-fit-height" => ft_fit_height,
@@ -199,6 +206,8 @@ function anlz_trend_from_extr(
         "freq-sel-moment-width" => ft_moment_width,
         "freq-sel-fit-size-x" => ft_fit_size_x,
         "freq-sel-fit-size-y" => ft_fit_size_y,
+        "freq-sel-fit-cent-x" => ft_fit_cent_x,
+        "freq-sel-fit-cent-y" => ft_fit_cent_y,
     )
 end
 

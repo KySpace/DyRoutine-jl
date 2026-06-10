@@ -169,8 +169,19 @@ function default_trend_property_specs()
             selection_key="t_vec_sel_nvlp_size",
             overlay_evol_col=2,
             variants=[
-                (name="fit-size-x", evol_freq=("all", "sel"), color=:variant_low, label="fit size x", extra=false),
-                (name="fit-size-y", evol_freq=("all", "sel"), color=:variant_high, label="fit size y", extra=false),
+                (name="fit-size-x", evol_freq=("all", "sel"), color=:variant_low, label="fit size radial", extra=false),
+                (name="fit-size-y", evol_freq=("all", "sel"), color=:variant_high, label="fit size axial", extra=false),
+            ],
+        ),
+        (
+            name="nvlp-cent",
+            ylabel="envelope cent (μm)",
+            ylim=(1, 8),
+            selection_key="t_vec_sel_nvlp_cent",
+            overlay_evol_col=2,
+            variants=[
+                (name="fit-cent-x", evol_freq=("all", "sel"), color=:variant_low, label="fit cent radial", extra=false),
+                (name="fit-cent-y", evol_freq=("all", "sel"), color=:variant_high, label="fit cent axial", extra=false),
             ],
         ),
     ]
@@ -740,8 +751,8 @@ end
 
 function plot_trend_nvlp!(axs_trend::Dict, trend_reps::AbstractVector, trend_stacked_over_rep::Dict, istp)
     function set_tick_grid!(axs)
-        axs_sidepeaks_evol = axs |> a -> matching_axes(a, r"(evol(-extra)?)-(weight|width|height|wavenum|number|dens-sum|nvlp-size|sizes)")
-        axs_sidepeaks_freq = axs |> a -> matching_axes(a, r"freq-(weight|width|height|wavenum|number|dens-sum|nvlp-size|sizes)")
+        axs_sidepeaks_evol = axs |> a -> matching_axes(a, r"(evol(-extra)?)-(weight|width|height|wavenum|number|dens-sum|nvlp-size|nvlp-cent|sizes)")
+        axs_sidepeaks_freq = axs |> a -> matching_axes(a, r"freq-(weight|width|height|wavenum|number|dens-sum|nvlp-size|nvlp-cent|sizes)")
         for ax in axs_sidepeaks_evol
             ax.xticks = 0:10:200
             ax.xminorticksvisible = true
