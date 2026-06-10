@@ -128,29 +128,39 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo; d
     text!(axs["upright"], 0.58, peak_height_max * 0.8; text="μ₁, μ₂: $(mmt.wavenum |> sprint2f) ± $(mmt.width |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
 end
 
-function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo; dens_max=16.0)
+function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo; dens_max=16.0, peak_height_max=2)
     foreach(empty!, values(axs))
-    modl2d_norm = essn.modl2d |> m -> m ./ (sum(m) * (essn.step_modl / 2)^2)
+    modl2d_norm = essn.modl2d |> m -> m ./ (sum(m) * (essn.step_modl[2] / 2)^2)
     x, y = essn.smwh |> s -> map(u -> (-u:1:u), s)
     x_posi, y_posi = (x, y) .* essn.step_posi
     x_modl, y_modl = (x, y) .* essn.step_modl
-    y_modl_sm = (0:1:essn.smwh[2]) * essn.step_modl
-    clrmap = gen_clrmap_solo(hue_theme_istp[info_solo["istp"]])
-    heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, dens_max), colormap=clrmap)
-    heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, dens_max * 5 / 8), colormap=:binary)
+    y_modl_sm = (0:1:essn.smwh[2]) * essn.step_modl[2]
+    hue_theme = hue_theme_istp[info_solo["istp"]]
+    clrmap = gen_clrmap_solo(hue_theme)
+    clr_moments = Oklch(0.52, 0.14, hue_theme)
+
+    heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, dens_max), colormap=clrmap, rasterize=true)
+
+    heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, dens_max * 5 / 8), colormap=clrmap, rasterize=true)
+    hlines!(axs["modl"], essn.smw_modl*essn.step_modl[2]; color=(:black, 0.4), linewidth=1)
+    hlines!(axs["modl"], -essn.smw_modl*essn.step_modl[2]; color=(:black, 0.4), linewidth=1)
+    lines!(axs["upright"], y_modl_sm, essn.prfl_modl_norm_px[essn.smwh[2]+1:end], color=(:black, 1.0), linewidth=1)
+    lines!(axs["sideway"], essn.prfl_modl_norm_px[essn.smwh[2]+1:end], y_modl_sm, color=(:black, 0.4), linewidth=1)
+    axs["sideway"].yreversed = true
     axs["dens"].aspect = DataAspect()
-    # axs["modl"].aspect = DataAspect()
-    ylims!(axs["prfl_ft"], 0, 2.5)
-    xlims!(axs["prfl_ft"], 0, 0.8)
-    xlims!(axs["modl"], 0, 0.8)
-    ylims!(axs["modl"], -0.5, 0.5)
-    axs["prfl_ft"].yticksvisible = false
-    axs["prfl_ft"].yticklabelsvisible = false
-    axs["modl"] |> hidedecorations!
-    # axs["dens"] |> hidedecorations!
-    lines!(axs["prfl_ft"], y_modl_sm, essn.prfl_modl_norm_px |> fold_symmetric; color=:black)
-    vlines!(axs["prfl_ft"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
-    vlines!(axs["modl"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
-    hlines!(axs["modl"], [-1, 1] .* essn.smw_modl .* essn.step_modl[2]; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
-    text!(axs["dens"], 0, 14; text=@sprintf("%i ms | rep %i", info_solo["t_hold"], info_solo["repeat"]), color=:black, fontsize=24, align=(:center, :bottom))
+    xlims!(axs["upright"], 0, 0.6)
+    xlims!(axs["modl"], 0, 0.6)
+    xlims!(axs["dens"], -5, 5)
+    ylims!(axs["dens"], -10, 10)
+    ylims!(axs["upright"], -0.2, peak_height_max + 0.2)
+    ylims!(axs["modl"], (-10.5, 10.5) .* essn.step_modl[1])
+    ylims!(axs["sideway"], 0.15, 0.45)
+    xlims!(axs["sideway"], 0.0, peak_height_max)
+    vlines!(axs["modl"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.2))
+    # vlines!(axs["upright"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.4))
+    # hlines!(axs["upright"], 0.0; color=(:darkseagreen1, 0.5))
+
+    sprint2f = (x) -> @sprintf("%.2f", x)
+    # text!(axs["modl"], 0.35, -0.16; text="$(@sprintf("%.1f", info_solo["t_hold"])) ms | rep $(info_solo["repeat"])", color=:black, strokewidth=0.6, strokecolor=:white, fontsize=24, align=(:center, :top))
+    # text!(axs["sideway"], 1.45, 0.38; text="$(mmt_coor_min |> sprint2f)-$(mmt_coor_max |> sprint2f) μm⁻¹", color=clr_moments, fontsize=14, align=(:right, :top))
 end
