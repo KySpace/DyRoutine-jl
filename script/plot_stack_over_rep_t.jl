@@ -6,7 +6,7 @@ axs_live = set_panel_solo_modl!(gl_live)
 
 
 c = 3
-istp = 2
+istp = 1
 essn = essn_stacked_over_rep_t[c,istp]
 finess = 10
 x, y = essn.smwh |> s -> map(u -> (-u:(1/finess):u), s)
@@ -31,4 +31,4 @@ xlims!(axs_live["upright"], 0, 1.2)
 axs_live["sideway"] |> hidedecorations!
 fig_live |> resize_to_layout!
 fig_live |> display
-fig_live |> f -> save(joinpath(@__DIR__, "..", "tests", "stack_over_rep_t_164.svg"), f; backend=CairoMakie)
+fig_live |> f -> save(joinpath(@__DIR__, "..", "tests", "stack_over_rep_t_162.svg"), f; backend=CairoMakie)

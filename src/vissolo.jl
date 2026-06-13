@@ -142,8 +142,8 @@ function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_s
     heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, dens_max), colormap=clrmap, rasterize=true)
 
     heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, dens_max * 5 / 8), colormap=clrmap, rasterize=true)
-    hlines!(axs["modl"], essn.smw_modl*essn.step_modl[2]; color=(:black, 0.4), linewidth=1)
-    hlines!(axs["modl"], -essn.smw_modl*essn.step_modl[2]; color=(:black, 0.4), linewidth=1)
+    hlines!(axs["modl"], (essn.smw_modl+0.5)*essn.step_modl[1]; color=(:black, 0.4), linewidth=1)
+    hlines!(axs["modl"], -(essn.smw_modl+0.5)*essn.step_modl[1]; color=(:black, 0.4), linewidth=1)
     lines!(axs["upright"], y_modl_sm, essn.prfl_modl_norm_px[essn.smwh[2]+1:end], color=(:black, 1.0), linewidth=1)
     lines!(axs["sideway"], essn.prfl_modl_norm_px[essn.smwh[2]+1:end], y_modl_sm, color=(:black, 0.4), linewidth=1)
     axs["sideway"].yreversed = true
