@@ -26,8 +26,11 @@ smlx, smly, smlz = (100, 30, 40)
 x_vec = range(-smlx, smlx, n_x);
 y_vec = range(-smly, smly, n_y);
 z_vec = range(-smlz, smlz, n_z);
+ids_cut = (pos, dims) -> ntuple(i -> i == pos ? cld(dims[pos], 2) : Colon(), length(dims))
 int_y = ds -> sum(ds; dims=2) |> ds -> dropdims(ds; dims=2)
 int_z = ds -> sum(ds; dims=3) |> ds -> dropdims(ds; dims=3)
+cut_y = ds -> ds[ids_cut(2, size(ds))...]
+cut_z = ds -> ds[ids_cut(3, size(ds))...]
 file_gnd = matopen(joinpath(path_root, dir_test, name_grn))
 file_uv = matopen(joinpath(path_root, dir_test, name_uv))
 ψ1 = read(file_gnd, "psi1")
@@ -40,35 +43,49 @@ v = read(file_uv, "v") |> fmt_uv
 norm_uv = map((ud, vd) -> sum(@. ud .^ 2 .- vd .^ 2), u, v) |> ns -> sum(ns; dims=2) |> ds -> dropdims(ds; dims=2)
 (u, v) = ([u[m, i] ./ norm_uv[m] for m in 1:n_mode, i in 1:2], [v[m, i] ./ norm_uv[m] for m in 1:n_mode, i in 1:2])
 δρ_ti = [(u.-v)[m, i] .* ψ[i] for m in 1:n_mode, i in 1:2] |> ds -> map(int_z, ds)
-δφ_ti = [(u.+v)[m, i] ./ ψ[i] for m in 1:n_mode, i in 1:2] |> ds -> map(int_z, ds)
+δφ_ti = [(u.+v)[m, i] ./ ψ[i] for m in 1:n_mode, i in 1:2] |> ds -> map(cut_z, ds)
 δρ_si = [(u.-v)[m, i] .* ψ[i] for m in 1:n_mode, i in 1:2] |> ds -> map(int_y, ds)
-δφ_si = [(u.+v)[m, i] ./ ψ[i] for m in 1:n_mode, i in 1:2] |> ds -> map(int_y, ds)
+δφ_si = [(u.+v)[m, i] ./ ψ[i] for m in 1:n_mode, i in 1:2] |> ds -> map(cut_y, ds)
 close(file_gnd)
 close(file_uv)
 
-fig = Figure()
-axs_dens1 = Axis(fig[1, 1]; width=500, height=150)
-axs_dens2 = Axis(fig[1, 2]; width=500, height=150)
-axs_flow1 = Axis(fig[2, 1]; width=500, height=150)
-axs_flow2 = Axis(fig[2, 2]; width=500, height=150)
+function set_panel_mode!(gl::GridLayout)
+    gl |> clean_gridlayout!
+    dict_axs = Dict{String,Vector{Axis}}()
+    dict_axs["δρ_si"] = [Axis(gl[1, 1], aspect=DataAspect()), Axis(gl[1, 2], aspect=DataAspect())]
+    dict_axs["δφ_si"] = [Axis(gl[2, 1], aspect=DataAspect()), Axis(gl[2, 2], aspect=DataAspect())]
+    dict_axs["δρ_ti"] = [Axis(gl[3, 1], aspect=DataAspect()), Axis(gl[3, 2], aspect=DataAspect())]
+    dict_axs["δφ_ti"] = [Axis(gl[4, 1], aspect=DataAspect()), Axis(gl[4, 2], aspect=DataAspect())]
+    dict_axs
+end
+
+
+fig_modes = Figure()
+gl_modes = GridLayout(fig_modes[1, 1])
+axs_modes = set_panel_mode!(gl_modes)
 
 clrmap = gen_clrmap_posneg_nonlin(0.57 * 360, 0.96 * 360; thres_alpha=0.05, alpha_base=0.05)
 for m = 1:n_mode
-    [axs_dens1, axs_dens2, axs_flow1, axs_flow2] |> clear_axes!
-    c = maximum(abs, δρ[m, :] |> stack)
-    heatmap!(axs_dens1, x_vec, z_vec, δρ_si[m, 1]; colormap=clrmap, colorrange=(-c, c))
-    heatmap!(axs_dens2, x_vec, z_vec, δρ_si[m, 2]; colormap=clrmap, colorrange=(-c, c))
-    # heatmap!(axs_dens1, x_vec, y_vec, (ψ[1] .* (u.-v)[4, 1]) |> int_z)
-    # heatmap!(axs_dens2, x_vec, y_vec, (ψ[2] .* (u.-v)[4, 2]) |> int_z)
-    # heatmap!(axs_dens1, x_vec, y_vec, (u.-v)[4, 1] |> int_z)
-    # heatmap!(axs_dens2, x_vec, y_vec, (u.-v)[4, 2] |> int_z)
-    for ax in [axs_dens1, axs_dens2, axs_flow1, axs_flow2]
-        ax.aspect = DataAspect()
-        xlims!(ax, (-50, 50))
-        ylims!(ax, (-15, 15))
+    axs_modes |> clear_axes!
+    c_t = maximum(abs, δρ_ti[m, :] |> stack)
+    c_s = maximum(abs, δρ_si[m, :] |> stack)
+    for i = 1:2
+        heatmap!(axs_modes["δρ_si"][i], x_vec, y_vec, δρ_si[m, 1]; colormap=clrmap, colorrange=(-c_s, c_s))
+        heatmap!(axs_modes["δρ_ti"][i], x_vec, z_vec, δρ_ti[m, 1]; colormap=clrmap, colorrange=(-c_t, c_t))
+        heatmap!(axs_modes["δφ_si"][i], x_vec, y_vec, δφ_si[m, 1]; colormap=clrmap, colorrange=(-π, π).*0.05)
+        heatmap!(axs_modes["δφ_ti"][i], x_vec, z_vec, δφ_ti[m, 1]; colormap=clrmap, colorrange=(-π, π).*0.05)
     end
-    fig |> resize_to_layout!
-    fig |> display
+    for ax in values(axs_modes), i = 1:2
+        ax[i] |> a -> hidedecorations!(a, ticks=true, ticklabels=true, grid=false)
+        ax[i].xgridvisible = true
+        ax[i].ygridvisible = true
+        ax[i].xminorgridvisible = true
+        ax[i].yminorgridvisible = true
+        xlims!(ax[i], (-50, 50))
+        ylims!(ax[i], (-15, 15))
+    end
+    fig_modes |> resize_to_layout!
+    fig_modes |> display
 end
 
 # heatmap!(axs, x_vec, y_vec, dropdims(sum(u[m, i, :, :, :] - v[m, i, :, :, :]; dims=3); dims=3))
