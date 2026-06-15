@@ -7,6 +7,7 @@ include(joinpath(@__DIR__, "..", "src", "percond.jl"))
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "corr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
+include(joinpath(@__DIR__, "..", "src", "visduet.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 tag = "BdG"
@@ -72,8 +73,8 @@ for m = 1:n_mode
     for i = 1:2
         heatmap!(axs_modes["δρ_si"][i], x_vec, y_vec, δρ_si[m, 1]; colormap=clrmap, colorrange=(-c_s, c_s))
         heatmap!(axs_modes["δρ_ti"][i], x_vec, z_vec, δρ_ti[m, 1]; colormap=clrmap, colorrange=(-c_t, c_t))
-        heatmap!(axs_modes["δφ_si"][i], x_vec, y_vec, δφ_si[m, 1]; colormap=clrmap, colorrange=(-π, π).*0.05)
-        heatmap!(axs_modes["δφ_ti"][i], x_vec, z_vec, δφ_ti[m, 1]; colormap=clrmap, colorrange=(-π, π).*0.05)
+        heatmap!(axs_modes["δφ_si"][i], x_vec, y_vec, δφ_si[m, 1]; colormap=clrmap, colorrange=(-π, π) .* 0.05)
+        heatmap!(axs_modes["δφ_ti"][i], x_vec, z_vec, δφ_ti[m, 1]; colormap=clrmap, colorrange=(-π, π) .* 0.05)
     end
     for ax in values(axs_modes), i = 1:2
         ax[i] |> a -> hidedecorations!(a, ticks=true, ticklabels=true, grid=false)
@@ -86,6 +87,26 @@ for m = 1:n_mode
     end
     fig_modes |> resize_to_layout!
     fig_modes |> display
+end
+
+fig_gif, ax_gif = set_axis!("Density Evolution")
+
+m = 3
+
+n_t = t -> [@. abs2(ψ[i]) + 10 * cos(t * 2 * π) * ψ[i] * (u-v)[m, i] for i in 1:2]
+# n_t = t -> [@. cos(t * 2 * π) * ψ[i] * (u-v)[m, i] for i in 1:2]
+for t = range(0, 6, 60)
+    [ax_gif] |> clear_axes!
+    ax_gif.title = @sprintf("Mode %d, t=%.2f", m, t)
+    n = n_t(t) |> ns -> map(int_y, ns)
+    clr_misc = to_miscibility_clr(n[1], n[2], hue_theme_istp["162"], hue_theme_istp["164"]; to_norm_each=false, max=200)
+    heatmap!(ax_gif, x_vec, z_vec, clr_misc; rasterize=true)
+    xlims!(ax_gif, (-50, 50))
+    ylims!(ax_gif, (-15, 15))
+    ax_gif.aspect = DataAspect()
+    fig_gif |> resize_to_layout!
+    fig_gif |> display
+    sleep(0.001)
 end
 
 # heatmap!(axs, x_vec, y_vec, dropdims(sum(u[m, i, :, :, :] - v[m, i, :, :, :]; dims=3); dims=3))
