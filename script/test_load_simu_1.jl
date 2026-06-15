@@ -21,13 +21,13 @@ log_step(msg) = (println("  [$tag] $msg"); flush(stdout); time())
 log_done(msg, t_start) = (println("  [$tag] $msg ($(round(time() - t_start; digits=1)) s)"); flush(stdout))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations"
-dir_test = raw"01.[2025.06.01]"
+dir_test = raw"01.[2026.06.01]"
 step_t = 0.1798
 step_in_μm = 0.2613
 freq_query = 1:1:140
 
-# commit 
-title = "Anlz.08.Simu-01.[2025.06.01].[30-100ms]"
+# commit
+title = "Anlz.08.Simu-01.[2025.06.02].[30-100ms]"
 path_test = joinpath(path_root, dir_test)
 path_this = @__FILE__
 path_output = joinpath(path_root, title)
