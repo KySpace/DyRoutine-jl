@@ -92,33 +92,33 @@ for m in 1:15
     flush(stdout)
     clr_theme = [RGBAf(Oklch(0.52, 0.14, hue_theme_istp[i]), 0.75) for i in ["162" "164"]]
     dens_t = t -> [@. abs2(ψ[i]) + sin(t * 2 * π) * ψ[i] * (u-v)[m, i] for i in 1:2]
-    dens_xz = map(c -> abs2.(c) |> int_y, ψ)
-    dens_xy = map(c -> abs2.(c) |> int_z, ψ)
-    dens_x = map(c -> abs2.(c) |> int_z |> int_y, ψ)
+    dens_xz_base = map(c -> abs2.(c) |> int_y, ψ)
+    dens_xy_base = map(c -> abs2.(c) |> int_z, ψ)
+    dens_x_base = map(c -> abs2.(c) |> int_z |> int_y, ψ)
     uv_xz = map(int_y, [@. ψ[i] * (u-v)[m, i] for i in 1:2])
     uv_xy = map(int_z, [@. ψ[i] * (u-v)[m, i] for i in 1:2])
     uv_x = [@. ψ[i] * (u-v)[m, i] for i in 1:2] |> uv -> map(w -> w |> int_z |> int_y, uv)
     mask_relavent =  map(c -> c .> maximum(c)/10, ψ) |> stack
-    max_prfl = dens_x |> stack |> n -> filter(!isnan, n) |> n -> maximum(n; init=0) |> n -> n * 1.5
+    max_prfl = dens_x_base |> stack |> n -> filter(!isnan, n) |> n -> maximum(n; init=0) |> n -> n * 1.5
     uv_scaler = (abs.(stack((u .- v)[m, :])) ./ stack(ψ)) |>
                     ra -> ra[mask_relavent] |>
                     maximum |> max -> 1.0 / max
-    dens_xzt = t -> [@. dens_xz[i] + uv_scaler * sin(t * 2 * π) * uv_xz[i] for i in 1:2]
-    dens_xyt = t -> [@. dens_xy[i] + uv_scaler * sin(t * 2 * π) * uv_xy[i] for i in 1:2]
-    dens_xt  = t -> [@.  dens_x[i] + uv_scaler * sin(t * 2 * π) * uv_x[i] for i in 1:2]
+    dens_xzt = t -> [@. dens_xz_base[i] + uv_scaler * sin(t * 2 * π) * uv_xz[i] for i in 1:2]
+    dens_xyt = t -> [@. dens_xy_base[i] + uv_scaler * sin(t * 2 * π) * uv_xy[i] for i in 1:2]
+    dens_xt  = t -> [@.  dens_x_base[i] + uv_scaler * sin(t * 2 * π) * uv_x[i] for i in 1:2]
     # dens_t = t -> [@. sin(t * 2 * π) * ψ[i] * (u-v)[m, i] for i in 1:2]
     function local_draw(t)
         [ax_ti, ax_si, ax_prfl] |> clear_axes!
         label_gif.text = @sprintf("%d a₀ | Mode %d | %.2f Hz | scale = %.03f | t=%.2f", a_s, m, real(ω[m]), uv_scaler, t)
-        dens_xz = dens_xzt(t)
-        dens_xy = dens_xyt(t)
-        dens_x = dens_xt(t)
-        clr_misc_xz = to_miscibility_clr(dens_xz[1], dens_xz[2], hue_theme_istp["162"], hue_theme_istp["164"]; to_norm_each=false, max=0.002)
-        clr_misc_xy = to_miscibility_clr(dens_xy[1], dens_xy[2], hue_theme_istp["162"], hue_theme_istp["164"]; to_norm_each=false, max=0.002)
+        dens_xz_frame = dens_xzt(t)
+        dens_xy_frame = dens_xyt(t)
+        dens_x_frame = dens_xt(t)
+        clr_misc_xz = to_miscibility_clr(dens_xz_frame[1], dens_xz_frame[2], hue_theme_istp["162"], hue_theme_istp["164"]; to_norm_each=false, max=0.002)
+        clr_misc_xy = to_miscibility_clr(dens_xy_frame[1], dens_xy_frame[2], hue_theme_istp["162"], hue_theme_istp["164"]; to_norm_each=false, max=0.002)
         heatmap!(ax_ti, x_vec, y_vec, clr_misc_xy; rasterize=true)
         heatmap!(ax_si, x_vec, z_vec, clr_misc_xz; rasterize=true)
-        lines!(ax_prfl, x_vec, dens_x[1]; color=clr_theme[1])
-        lines!(ax_prfl, x_vec, dens_x[2]; color=clr_theme[2])
+        lines!(ax_prfl, x_vec, dens_x_frame[1]; color=clr_theme[1])
+        lines!(ax_prfl, x_vec, dens_x_frame[2]; color=clr_theme[2])
         ax_ti.xticks = LinearTicks(10)
         ax_si.xticks = LinearTicks(10)
         ax_prfl.xticks = LinearTicks(10)
