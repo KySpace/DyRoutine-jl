@@ -24,7 +24,7 @@ function clear_axes!(axs)
     end
 end
 
-function set_axis!(title::String)
+function set_axis!(title::String; kwargs...)
     fig = Figure(
         size=(920, 620),
     )
@@ -33,6 +33,7 @@ function set_axis!(title::String)
         title=title,
         xgridvisible=true,
         ygridvisible=true,
+        kwargs...
     )
     return fig, ax
 end

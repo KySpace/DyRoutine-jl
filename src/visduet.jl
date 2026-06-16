@@ -51,11 +51,12 @@ function set_panel_misc_duet_2d!(gl::GridLayout)
     return Dict("dens_1" => ax_dens_1, "dens_2" => ax_dens_2, "misc" => ax_misc, "prfl" => ax_prfl)
 end
 
-function to_miscibility_clr(dens1, dens2, hue1, hue2; max=16, to_norm_each=false)
+function to_miscibility_clr(dens1, dens2, hue1, hue2; max=16, to_norm_each=false, thres_alpha=0.1, alpha_base=0.1)
     size(dens1) == size(dens2) || throw(ArgumentError("dens1 and dens2 must have the same size"))
     norm = to_norm_each ? (d -> d ./ maximum(d)) : (d -> clamp.(d, 0, max) / max)
+    alpha = t -> abs(t) > thres_alpha ? 1.0 : (abs(t) / thres_alpha * (1 - alpha_base) + alpha_base)
     dens_norm_1, dens_norm_2 = (dens1, dens2) |> ds -> map(norm, ds)
-    shader = (a, b) -> Oklch(1 - (a + b) / 2, abs(a - b) * 0.24, a > b ? hue1 : hue2) |> RGBf
+    shader = (a, b) -> Oklch(1 - (a + b) / 2, abs(a - b) * 0.24, a > b ? hue1 : hue2) |> c -> RGBAf(c, alpha(a + b))
     return [shader(dens_norm_1[x, y], dens_norm_2[x, y]) for x in 1:size(dens1, 1), y in 1:size(dens1, 2)]
 end
 
