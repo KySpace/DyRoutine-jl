@@ -36,12 +36,17 @@ file_gnd = matopen(joinpath(path_root, dir_test, name_grn))
 file_uv = matopen(joinpath(path_root, dir_test, name_uv))
 ψ1 = read(file_gnd, "psi1")
 ψ2 = read(file_gnd, "psi2")
-ψ = [ψ1, ψ2] |> ds -> map(d -> permutedims(d, (2, 1, 3)), ds)
+ψ_raw = [ψ1, ψ2] |> ds -> map(d -> permutedims(d, (2, 1, 3)), ds)
+norm_ψ = ψ_raw |> cs -> map(c -> sum(abs2, c), cs) |> sum |> sqrt
+ψ = ψ_raw ./ norm_ψ
 # fmt_uv_dbg = w -> w |> real |> w -> reshape(w, (dim_space..., 2, n_mode)) |> w -> permutedims(w, (5, 4, 2, 1, 3))
 fmt_uv = w -> w |> real |> w -> reshape(w, (dim_space..., 2, n_mode)) |> w -> permutedims(w, (2, 1, 3, 5, 4)) |> w -> eachslice(w; dims=(4, 5))
 u = read(file_uv, "u") |> fmt_uv
 v = read(file_uv, "v") |> fmt_uv
-norm_uv = map((ud, vd) -> sum(@. ud .^ 2 .- vd .^ 2), u, v) |> ns -> sum(ns; dims=2) |> ds -> dropdims(ds; dims=2)
+norm_uv = map((ud, vd) -> sum(ud .^ 2 .- vd .^ 2), u, v) |>
+          ns -> sum(ns; dims=2) |>
+                ns -> dropdims(ns; dims=2) |>
+                      ns -> sqrt.(ns)
 (u, v) = ([u[m, i] ./ norm_uv[m] for m in 1:n_mode, i in 1:2], [v[m, i] ./ norm_uv[m] for m in 1:n_mode, i in 1:2])
 δρ_ti = [(u.-v)[m, i] .* ψ[i] for m in 1:n_mode, i in 1:2] |> ds -> map(int_z, ds)
 δφ_ti = [(u.+v)[m, i] ./ ψ[i] for m in 1:n_mode, i in 1:2] |> ds -> map(cut_z, ds)
@@ -91,22 +96,25 @@ end
 
 fig_gif, ax_gif = set_axis!("Density Evolution")
 
-m = 3
+m = 6
 
-n_t = t -> [@. abs2(ψ[i]) + 10 * cos(t * 2 * π) * ψ[i] * (u-v)[m, i] for i in 1:2]
+n_t = t -> [@. abs2(ψ[i]) + cos(t * 2 * π) * ψ[i] * (u-v)[m, i] for i in 1:2]
+n_y = map(c -> abs2.(c) |> int_y, ψ)
+uv_y = map(int_y, [@. ψ[i] * (u-v)[m, i] for i in 1:2])
+n_yt = t -> [@. n_y[i] + cos(t * 2 * π) * uv_y[i] for i in 1:2]
 # n_t = t -> [@. cos(t * 2 * π) * ψ[i] * (u-v)[m, i] for i in 1:2]
-for t = range(0, 6, 60)
+for t = range(0, 6, 120)
     [ax_gif] |> clear_axes!
     ax_gif.title = @sprintf("Mode %d, t=%.2f", m, t)
-    n = n_t(t) |> ns -> map(int_y, ns)
-    clr_misc = to_miscibility_clr(n[1], n[2], hue_theme_istp["162"], hue_theme_istp["164"]; to_norm_each=false, max=200)
+    n = n_yt(t)
+    clr_misc = to_miscibility_clr(n[1], n[2], hue_theme_istp["162"], hue_theme_istp["164"]; to_norm_each=false, max=0.01)
     heatmap!(ax_gif, x_vec, z_vec, clr_misc; rasterize=true)
     xlims!(ax_gif, (-50, 50))
     ylims!(ax_gif, (-15, 15))
     ax_gif.aspect = DataAspect()
     fig_gif |> resize_to_layout!
     fig_gif |> display
-    sleep(0.001)
+    sleep(0.01)
 end
 
 # heatmap!(axs, x_vec, y_vec, dropdims(sum(u[m, i, :, :, :] - v[m, i, :, :, :]; dims=3); dims=3))
