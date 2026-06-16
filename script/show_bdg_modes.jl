@@ -26,7 +26,7 @@ norm_uv = map((ud, vd) -> sum(ud .^ 2 .- vd .^ 2), u, v) |>
                 ns -> dropdims(ns; dims=2) |>
                       ns -> sqrt.(ns)
 (u, v) = ([u[m, i] ./ norm_uv[m] for m in 1:n_mode, i in 1:2], [v[m, i] ./ norm_uv[m] for m in 1:n_mode, i in 1:2])
-mask_relavent_4d =  map(c -> c .> maximum(c)/10, ψ) |> stack
+mask_relavent_4d = map(c -> c .> maximum(c) / 10, ψ) |> stack
 δρ_3d = [(u.-v)[m, i] .* ψ[i] for m in 1:n_mode, i in 1:2]
 δφ_3d = [(u.+v)[m, i] ./ ψ[i] for m in 1:n_mode, i in 1:2]
 δρ_ti = δρ_3d |> ds -> map(int_z, ds)
@@ -50,6 +50,15 @@ end
 println("  [$tag] Drawing modes $tag_as")
 fig_modes = Figure()
 
+function to_phase_clr_dens(φ, ρ, hue1, hue2; max_ρ=maximum(ρ), max_φ=maximum(φ), thres_alpha=0.1, alpha_base=0.0, l=0.4, l_max=0.8, h=0.24)
+    size(φ) == size(ρ) || throw(ArgumentError("φ and ρ must have the same size"))
+    ρ_n = (d -> clamp.(d, 0, max_ρ) / max_ρ)(ρ)
+    φ_n = (d -> clamp.(d, -max_φ, max_φ) / max_φ)(φ)
+    alpha = n -> n > thres_alpha ? 1.0 : (n / thres_alpha * (1 - alpha_base) + alpha_base)
+    shader = (f, n) -> Oklch(l_max - (l_max - l) * abs(f), h * abs(f), f > 0 ? hue1 : hue2) |> c -> RGBAf(c, alpha(n))
+    return [shader(φ_n[x, y], ρ_n[x, y]) for x in 1:size(ρ, 1), y in 1:size(ρ, 2)]
+end
+
 clrmap = gen_clrmap_posneg_nonlin(0.57 * 360, 0.96 * 360; thres_alpha=0.05, alpha_base=0.05)
 
 for m = 1:n_mode
@@ -58,15 +67,17 @@ for m = 1:n_mode
     gl_modes = GridLayout(fig_modes[m, 1])
     axs_modes = set_panel_mode!(gl_modes)
     axs_modes |> clear_axes!
-    
+
     c_t = maximum(abs, δρ_ti[m, :] |> stack)
     c_s = maximum(abs, δρ_si[m, :] |> stack)
-    
+
     for i = 1:2
-        heatmap!(axs_modes["δρ_si"][i], x_vec, y_vec, δρ_si[m, 1]; colormap=clrmap, colorrange=(-c_s, c_s), rasterize=true)
-        heatmap!(axs_modes["δρ_ti"][i], x_vec, z_vec, δρ_ti[m, 1]; colormap=clrmap, colorrange=(-c_t, c_t), rasterize=true)
-        heatmap!(axs_modes["δφ_si"][i], x_vec, y_vec, δφ_si[m, 1]; colormap=clrmap, colorrange=(-max_φ[m], max_φ[m]), rasterize=true)
-        heatmap!(axs_modes["δφ_ti"][i], x_vec, z_vec, δφ_ti[m, 1]; colormap=clrmap, colorrange=(-max_φ[m], max_φ[m]), rasterize=true)
+        clr_δφ_si = to_phase_clr_dens(δφ_si[m, i], δρ_si[m, i], 0.57 * 360, 0.96 * 360; max_φ=max_φ[m])
+        clr_δφ_ti = to_phase_clr_dens(δφ_ti[m, i], δρ_ti[m, i], 0.57 * 360, 0.96 * 360; max_φ=max_φ[m])
+        heatmap!(axs_modes["δρ_si"][i], x_vec, y_vec, δρ_si[m, i]; colormap=clrmap, colorrange=(-c_s, c_s), rasterize=true)
+        heatmap!(axs_modes["δρ_ti"][i], x_vec, z_vec, δρ_ti[m, i]; colormap=clrmap, colorrange=(-c_t, c_t), rasterize=true)
+        heatmap!(axs_modes["δφ_si"][i], x_vec, y_vec, clr_δφ_si; rasterize=true)
+        heatmap!(axs_modes["δφ_ti"][i], x_vec, z_vec, clr_δφ_ti; rasterize=true)
     end
     for ax in values(axs_modes), i = 1:2
         ax[i] |> a -> hidedecorations!(a, ticks=true, ticklabels=true, grid=false)
@@ -79,6 +90,7 @@ for m = 1:n_mode
     end
     fig_modes |> resize_to_layout!
 end
+fig_modes |> resize_to_layout!
 fig_modes |> f -> save(joinpath(path_output, "Modes.$tag_as.png"), f; backend=GLMakie)
 println("")
 
@@ -103,14 +115,14 @@ for m in 1:15
     uv_xz = map(int_y, [@. ψ[i] * (u-v)[m, i] for i in 1:2])
     uv_xy = map(int_z, [@. ψ[i] * (u-v)[m, i] for i in 1:2])
     uv_x = [@. ψ[i] * (u-v)[m, i] for i in 1:2] |> uv -> map(w -> w |> int_z |> int_y, uv)
-    mask_relavent =  map(c -> c .> maximum(c)/10, ψ) |> stack
+    mask_relavent = map(c -> c .> maximum(c) / 10, ψ) |> stack
     max_prfl = dens_x_base |> stack |> n -> filter(!isnan, n) |> n -> maximum(n; init=0) |> n -> n * 1.5
-    uv_scaler = (abs.(stack((u .- v)[m, :])) ./ stack(ψ)) |>
-                    ra -> ra[mask_relavent] |>
-                    maximum |> max -> 1.0 / max
+    uv_scaler = (abs.(stack((u.-v)[m, :])) ./ stack(ψ)) |>
+                ra -> ra[mask_relavent] |>
+                      maximum |> max -> 1.0 / max
     dens_xzt = t -> [@. dens_xz_base[i] + uv_scaler * sin(t * 2 * π) * uv_xz[i] for i in 1:2]
     dens_xyt = t -> [@. dens_xy_base[i] + uv_scaler * sin(t * 2 * π) * uv_xy[i] for i in 1:2]
-    dens_xt  = t -> [@.  dens_x_base[i] + uv_scaler * sin(t * 2 * π) * uv_x[i] for i in 1:2]
+    dens_xt = t -> [@. dens_x_base[i] + uv_scaler * sin(t * 2 * π) * uv_x[i] for i in 1:2]
     # dens_t = t -> [@. sin(t * 2 * π) * ψ[i] * (u-v)[m, i] for i in 1:2]
     function local_draw(t)
         [ax_ti, ax_si, ax_prfl] |> clear_axes!
