@@ -26,10 +26,14 @@ norm_uv = map((ud, vd) -> sum(ud .^ 2 .- vd .^ 2), u, v) |>
                 ns -> dropdims(ns; dims=2) |>
                       ns -> sqrt.(ns)
 (u, v) = ([u[m, i] ./ norm_uv[m] for m in 1:n_mode, i in 1:2], [v[m, i] ./ norm_uv[m] for m in 1:n_mode, i in 1:2])
-δρ_ti = [(u.-v)[m, i] .* ψ[i] for m in 1:n_mode, i in 1:2] |> ds -> map(int_z, ds)
-δφ_ti = [(u.+v)[m, i] ./ ψ[i] for m in 1:n_mode, i in 1:2] |> ds -> map(cut_z, ds)
-δρ_si = [(u.-v)[m, i] .* ψ[i] for m in 1:n_mode, i in 1:2] |> ds -> map(int_y, ds)
-δφ_si = [(u.+v)[m, i] ./ ψ[i] for m in 1:n_mode, i in 1:2] |> ds -> map(cut_y, ds)
+mask_relavent_4d =  map(c -> c .> maximum(c)/10, ψ) |> stack
+δρ_3d = [(u.-v)[m, i] .* ψ[i] for m in 1:n_mode, i in 1:2]
+δφ_3d = [(u.+v)[m, i] ./ ψ[i] for m in 1:n_mode, i in 1:2]
+δρ_ti = δρ_3d |> ds -> map(int_z, ds)
+δφ_ti = δφ_3d |> ds -> map(cut_z, ds)
+δρ_si = δρ_3d |> ds -> map(int_y, ds)
+δφ_si = δφ_3d |> ds -> map(cut_y, ds)
+max_φ = [[δφ_3d[m, i] .* mask_relavent_4d for i in 1:2] |> stack |> f -> abs.(f) |> maximum for m in 1:n_mode]
 close(file_gnd)
 close(file_uv)
 
@@ -43,39 +47,40 @@ function set_panel_mode!(gl::GridLayout)
     dict_axs
 end
 
-# println("  [$tag] Drawing modes $tag_as")
-# fig_modes = Figure()
+println("  [$tag] Drawing modes $tag_as")
+fig_modes = Figure()
 
-# clrmap = gen_clrmap_posneg_nonlin(0.57 * 360, 0.96 * 360; thres_alpha=0.05, alpha_base=0.05)
-# for m = 1:n_mode
-#     print("\r      [$tag_as] Drawing mode $m")
-#     flush(stdout)
-#     gl_modes = GridLayout(fig_modes[m, 1])
-#     axs_modes = set_panel_mode!(gl_modes)
-#     axs_modes |> clear_axes!
-#     c_t = maximum(abs, δρ_ti[m, :] |> stack)
-#     c_s = maximum(abs, δρ_si[m, :] |> stack)
-#     φ_t = maximum(abs, δφ_ti[m, :] |> stack)
-#     φ_s = maximum(abs, δφ_si[m, :] |> stack)
-#     for i = 1:2
-#         heatmap!(axs_modes["δρ_si"][i], x_vec, y_vec, δρ_si[m, 1]; colormap=clrmap, colorrange=(-c_s, c_s), rasterize=true)
-#         heatmap!(axs_modes["δρ_ti"][i], x_vec, z_vec, δρ_ti[m, 1]; colormap=clrmap, colorrange=(-c_t, c_t), rasterize=true)
-#         heatmap!(axs_modes["δφ_si"][i], x_vec, y_vec, δφ_si[m, 1]; colormap=clrmap, colorrange=(-φ_s, φ_s), rasterize=true)
-#         heatmap!(axs_modes["δφ_ti"][i], x_vec, z_vec, δφ_ti[m, 1]; colormap=clrmap, colorrange=(-φ_t, φ_t), rasterize=true)
-#     end
-#     for ax in values(axs_modes), i = 1:2
-#         ax[i] |> a -> hidedecorations!(a, ticks=true, ticklabels=true, grid=false)
-#         ax[i].xgridvisible = true
-#         ax[i].ygridvisible = true
-#         ax[i].xminorgridvisible = true
-#         ax[i].yminorgridvisible = true
-#         xlims!(ax[i], (-50, 50))
-#         ylims!(ax[i], (-15, 15))
-#     end
-#     fig_modes |> resize_to_layout!
-# end
-# fig_modes |> f -> save(joinpath(path_output, "Modes.$tag_as.png"), f; backend=CairoMakie)
-# println("")
+clrmap = gen_clrmap_posneg_nonlin(0.57 * 360, 0.96 * 360; thres_alpha=0.05, alpha_base=0.05)
+
+for m = 1:n_mode
+    print("\r      [$tag_as] Drawing mode $m")
+    flush(stdout)
+    gl_modes = GridLayout(fig_modes[m, 1])
+    axs_modes = set_panel_mode!(gl_modes)
+    axs_modes |> clear_axes!
+    
+    c_t = maximum(abs, δρ_ti[m, :] |> stack)
+    c_s = maximum(abs, δρ_si[m, :] |> stack)
+    
+    for i = 1:2
+        heatmap!(axs_modes["δρ_si"][i], x_vec, y_vec, δρ_si[m, 1]; colormap=clrmap, colorrange=(-c_s, c_s), rasterize=true)
+        heatmap!(axs_modes["δρ_ti"][i], x_vec, z_vec, δρ_ti[m, 1]; colormap=clrmap, colorrange=(-c_t, c_t), rasterize=true)
+        heatmap!(axs_modes["δφ_si"][i], x_vec, y_vec, δφ_si[m, 1]; colormap=clrmap, colorrange=(-max_φ[m], max_φ[m]), rasterize=true)
+        heatmap!(axs_modes["δφ_ti"][i], x_vec, z_vec, δφ_ti[m, 1]; colormap=clrmap, colorrange=(-max_φ[m], max_φ[m]), rasterize=true)
+    end
+    for ax in values(axs_modes), i = 1:2
+        ax[i] |> a -> hidedecorations!(a, ticks=true, ticklabels=true, grid=false)
+        ax[i].xgridvisible = true
+        ax[i].ygridvisible = true
+        ax[i].xminorgridvisible = true
+        ax[i].yminorgridvisible = true
+        xlims!(ax[i], (-50, 50))
+        ylims!(ax[i], (-15, 15))
+    end
+    fig_modes |> resize_to_layout!
+end
+fig_modes |> f -> save(joinpath(path_output, "Modes.$tag_as.png"), f; backend=GLMakie)
+println("")
 
 
 println("  [$tag] Animating modes $tag_as")
