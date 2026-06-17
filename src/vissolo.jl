@@ -85,6 +85,8 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo; d
     draw_rotated_ellipse_corners!(axs["dens"], nvlp.cent, nvlp.size, nvlp.rotation; color=clr_mark_nvlp, linewidth=2)
 
     heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, dens_max * 5 / 8), colormap=clrmap, rasterize=true)
+    hlines!(axs["modl"], (essn.smw_modl+0.5)*essn.step_modl[1]; color=(:black, 0.4), linewidth=1)
+    hlines!(axs["modl"], -(essn.smw_modl+0.5)*essn.step_modl[1]; color=(:black, 0.4), linewidth=1)
     lines!(axs["upright"], y_modl_sm, essn.prfl_modl_norm_px[essn.smwh[2]+1:end], color=(:black, 0.4), linewidth=1)
     lines!(axs["sideway"], essn.prfl_modl_norm_px[essn.smwh[2]+1:end], y_modl_sm, color=(:black, 0.4), linewidth=1)
     lines!(axs["upright"], y_modl_sm, extr.sidepeak.prfl_norm_tailess_px[essn.smwh[2]+1:end], color=:black, linewidth=1)
@@ -113,19 +115,21 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo; d
     sp = extr.sidepeak.params_tailess
     mmt_coor_min = mmt.coor |> minimum
     mmt_coor_max = mmt.coor |> maximum
+    make_dual = a -> [a, a]
     errorbars!(axs["upright"], [mmt.wavenum], [1.7], [mmt.width], [mmt.width]; direction=:x, color=clr_moments, whiskerwidth=8)
     lines!(axs["sideway"], [mmt.height, mmt.height], [mmt_coor_min, mmt_coor_max]; color=(clr_moments, 1.0))
-    band!(axs["sideway"], [0, mmt.height], mmt_coor_min |> a -> [a, a], mmt_coor_max |> a -> [a, a]; color=(clr_moments, 0.1))
+    band!(axs["sideway"], [0, mmt.height], mmt_coor_min |> make_dual, mmt_coor_max |> make_dual, color=(clr_moments, 0.1))
+    band!(axs["upright"], [mmt_coor_min, mmt_coor_max], 0 |> make_dual, -0.02 |> make_dual; color=(clr_moments, 1))
 
     sprint2f = (x) -> @sprintf("%.2f", x)
-    text!(axs["modl"], 0.35, -0.16; text="$(@sprintf("%.1f", info_solo["t_hold"])) ms | rep $(info_solo["repeat"])", color=:black, strokewidth=0.6, strokecolor=:white, fontsize=24, align=(:center, :top))
-    text!(axs["dens"], -4.8, 9.8; text="[$(nvlp.size[1] |> sprint2f), $(nvlp.size[2] |> sprint2f)] μm \nrss/sum: $(nvlp.rel_residue |> sprint2f)", color=clr_mark_nvlp, strokewidth=0.5, strokecolor=:white, font=:bold, fontsize=11, align=(:left, :top))
-    text!(axs["sideway"], 1.45, 0.44; text="fit: $(sp.height |> sprint2f), $(sp.weight |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
-    text!(axs["sideway"], 1.45, 0.41; text="μ₀: $(mmt.height |> sprint2f), $(mmt.weight |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
-    text!(axs["sideway"], 1.45, 0.38; text="$(mmt_coor_min |> sprint2f)-$(mmt_coor_max |> sprint2f) μm⁻¹", color=clr_moments, fontsize=14, align=(:right, :top))
-    text!(axs["upright"], 0.58, peak_height_max * 0.6; text="rss/sum: $(sp.rel_residue |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
-    text!(axs["upright"], 0.58, peak_height_max * 0.7; text="fit: $(sp.wavenum |> sprint2f) ± $(sp.width |> sprint2f)", color=:springgreen3, fontsize=14, align=(:right, :top))
-    text!(axs["upright"], 0.58, peak_height_max * 0.8; text="μ₁, μ₂: $(mmt.wavenum |> sprint2f) ± $(mmt.width |> sprint2f)", color=clr_moments, fontsize=14, align=(:right, :top))
+    text!(axs["modl"], 0.05, 0.05; text="$(@sprintf("%.1f", info_solo["t_hold"])) ms | rep $(info_solo["repeat"])", space=:relative, color=:black, strokewidth=0.6, strokecolor=:white, fontsize=20, align=(:left, :bottom))
+    text!(axs["dens"], 0.05, 0.05; text="[$(nvlp.size[1] |> sprint2f), $(nvlp.size[2] |> sprint2f)] μm \nrss/sum: $(nvlp.rel_residue |> sprint2f)", space=:relative, color=clr_mark_nvlp, strokewidth=0.5, strokecolor=:white, font=:bold, fontsize=11, align=(:left, :bottom))
+    text!(axs["sideway"], 0.98, 0.78; text="fit: $(sp.height |> sprint2f), $(sp.weight |> sprint2f)", space=:relative, color=:springgreen3, fontsize=14, align=(:right, :top))
+    text!(axs["sideway"], 0.98, 0.88; text="μ₀: $(mmt.height |> sprint2f), $(mmt.weight |> sprint2f)", space=:relative, color=clr_moments, fontsize=14, align=(:right, :top))
+    text!(axs["sideway"], 0.98, 0.98; text="$(mmt_coor_min |> sprint2f)-$(mmt_coor_max |> sprint2f) μm⁻¹", space=:relative, color=clr_moments, fontsize=14, align=(:right, :top))
+    text!(axs["upright"], 0.98, 0.78; text="rss/sum: $(sp.rel_residue |> sprint2f)", space=:relative, color=:springgreen3, fontsize=14, align=(:right, :top))
+    text!(axs["upright"], 0.98, 0.88; text="fit: $(sp.wavenum |> sprint2f) ± $(sp.width |> sprint2f)", space=:relative, color=:springgreen3, fontsize=14, align=(:right, :top))
+    text!(axs["upright"], 0.98, 0.98; text="μ₁, μ₂: $(mmt.wavenum |> sprint2f) ± $(mmt.width |> sprint2f)", space=:relative, color=clr_moments, fontsize=14, align=(:right, :top))
 end
 
 function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_solo; dens_max=16.0, peak_height_max=2)

@@ -172,11 +172,12 @@ function fit_dens2d_gaussian_elliptic_disk(
     xs, ys, dens, mask;
     θ_hint=(max=20.0 / 180 * π, min=-10.0 / 180 * π, init=10.0 / 180 * π),
     A_hint=(max=25.0, min=0, init=10.0),
+    preprocess = (x -> x),
 )
     X = [x for y in ys, x in xs]
     Y = [y for y in ys, x in xs]
     xydata = hcat(vec(X[mask]), vec(Y[mask]))
-    zdata = vec(dens[mask])
+    zdata = dens |> preprocess |> ds -> ds[mask] |> vec
     model(coords, p) = begin
         x = coords[:, 1]
         y = coords[:, 2]

@@ -18,7 +18,7 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 path_runner = @__FILE__
 path_anlz_excitation = joinpath(@__DIR__, "anlz_excitation.jl")
 # commit 75523c60a103bbfc0654a8af7edc5339ecee054d
-title_anlz = "[06.08].70.LimTimeRange.Cent.NTRC"
+title_anlz = "[06.17].71.Table"
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
@@ -76,7 +76,7 @@ runinfos = runinfos_grouped
 # runinfos = runinfos_separated
 
 # ids_runinfo = eachindex(runinfos)
-ids_runinfo = 2:2
+ids_runinfo = 1:2
 # sel_vars = NamedTuple()
 sel_vars = (; t_hold=t -> 0 .<= t .<= 80)
 # sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 80)
@@ -130,7 +130,7 @@ filter_core_pca = im -> imfilter(im, Kernel.gaussian(1.5))
 
 fit_stack_kwargs = NamedTuple()
 fit_tailess_kwargs = NamedTuple()
-fit_asymm_kwargs = NamedTuple()
+fit_asymm_kwargs = (; preprocess=ds -> imfilter(ds, Kernel.gaussian(3)))
 fit_round_kwargs = NamedTuple()
 query_weight_kwargs = NamedTuple()
 trend_property_specs = [
