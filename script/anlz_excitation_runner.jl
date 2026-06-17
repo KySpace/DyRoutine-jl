@@ -17,7 +17,7 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
 path_runner = @__FILE__
 path_anlz_excitation = joinpath(@__DIR__, "anlz_excitation.jl")
-# commit 75523c60a103bbfc0654a8af7edc5339ecee054d
+# commit 1e229ff5bcad40cf5ef994312436b966338775d0
 title_anlz = "[06.17].71.Table"
 
 year_test = 2026

@@ -1,0 +1,5 @@
+- ! where it should be 
+- "freq" or "band" or "spct"
+- nvlp, sidepeak etc.. naming
+- 162 164 use symbols
+- functional, map, functors
