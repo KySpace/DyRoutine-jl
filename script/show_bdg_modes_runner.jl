@@ -14,7 +14,7 @@ tag = "BdG"
 log_step(msg) = (println("  [$tag] $msg"); flush(stdout); time())
 log_done(msg, t_start) = (println("  [$tag] $msg ($(round(time() - t_start; digits=1)) s)"); flush(stdout))
 
-title = "Anlz.11.BdG-02.[2026.06.16].02"
+title = "Anlz.11.BdG-02.[2026.06.16].03"
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations"
 dir_test = raw"02.[2026.06.12]"
 path_show = joinpath(@__DIR__, "show_bdg_modes.jl")

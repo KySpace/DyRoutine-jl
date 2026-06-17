@@ -16,6 +16,7 @@ file_uv = matopen(joinpath(path_root, dir_test, name_uv))
 ψ_raw = [ψ1, ψ2] |> ds -> map(d -> permutedims(d, (2, 1, 3)), ds)
 norm_ψ = ψ_raw |> cs -> map(c -> sum(abs2, c), cs) |> sum |> sqrt
 ψ = ψ_raw ./ norm_ψ
+dens_3d = ψ |> cs -> map(c -> abs2.(c), cs)
 # fmt_uv_dbg = w -> w |> real |> w -> reshape(w, (dim_space..., 2, n_mode)) |> w -> permutedims(w, (5, 4, 2, 1, 3))
 fmt_uv = w -> w |> real |> w -> reshape(w, (dim_space..., 2, n_mode)) |> w -> permutedims(w, (2, 1, 3, 5, 4)) |> w -> eachslice(w; dims=(4, 5))
 u = read(file_uv, "u") |> fmt_uv
@@ -33,24 +34,46 @@ mask_relavent_4d = map(c -> c .> maximum(c) / 10, ψ) |> stack
 δφ_ti = δφ_3d |> ds -> map(cut_z, ds)
 δρ_si = δρ_3d |> ds -> map(int_y, ds)
 δφ_si = δφ_3d |> ds -> map(cut_y, ds)
+dens_gnd_si_cut = dens_3d |> ds -> map(cut_y, ds)
+dens_gnd_ti_cut = dens_3d |> ds -> map(cut_z, ds)
 max_φ = [[δφ_3d[m, i] .* mask_relavent_4d for i in 1:2] |> stack |> f -> abs.(f) |> maximum for m in 1:n_mode]
 close(file_gnd)
 close(file_uv)
 
+## plotting all modes combined
+
+kwargs_axes_ti = (; aspect=DataAspect(), width=500, height=120)
+kwargs_axes_si = (; aspect=DataAspect(), width=500, height=200)
 function set_panel_mode!(gl::GridLayout)
     gl |> clean_gridlayout!
-    dict_axs = Dict{String,Vector{Axis}}()
-    dict_axs["δρ_si"] = [Axis(gl[1, 1], aspect=DataAspect(), width=500, height=150), Axis(gl[1, 2], aspect=DataAspect(), width=500, height=150)]
-    dict_axs["δφ_si"] = [Axis(gl[2, 1], aspect=DataAspect(), width=500, height=150), Axis(gl[2, 2], aspect=DataAspect(), width=500, height=150)]
-    dict_axs["δρ_ti"] = [Axis(gl[3, 1], aspect=DataAspect(), width=500, height=150), Axis(gl[3, 2], aspect=DataAspect(), width=500, height=150)]
-    dict_axs["δφ_ti"] = [Axis(gl[4, 1], aspect=DataAspect(), width=500, height=150), Axis(gl[4, 2], aspect=DataAspect(), width=500, height=150)]
-    dict_axs
+    dict_axs = Dict{String,Any}()
+    dict_axs["δρ_si"] = [Axis(gl[1, 1]; kwargs_axes_si...), Axis(gl[1, 2]; kwargs_axes_si...)]
+    dict_axs["δφ_si"] = [Axis(gl[2, 1]; kwargs_axes_si...), Axis(gl[2, 2]; kwargs_axes_si...)]
+    dict_axs["δρ_ti"] = [Axis(gl[3, 1]; kwargs_axes_ti...), Axis(gl[3, 2]; kwargs_axes_ti...)]
+    dict_axs["δφ_ti"] = [Axis(gl[4, 1]; kwargs_axes_ti...), Axis(gl[4, 2]; kwargs_axes_ti...)]
+    label = Label(gl[0, 1:2], "$a_s a₀ Ground State"; tellwidth=false, tellheight=true, halign=:left, valign=:top)
+    Label(gl[1, 0], "SI ρ"; tellwidth=false, tellheight=false, halign=:left, valign=:center, rotation=π / 2)
+    Label(gl[2, 0], "SI φ"; tellwidth=false, tellheight=false, halign=:left, valign=:center, rotation=π / 2)
+    Label(gl[3, 0], "TI ρ"; tellwidth=false, tellheight=false, halign=:left, valign=:center, rotation=π / 2)
+    Label(gl[4, 0], "TI φ"; tellwidth=false, tellheight=false, halign=:left, valign=:center, rotation=π / 2)
+    rowsize!(gl, 0, 8)
+    colsize!(gl, 0, 8)
+    dict_axs, label
+end
+function set_panel_ground!(gl::GridLayout)
+    gl |> clean_gridlayout!
+    dict_axs = Dict{String,Any}()
+    dict_axs["si"] = [Axis(gl[1, 1]; kwargs_axes_si...), Axis(gl[1, 2]; kwargs_axes_si...)]
+    dict_axs["ti"] = [Axis(gl[2, 1]; kwargs_axes_ti...), Axis(gl[2, 2]; kwargs_axes_ti...)]
+    label = Label(gl[0, 1:2], "$a_s a₀ Ground State"; tellwidth=false, tellheight=true, halign=:left, valign=:top)
+    Label(gl[1, 0], "SI density"; tellwidth=false, tellheight=false, halign=:left, valign=:center, rotation=π / 2)
+    Label(gl[2, 0], "TI density"; tellwidth=false, tellheight=false, halign=:left, valign=:center, rotation=π / 2)
+    rowsize!(gl, 0, 8)
+    colsize!(gl, 0, 8)
+    dict_axs, label
 end
 
-println("  [$tag] Drawing modes $tag_as")
-fig_modes = Figure()
-
-function to_phase_clr_dens(φ, ρ, hue1, hue2; max_ρ=maximum(ρ), max_φ=maximum(φ), thres_alpha=0.1, alpha_base=0.0, l=0.4, l_max=0.8, h=0.24)
+function to_phase_clr_dens(φ, ρ, hue1, hue2; max_ρ=maximum(ρ), max_φ=maximum(φ), thres_alpha=0.05, alpha_base=0.05, l=0.4, l_max=0.8, h=0.24)
     size(φ) == size(ρ) || throw(ArgumentError("φ and ρ must have the same size"))
     ρ_n = (d -> clamp.(d, 0, max_ρ) / max_ρ)(ρ)
     φ_n = (d -> clamp.(d, -max_φ, max_φ) / max_φ)(φ)
@@ -61,39 +84,84 @@ end
 
 clrmap = gen_clrmap_posneg_nonlin(0.57 * 360, 0.96 * 360; thres_alpha=0.05, alpha_base=0.05)
 
+println("  [$tag] Drawing modes $tag_as")
+fig_modes = Figure()
+
+gl_modes = GridLayout(fig_modes[0, 1])
+axs_ground, label = set_panel_ground!(gl_modes)
+vcat(axs_ground["ti"], axs_ground["si"]) |> clear_axes!
+dens_3d_si = map(int_y, dens_3d)
+dens_3d_ti = map(int_z, dens_3d)
+(max_dens_si, max_dens_ti) = (dens_3d_si, dens_3d_ti) |> ds -> map(d -> maximum(stack(d)), ds)
+for i = 1:2
+    clrmap_dens = gen_clrmap_solo(hue_theme_istp[i == 1 ? "162" : "164"]; thres_alpha=0.1, alpha_base=0.1)
+    heatmap!(axs_ground["si"][i], x_vec, z_vec, dens_3d_si[i]; colorrange=(0, max_dens_si), colormap=clrmap_dens, rasterize=true)
+    heatmap!(axs_ground["ti"][i], x_vec, y_vec, dens_3d_ti[i]; colorrange=(0, max_dens_ti), colormap=clrmap_dens, rasterize=true)
+end
+for ax in values(axs_ground), i = 1:2
+    ax = ax[i]
+    ax |> a -> hidedecorations!(a, ticks=true, ticklabels=true, grid=false)
+    ax.xgridvisible = true
+    ax.ygridvisible = true
+    ax.xminorgridvisible = true
+    ax.yminorgridvisible = true
+    ax.xticks = LinearTicks(10)
+end
+for ax in axs_ground["si"], i = 1:2
+    limits!(ax, (-50, 50), (-20, 20))
+end
+for ax in axs_ground["ti"], i = 1:2
+    limits!(ax, (-50, 50), (-12, 12))
+    ax.xticklabelsvisible = true
+end
+
 for m = 1:n_mode
     print("\r      [$tag_as] Drawing mode $m")
     flush(stdout)
+    (ω[m] |> o -> imag(o) > real(o)) && continue
     gl_modes = GridLayout(fig_modes[m, 1])
-    axs_modes = set_panel_mode!(gl_modes)
-    axs_modes |> clear_axes!
+    axs_modes, label = set_panel_mode!(gl_modes)
+    vcat(axs_modes["δρ_ti"], axs_modes["δρ_si"], axs_modes["δφ_ti"], axs_modes["δφ_si"]) |> clear_axes!
 
     c_t = maximum(abs, δρ_ti[m, :] |> stack)
     c_s = maximum(abs, δρ_si[m, :] |> stack)
-
+    label.text = "Mode $m | $(@sprintf("%.02f", real(ω[m]))) Hz"
+    
     for i = 1:2
-        clr_δφ_si = to_phase_clr_dens(δφ_si[m, i], δρ_si[m, i], 0.57 * 360, 0.96 * 360; max_φ=max_φ[m])
-        clr_δφ_ti = to_phase_clr_dens(δφ_ti[m, i], δρ_ti[m, i], 0.57 * 360, 0.96 * 360; max_φ=max_φ[m])
-        heatmap!(axs_modes["δρ_si"][i], x_vec, y_vec, δρ_si[m, i]; colormap=clrmap, colorrange=(-c_s, c_s), rasterize=true)
-        heatmap!(axs_modes["δρ_ti"][i], x_vec, z_vec, δρ_ti[m, i]; colormap=clrmap, colorrange=(-c_t, c_t), rasterize=true)
-        heatmap!(axs_modes["δφ_si"][i], x_vec, y_vec, clr_δφ_si; rasterize=true)
-        heatmap!(axs_modes["δφ_ti"][i], x_vec, z_vec, clr_δφ_ti; rasterize=true)
+        clr_δφ_si = to_phase_clr_dens(δφ_si[m, i], dens_gnd_si_cut[i], 0.57 * 360, 0.96 * 360; max_φ=max_φ[m], thres_alpha=0.05)
+        clr_δφ_ti = to_phase_clr_dens(δφ_ti[m, i], dens_gnd_ti_cut[i], 0.57 * 360, 0.96 * 360; max_φ=max_φ[m], thres_alpha=0.05)
+        heatmap!(axs_modes["δρ_si"][i], x_vec, z_vec, δρ_si[m, i]; colormap=clrmap, colorrange=(-c_s, c_s), rasterize=true)
+        heatmap!(axs_modes["δρ_ti"][i], x_vec, y_vec, δρ_ti[m, i]; colormap=clrmap, colorrange=(-c_t, c_t), rasterize=true)
+        heatmap!(axs_modes["δφ_si"][i], x_vec, z_vec, clr_δφ_si; rasterize=true)
+        heatmap!(axs_modes["δφ_ti"][i], x_vec, y_vec, clr_δφ_ti; rasterize=true)
     end
     for ax in values(axs_modes), i = 1:2
-        ax[i] |> a -> hidedecorations!(a, ticks=true, ticklabels=true, grid=false)
-        ax[i].xgridvisible = true
-        ax[i].ygridvisible = true
-        ax[i].xminorgridvisible = true
-        ax[i].yminorgridvisible = true
-        xlims!(ax[i], (-50, 50))
-        ylims!(ax[i], (-15, 15))
+        ax = ax[i]
+        ax |> a -> hidedecorations!(a, ticks=true, ticklabels=true, grid=false)
+        ax.xgridvisible = true
+        ax.ygridvisible = true
+        ax.xminorgridvisible = true
+        ax.yminorgridvisible = true
+        ax.xticks = LinearTicks(10)
+    end
+    for ax in vcat(axs_modes["δρ_si"], axs_modes["δφ_si"]), i = 1:2
+        limits!(ax, (-50, 50), (-20, 20))
+    end
+    for ax in vcat(axs_modes["δρ_ti"], axs_modes["δφ_ti"]), i = 1:2
+        limits!(ax, (-50, 50), (-12, 12))
+    end
+    for i = 1:2
+        ax = axs_modes["δφ_ti"][i]
+        ax.xticklabelsvisible = true
     end
     fig_modes |> resize_to_layout!
 end
 fig_modes |> resize_to_layout!
-fig_modes |> f -> save(joinpath(path_output, "Modes.$tag_as.png"), f; backend=GLMakie)
+fig_modes |> f -> save(joinpath(path_output, "Modes.$tag_as.png"), f; backend=CairoMakie)
+fig_modes |> f -> save(joinpath(path_output, "Modes.$tag_as.pdf"), f; backend=CairoMakie)
 println("")
 
+## animation gif of individual modes
 
 println("  [$tag] Animating modes $tag_as")
 
@@ -132,8 +200,8 @@ for m in 1:15
         dens_x_frame = dens_xt(t)
         clr_misc_xz = to_miscibility_clr(dens_xz_frame[1], dens_xz_frame[2], hue_theme_istp["162"], hue_theme_istp["164"]; to_norm_each=false, max=0.002)
         clr_misc_xy = to_miscibility_clr(dens_xy_frame[1], dens_xy_frame[2], hue_theme_istp["162"], hue_theme_istp["164"]; to_norm_each=false, max=0.002)
-        heatmap!(ax_ti, x_vec, y_vec, clr_misc_xy; rasterize=true)
-        heatmap!(ax_si, x_vec, z_vec, clr_misc_xz; rasterize=true)
+        heatmap!(ax_ti, x_vec, y_vec, clr_misc_xy)
+        heatmap!(ax_si, x_vec, z_vec, clr_misc_xz)
         lines!(ax_prfl, x_vec, dens_x_frame[1]; color=clr_theme[1])
         lines!(ax_prfl, x_vec, dens_x_frame[2]; color=clr_theme[2])
         ax_ti.xticks = LinearTicks(10)
