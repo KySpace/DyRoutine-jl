@@ -322,15 +322,15 @@ function calc_solo_essn_2d(
     px_in_um = length(px_in_um) == 1 ? (px_in_um, px_in_um) : px_in_um
     dens_roi = crop_center(dens, cent, smwh)
     sum_dens = sum(dens)
-    x_cent = smwh[1] + 1
+    x_cent_modl = smwh_core[1] + 1
     step_posi = px_in_um
-    step_modl = 1 ./ (2 .* smwh .* px_in_um)
+    step_modl = 1 ./ (2 .* smwh_core .* px_in_um)
     x_posi, y_posi = map(u -> (-u:1:u), smwh) .* step_posi
-    prfl_strip = crop_center(dens, cent_core, smwh_strip) |> m -> mean(m, dims=2) |> vec
-    modl_roi = dens_roi .* gen_win_hann_2d(smwh) |> fft |> fftshift |> c -> abs.(c)
-    prfl_modl = modl_roi[:, x_cent-smw_modl:x_cent+smw_modl] |> m -> sum(m, dims=2) ./ (smw_modl * 2 + 1) |> vec
-    prfl_modl_norm_px = prfl_modl ./ (sum(prfl_modl) * step_modl[2] / 2)
     dens2d_core = crop_center(dens, cent_core, smwh_core)
+    prfl_strip = crop_center(dens, cent_core, smwh_strip) |> m -> mean(m, dims=2) |> vec
+    modl_roi = dens2d_core .* gen_win_hann_2d(smwh_core) |> fft |> fftshift |> c -> abs.(c)
+    prfl_modl = modl_roi[:, x_cent_modl-smw_modl:x_cent_modl+smw_modl] |> m -> sum(m, dims=2) ./ (smw_modl * 2 + 1) |> vec
+    prfl_modl_norm_px = prfl_modl ./ (sum(prfl_modl) * step_modl[2] / 2)
     return SoloEssentials(
         dens_roi,
         modl_roi,
@@ -360,9 +360,8 @@ function calc_solo_extr(
     fit_asymm_kwargs::NamedTuple=NamedTuple(),
     fit_round_kwargs::NamedTuple=NamedTuple(),
 )
-    x, y = essn.smwh |> s -> map(u -> (-u:1:u), s)
-    x_modl, y_modl = (x, y) .* essn.step_modl
-    x_posi, y_posi = (x, y) .* essn.step_posi
+    x_modl, y_modl = essn.smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_modl
+    x_posi, y_posi = essn.smwh |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_posi
     sel_sidepeak = selector_sidepeak(y_modl)
     sidepeak = proc_sidepeak ?
     begin

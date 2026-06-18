@@ -9,7 +9,7 @@ c = 3
 istp = 1
 essn = essn_stacked_over_rep_t[c,istp]
 finess = 10
-x, y = essn.smwh |> s -> map(u -> (-u:(1/finess):u), s)
+x, y = essn.smwh_core |> s -> map(u -> (-u:(1/finess):u), s)
 x_modl, y_modl = (x, y) .* essn.step_modl .* finess
 
 

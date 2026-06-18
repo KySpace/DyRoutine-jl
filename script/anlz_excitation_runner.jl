@@ -18,7 +18,7 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 path_runner = @__FILE__
 path_anlz_excitation = joinpath(@__DIR__, "anlz_excitation.jl")
 # commit 1e229ff5bcad40cf5ef994312436b966338775d0
-title_anlz = "[06.17].71.Table"
+title_anlz = "[06.17].73.Dev.TightROIforSidePeak"
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
@@ -78,8 +78,8 @@ runinfos = runinfos_grouped
 # ids_runinfo = eachindex(runinfos)
 ids_runinfo = 1:2
 # sel_vars = NamedTuple()
-sel_vars = (; t_hold=t -> 0 .<= t .<= 80)
-# sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 80)
+# sel_vars = (; t_hold=t -> 0 .<= t .<= 80)
+sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 50)
 
 
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
@@ -99,10 +99,9 @@ px_in_um = 6.5 / 22.06
 len_avg_peak = 10
 
 step_posi = px_in_um
-step_modl = 1 ./ (2 .* smwh_roi .* px_in_um)
-x_vec, y_vec = smwh_roi |> s -> map(u -> (-u:1:u), s)
-x_posi, y_posi = (x_vec, y_vec) .* step_posi
-x_modl, y_modl = (x_vec, y_vec) .* step_modl
+step_modl = 1 ./ (2 .* smwh_core .* px_in_um)
+x_modl, y_modl = smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* step_modl
+x_posi, y_posi = smwh_roi |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* step_posi
 
 idx_IB_axis = 1
 idx_rep_axis = 2
@@ -130,7 +129,7 @@ filter_core_pca = im -> imfilter(im, Kernel.gaussian(1.5))
 
 fit_stack_kwargs = NamedTuple()
 fit_tailess_kwargs = NamedTuple()
-fit_asymm_kwargs = (; preprocess=ds -> imfilter(ds, Kernel.gaussian(3)))
+fit_asymm_kwargs = (; preprocess=ds -> imfilter(ds, Kernel.gaussian(10)))
 fit_round_kwargs = NamedTuple()
 query_weight_kwargs = NamedTuple()
 trend_property_specs = [

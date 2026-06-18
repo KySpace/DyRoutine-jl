@@ -19,7 +19,7 @@ function calc_stacked_essn(essns::AbstractVector{SoloEssentials})::SoloEssential
         mean(map(essn -> essn.modl2d, essns)),
         mean(map(essn -> essn.dens2d_core, essns)),
         mean_tuple(map(essn -> essn.offset_cent_core, essns)),
-        mean_tuple(map(essn -> essn.smwh_core, essns)),
+        mean_tuple(map(essn -> essn.smwh_core, essns)) |> wh -> map(Int, wh),
         mean(map(essn -> essn.prfl_strip, essns)),
         mean(map(essn -> essn.prfl_modl, essns)),
         mean(map(essn -> essn.prfl_modl_norm_px, essns)),

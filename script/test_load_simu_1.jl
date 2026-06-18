@@ -65,9 +65,8 @@ smwh_core = smwh_roi = (80, 125)
 step_posi = px_in_um
 step_modl = 1 ./ (2 .* smwh_roi .* px_in_um)
 smw_ft = 5
-x_vec, y_vec = smwh_roi |> s -> map(u -> (-u:1:u), s)
-x_posi, y_posi = (x_vec, y_vec) .* step_posi
-x_modl, y_modl = (x_vec, y_vec) .* step_modl
+x_modl, y_modl = smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* step_modl
+x_posi, y_posi = smwh_roi |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* step_posi
 
 
 proc_sidepeak = true

@@ -101,6 +101,26 @@ function draw_rotated_ellipse_corners!(
     return obj
 end
 
+function draw_bound!(
+    ax,
+    center::Tuple{<:Real,<:Real},
+    smwh::Tuple{<:Integer, <:Integer},
+    step;
+    kwargs...
+)
+    x0, y0 = center
+    rx, ry = (smwh .+ 0.5) .* step
+    vtx_x = []
+    vtx_y = []
+    for (u, v) in [(+1, +1), (+1, -1), (-1, -1), (-1, +1), (+1, +1)]
+        rxuv, ryuv = (u * rx, v * ry)
+        push!(vtx_x, x0 + rxuv)
+        push!(vtx_y, y0 + ryuv)
+    end
+    obj = lines!(ax, vtx_x, vtx_y; kwargs...)
+    return obj
+end
+
 function matching_axes(dict_axes::Dict{String,Axis}, pattern)
     return [dict_axes[k] for k in keys(dict_axes) if occursin(pattern, k)]
 end

@@ -5,7 +5,7 @@ fig = Figure()
 gl = GridLayout()
 fig[1, 1] = gl
 
-c = 3
+c = 2
 t = 10
 i = 2
 r = 1
@@ -16,22 +16,8 @@ draw_solo_modl!(axs_live, extr_fmt[c, r, t, i], info)
 resize_to_layout!(fig)
 fig |> display
 
-essn_sample = calc_solo_essn_2d(dens_fmt_sample, smwh_peak .+ 1, smwh_peak, 10, 6.5 / 22.);
-info_sample = Dict("istp" => val_vars[3][1], "t_hold" => val_vars[2][3], "repeat" => val_vars[1][1])
-axs_live = set_panel_solo_essn_2d!(gl);
-draw_solo_essn_2d!(axs_live, essn_sample, info_sample);
-fig |> display
-
-essn_2d_fmt = dens_full_fmt |> ds -> mapslices(d -> calc_solo_essn_2d(d, smwh_peak .+ 1, smwh_peak, 10, 6.5 / 22.), ds; dims=(4, 5)) |> e -> dropdims(e; dims=(4, 5));
-info_fmt = [Dict("istp" => val_vars[3][i], "t_hold" => val_vars[2][t], "repeat" => val_vars[1][r]) for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]]
-fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars, set_panel_solo_essn_2d!)
-for r in 1:n_dim_vars[1], t in 1:n_dim_vars[2], i in 1:n_dim_vars[3]
-    info = info_fmt[r, t, i]
-    print("\r\033[2Kplotting for rep $i, $(info["t_hold"]) ms, $(info["istp"])")
-    draw_solo_essn_2d!(axs_solo[r, t, i], essn_2d_fmt[r, t, i], info)
-    draw_solo_essn_2d!(axs_live, essn_2d_fmt[r, t, i], info)
-end
-println("Full table drawn.")
-resize_to_layout!(fig_full)
-
-fig_full |> f -> save(joinpath(@__DIR__, "full_essn.pdf"), f; backend=CairoMakie)
+# essn_sample = calc_solo_essn_2d(dens_fmt_sample, smwh_peak .+ 1, smwh_peak, 10, 6.5 / 22.);
+# info_sample = Dict("istp" => val_vars[3][1], "t_hold" => val_vars[2][3], "repeat" => val_vars[1][1])
+# axs_live = set_panel_solo_essn_2d!(gl);
+# draw_solo_essn_2d!(axs_live, essn_sample, info_sample);
+# fig |> display

@@ -138,14 +138,14 @@ extr_stacked_over_rep = [
 println()
 log_done("extracted stacked-over-repeat values", t_stage)
 
-t_stage = log_step("preparing PCA samples")
-modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
-                                  m ->
-    map(a -> a[smwh_roi[2]+1+8:smwh_roi[2]+1+15, smwh_roi[1]+1-smw_ft:smwh_roi[1]+1+smw_ft], m) |>
-    # d -> [permutedims(stack(@view d[i, j, :]), (3, 1, 2))
-    #     for i in axes(d, 1), j in axes(d, 2)];
-    d -> d
-log_done("prepared PCA samples", t_stage)
+# t_stage = log_step("preparing PCA samples")
+# modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
+#                                   m ->
+#     map(a -> a[smwh_core[2]+1+8:smwh_core[2]+1+15, smwh_core[1]+1-smw_ft:smwh_core[1]+1+smw_ft], m) |>
+#     # d -> [permutedims(stack(@view d[i, j, :]), (3, 1, 2))
+#     #     for i in axes(d, 1), j in axes(d, 2)];
+#     d -> d
+# log_done("prepared PCA samples", t_stage)
 
 t_stage = log_step("fitting PCA modes")
 # per IB
