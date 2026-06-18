@@ -61,7 +61,7 @@ function draw_solo_modl!(axs::Dict{String}, extr::SoloExtract, info_solo; dens_m
     isnothing(extr.envelope) && return
     isnothing(extr.sidepeak) && return
 
-    foreach(a -> a isa Axis && empty!, values(axs))
+    foreach(a -> a isa Axis && empty!(a), values(axs))
     essn = extr.essentials
     modl2d_norm = essn.modl2d |> m -> m ./ (sum(m) * (essn.step_modl[2] / 2)^2)
     x_modl, y_modl = essn.smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_modl
