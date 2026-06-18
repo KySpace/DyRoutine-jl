@@ -91,7 +91,7 @@ cp(path_anlz_excitation, joinpath(path_output, basename(path_anlz_excitation)); 
 wh_corner = (10, 10)
 smwh_roi = (40, 80)
 smwh_essn = (30, 60)
-smwh_core = (20, 40)
+smwh_core = (30, 60)
 wh_peak = smwh_roi .* 2 .+ 1
 smw_peak, smh_peak = smwh_roi
 smw_ft = 5

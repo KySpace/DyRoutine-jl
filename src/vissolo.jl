@@ -45,20 +45,23 @@ end
 
 function set_panel_solo_modl!(gl::GridLayout)
     gl |> clean_gridlayout!
-    ax_prfl_ft_sideway = Axis(gl[1, 1], width=200, height=160)
-    ax_dens = Axis(gl[1, 2], width=80, height=160)
-    ax_dens_core = Axis(gl[1, 3], width=80, height=160)
-    ax_modl = Axis(gl[1, 4], width=240, height=160)
-    ax_prfl_ft_upright = Axis(gl[1, 5], width=240, height=160)
+    label = Label(gl[0, 1:5], width=150, height=180; tellwidth=false, tellheight=false, halign=:left, valign=:bottom)
+    ax_prfl_ft_sideway = Axis(gl[1, 1], width=150, height=180)
+    ax_dens = Axis(gl[1, 2], width=90, height=180)
+    ax_dens_core = Axis(gl[1, 3], width=90, height=180)
+    ax_modl = Axis(gl[1, 4], width=90, height=180)
+    ax_prfl_ft_upright = Axis(gl[1, 5], width=240, height=180)
     colgap!(gl, 5)
-    return Dict("dens" => ax_dens, "dens_core" => ax_dens_core, "modl" => ax_modl, "upright" => ax_prfl_ft_upright, "sideway" => ax_prfl_ft_sideway)
+    rowgap!(gl, 2)
+    rowsize!(gl, 0, 4)
+    return Dict("dens" => ax_dens, "dens_core" => ax_dens_core, "modl" => ax_modl, "upright" => ax_prfl_ft_upright, "sideway" => ax_prfl_ft_sideway, "label" => label)
 end
 
-function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo; dens_max=16.0, peak_height_max=2)
+function draw_solo_modl!(axs::Dict{String}, extr::SoloExtract, info_solo; dens_max=16.0, peak_height_max=2)
     isnothing(extr.envelope) && return
     isnothing(extr.sidepeak) && return
 
-    foreach(empty!, values(axs))
+    foreach(a -> a isa Axis && empty!, values(axs))
     essn = extr.essentials
     modl2d_norm = essn.modl2d |> m -> m ./ (sum(m) * (essn.step_modl[2] / 2)^2)
     x_modl, y_modl = essn.smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_modl
@@ -104,9 +107,8 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo; d
     limits!(axs["dens"], lims_full...)
     limits!(axs["dens_core"], lims_core...)
     xlims!(axs["upright"], 0, 0.6)
-    xlims!(axs["modl"], 0, 0.6)
+    limits!(axs["modl"], (0, 0.6), (-0.6, 0.6))
     ylims!(axs["upright"], -0.2, peak_height_max + 0.2)
-    ylims!(axs["modl"], (-10.5, 10.5) .* essn.step_modl[1])
     ylims!(axs["sideway"], 0.15, 0.45)
     xlims!(axs["sideway"], 0.0, peak_height_max)
     vlines!(axs["modl"], 0.3; color=RGBAf(Oklch(0.3, 0, 0), 0.2))
@@ -125,7 +127,7 @@ function draw_solo_modl!(axs::Dict{String,Axis}, extr::SoloExtract, info_solo; d
     band!(axs["upright"], [mmt_coor_min, mmt_coor_max], 0 |> make_dual, -0.02 |> make_dual; color=(clr_moments, 1))
 
     sprint2f = (x) -> @sprintf("%.2f", x)
-    text!(axs["modl"], 0.05, 0.05; text="$(@sprintf("%.1f", info_solo["t_hold"])) ms | rep $(info_solo["repeat"])", space=:relative, color=:black, strokewidth=0.6, strokecolor=:white, fontsize=20, align=(:left, :bottom))
+    axs["label"].text = "$(@sprintf("%.1f", info_solo["t_hold"])) ms | rep $(info_solo["repeat"])"
     text!(axs["dens"], 0.05, 0.05; text="[$(nvlp.size[1] |> sprint2f), $(nvlp.size[2] |> sprint2f)] μm \nrss/sum: $(nvlp.rel_residue |> sprint2f)", space=:relative, color=clr_mark_nvlp, strokewidth=0.5, strokecolor=:white, font=:bold, fontsize=11, align=(:left, :bottom))
     text!(axs["sideway"], 0.98, 0.78; text="fit: $(sp.height |> sprint2f), $(sp.weight |> sprint2f)", space=:relative, color=:springgreen3, fontsize=14, align=(:right, :top))
     text!(axs["sideway"], 0.98, 0.88; text="μ₀: $(mmt.height |> sprint2f), $(mmt.weight |> sprint2f)", space=:relative, color=clr_moments, fontsize=14, align=(:right, :top))
