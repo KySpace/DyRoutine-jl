@@ -139,9 +139,42 @@ end
 # Want to see how the fringes or features in density corresponds to peaks in modulation
 #
 
+## investigate tail
 
+essn_stacked_over_rep = [
+    begin
+        essns_r = [essn_2d_fmt[c, r, t, i] for r in axes(essn_2d_fmt, 2)] |> vec
+        print("\r  [$tag] stacking over rep IB_idx=$c t_hold=$t istp_idx=$i n=$(length(essns_r))")
+        flush(stdout)
+        calc_stacked_essn(essns_r)
+    end
+    for c in axes(essn_2d_fmt, 1), t in axes(essn_2d_fmt, 3), i in axes(essn_2d_fmt, 4)
+]
+println()
+log_done("stacked essentials over rep only", t_stage)
 
-## Loading
+t_stage = log_step("fitting stacked modulation tails")
+fit_prfl_modl_over_rep_1d = [
+    essn_stacked_over_rep[c, t, i] |>
+    e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl_norm_px, selector_tail_stack(y_modl); fit_stack_kwargs...)
+    for c in axes(essn_2d_fmt, 1), t in axes(essn_2d_fmt, 3), i in axes(essn_2d_fmt, 4)
+]
+log_done("fit stacked modulation tails", t_stage)
+tail_params_D = fit_prfl_modl_over_rep_1d |> fs -> map(f -> f.params[6], fs)
+tail_params_λ = fit_prfl_modl_over_rep_1d |> fs -> map(f -> f.params[7], fs)
+
+fig_tail = Figure()
+ax_D = Axis(fig_tail[1,1]; title="D")
+ax_λ = Axis(fig_tail[1,2]; title="λ")
+c = 1
+for c in axes(essn_2d_fmt, 1), i in axes(essn_2d_fmt, 4)
+    # [ax_D ax_λ] |> clear_axes!
+    clr_theme = Oklch(0.52, 0.14, hue_theme_istp[val_vars.istp[i]] + 5 * c)
+    lines!(ax_D, val_vars.t_hold, tail_params_D[c,:,i]; color=RGBAf(clr_theme, 0.4))
+    lines!(ax_λ, val_vars.t_hold, tail_params_λ[c,:,i]; color=RGBAf(clr_theme, 0.4))
+end
+fig_tail |> display
+
 ## Set a mask and show the results
 using GLMakie
 GLMakie.activate!()
@@ -158,11 +191,11 @@ gl = GridLayout(fig[1, 1])
 axs = set_panel_solo_modl_masks!(gl)
 foreach(a -> a isa Axis && empty!(a), values(axs))
 
-c, r, t, i = (3, 3,  6, 2)
+c, r, t, i = (5, 2, 03, 2)
 extr = extr_fmt[c, r, t, i]
 info = info_fmt[c, r, t, i]
 essn = extr.essentials
-fit_tail = fit_prfl_modl_over_rep_t_1d[c, i].tail
+fit_tail = fit_prfl_modl_over_rep_1d[c, t, i].tail
 x_modl, y_modl = essn.smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_modl
 x_posi, y_posi = essn.smwh |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_posi
 x_posi_core, y_posi_core = essn.smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_posi
