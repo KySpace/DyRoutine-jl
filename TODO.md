@@ -4,6 +4,7 @@
 - nvlp, sidepeak etc.. naming
 - 162 164 use symbols
 - functional, map, functors
+- function placement
 - current centers and rois
   in unit of pixels
   smwh_roi = (40, 80)

@@ -17,8 +17,8 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
 path_runner = @__FILE__
 path_anlz_excitation = joinpath(@__DIR__, "anlz_excitation.jl")
-# commit 1e229ff5bcad40cf5ef994312436b966338775d0
-title_anlz = "[06.17].73.Dev.TightROIforSidePeak"
+# commit 7347419be159c7f6da58c2b1db8d7ac4991a051d
+title_anlz = "[06.17].74.CoreROIforSidePeak.Lite"
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
@@ -76,10 +76,10 @@ runinfos = runinfos_grouped
 # runinfos = runinfos_separated
 
 # ids_runinfo = eachindex(runinfos)
-ids_runinfo = 1:2
+ids_runinfo = 1:1
 # sel_vars = NamedTuple()
-# sel_vars = (; t_hold=t -> 0 .<= t .<= 80)
-sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 50)
+sel_vars = (; t_hold=t -> 0 .<= t .<= 80)
+# sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 50)
 
 
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
@@ -89,7 +89,7 @@ cp(path_runner, joinpath(path_output, basename(path_runner)); force=true)
 cp(path_anlz_excitation, joinpath(path_output, basename(path_anlz_excitation)); force=true)
 
 wh_corner = (10, 10)
-smwh_roi = (40, 80)
+smwh_roi = (50, 180)
 smwh_essn = (30, 60)
 smwh_core = (30, 60)
 wh_peak = smwh_roi .* 2 .+ 1
@@ -129,7 +129,14 @@ filter_core_pca = im -> imfilter(im, Kernel.gaussian(1.5))
 
 fit_stack_kwargs = NamedTuple()
 fit_tailess_kwargs = NamedTuple()
-fit_asymm_kwargs = (; preprocess=ds -> imfilter(ds, Kernel.gaussian(10)))
+fit_asymm_kwargs = (;
+        preprocess=ds -> imfilter(ds, Kernel.gaussian(10)),
+        θ_hint=(
+            max=0.0 / 180 * π,
+            min=0.0 / 180 * π,
+            init=0.0 / 180 * π
+            )
+        )
 fit_round_kwargs = NamedTuple()
 query_weight_kwargs = NamedTuple()
 trend_property_specs = [

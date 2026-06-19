@@ -45,7 +45,7 @@ end
 
 function set_panel_solo_modl!(gl::GridLayout)
     gl |> clean_gridlayout!
-    label = Label(gl[0, 1:5], width=150, height=180; tellwidth=false, tellheight=false, halign=:left, valign=:bottom)
+    label = Label(gl[0, 1:5]; tellwidth=false, tellheight=false, halign=:left, valign=:bottom)
     ax_prfl_ft_sideway = Axis(gl[1, 1], width=150, height=180)
     ax_dens = Axis(gl[1, 2], width=90, height=180)
     ax_dens_core = Axis(gl[1, 3], width=90, height=180)

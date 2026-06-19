@@ -73,12 +73,12 @@ function set_panel_ground!(gl::GridLayout)
     dict_axs, label
 end
 
-function to_phase_clr_dens(φ, ρ, hue1, hue2; max_ρ=maximum(ρ), max_φ=maximum(φ), thres_alpha=0.05, alpha_base=0.05, l=0.4, l_max=0.8, h=0.24)
+function to_phase_clr_dens(φ, ρ, hue1, hue2; max_ρ=maximum(ρ), max_φ=maximum(φ), thres_alpha=0.05, alpha_base=0.05, l=0.4, l_max=0.8, s=0.24)
     size(φ) == size(ρ) || throw(ArgumentError("φ and ρ must have the same size"))
     ρ_n = (d -> clamp.(d, 0, max_ρ) / max_ρ)(ρ)
     φ_n = (d -> clamp.(d, -max_φ, max_φ) / max_φ)(φ)
     alpha = n -> n > thres_alpha ? 1.0 : (n / thres_alpha * (1 - alpha_base) + alpha_base)
-    shader = (f, n) -> Oklch(l_max - (l_max - l) * abs(f), h * abs(f), f > 0 ? hue1 : hue2) |> c -> RGBAf(c, alpha(n))
+    shader = (f, n) -> Oklch(l_max - (l_max - l) * abs(f), s * abs(f), f > 0 ? hue1 : hue2) |> c -> RGBAf(c, alpha(n))
     return [shader(φ_n[x, y], ρ_n[x, y]) for x in 1:size(ρ, 1), y in 1:size(ρ, 2)]
 end
 
@@ -126,7 +126,7 @@ for m = 1:n_mode
     c_t = maximum(abs, δρ_ti[m, :] |> stack)
     c_s = maximum(abs, δρ_si[m, :] |> stack)
     label.text = "Mode $m | $(@sprintf("%.02f", real(ω[m]))) Hz"
-    
+
     for i = 1:2
         clr_δφ_si = to_phase_clr_dens(δφ_si[m, i], dens_gnd_si_cut[i], 0.57 * 360, 0.96 * 360; max_φ=max_φ[m], thres_alpha=0.05)
         clr_δφ_ti = to_phase_clr_dens(δφ_ti[m, i], dens_gnd_ti_cut[i], 0.57 * 360, 0.96 * 360; max_φ=max_φ[m], thres_alpha=0.05)
