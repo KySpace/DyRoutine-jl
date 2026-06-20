@@ -66,6 +66,29 @@ function to_masked_clr(dens, mask, hue; sat_max=0.24, max=16, thres_alpha=0.1, l
     return [shader(dens_norm[x, y], mask[x, y]) for x in 1:size(dens, 1), y in 1:size(dens, 2)]
 end
 
+function set_core_density_grid!(ax::Axis, lims_core)
+    xlims, ylims = lims_core
+    major_ticks(lims) = (ceil(Int, lims[1] / 10) * 10):10:(floor(Int, lims[2] / 10) * 10)
+    minor_ticks(lims) = (ceil(Int, lims[1] / 2) * 2):2:(floor(Int, lims[2] / 2) * 2)
+    ax.xticks = major_ticks(xlims)
+    ax.yticks = major_ticks(ylims)
+    ax.xminorticks = minor_ticks(xlims)
+    ax.yminorticks = minor_ticks(ylims)
+    ax.xgridvisible = true
+    ax.ygridvisible = true
+    ax.xminorgridvisible = true
+    ax.yminorgridvisible = true
+    ax.xgridcolor = (:black, 0.22)
+    ax.ygridcolor = (:black, 0.22)
+    ax.xminorgridcolor = (:black, 0.10)
+    ax.yminorgridcolor = (:black, 0.10)
+    ax.xgridwidth = 0.6
+    ax.ygridwidth = 0.6
+    ax.xminorgridwidth = 0.35
+    ax.yminorgridwidth = 0.35
+    return ax
+end
+
 function draw_solo_modl!(axs::Dict{String}, extr::SoloExtract, info_solo; dens_max=16.0, peak_height_max=2)
     isnothing(extr.envelope) && return
     isnothing(extr.sidepeak) && return
@@ -73,19 +96,17 @@ function draw_solo_modl!(axs::Dict{String}, extr::SoloExtract, info_solo; dens_m
     foreach(a -> a isa Axis && empty!(a), values(axs))
     essn = extr.essentials
     modl2d_norm = essn.modl2d |> m -> m ./ (sum(m) * (essn.step_modl[2] / 2)^2)
-    masks = essn.mask_modl
+    masks = essn.prfl_modl.mask
     x_modl, y_modl = essn.smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_modl
     x_posi, y_posi = essn.smwh |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_posi
     x_posi_core, y_posi_core = essn.smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_posi
     y_modl_sm = (0:1:essn.smwh_core[2]) * essn.step_modl[2]
     hue_theme = hue_theme_istp[info_solo["istp"]]
-    clrmap = gen_clrmap_solo(hue_theme)
-    clrmap_masked_core = gen_clrmap_solo(hue_theme; thres_alpha=0.05, alpha_base=0.05)
+    clrmap_dens = gen_clrmap_solo(hue_theme; thres_alpha=0.05, alpha_base=0.05)
     clr_mark_nvlp = RGBAf(Oklch(0.52, 0.10, hue_theme + 90), 1.0)
     clr_moments = Oklch(0.52, 0.14, hue_theme)
     hue_fringe = 105
     hue_center = 154
-    clr_prfl_masked = Oklch(0.52, 0.14, hue_theme)
 
     lims_full = (essn.smwh .+ 0.5) .* essn.step_posi |> l -> map(a -> [-a, a], l)
     lims_core = (essn.smwh_core .+ 0.5) .* essn.step_posi |> l -> map(a -> [-a, a], l)
@@ -96,34 +117,34 @@ function draw_solo_modl!(axs::Dict{String}, extr::SoloExtract, info_solo; dens_m
     mask_dens_core = @. !(masks.fringe | masks.center)
     dens_core_masked = calc_dens_mask(mask_dens_core)
 
-    heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, dens_max), colormap=clrmap, rasterize=true)
-    heatmap!(axs["dens_core"], x_posi_core, y_posi_core, essn.dens2d_core'; colorrange=(0, dens_max), colormap=clrmap, rasterize=true)
-    heatmap!(axs["dens_core_masked"], x_posi_core, y_posi_core, dens_core_masked'; colorrange=(0, dens_max / 2), colormap=clrmap_masked_core, rasterize=true)
+    heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, dens_max), colormap=clrmap_dens, rasterize=true)
+    heatmap!(axs["dens_core"], x_posi_core, y_posi_core, essn.dens2d_core'; colorrange=(0, dens_max), colormap=clrmap_dens, rasterize=true)
+    heatmap!(axs["dens_core_masked"], x_posi_core, y_posi_core, dens_core_masked'; colorrange=(0, dens_max / 2), colormap=clrmap_dens, rasterize=true)
     draw_bound!(axs["dens"], essn.offset_cent_core, essn.smwh_core, essn.step_posi; color=:black, linewidth=0.5)
     draw_rotated_ellipse_corners!(axs["dens"], nvlp.cent, nvlp.size, nvlp.rotation; color=:white, linewidth=4)
     draw_rotated_ellipse_corners!(axs["dens"], nvlp.cent, nvlp.size, nvlp.rotation; color=clr_mark_nvlp, linewidth=2)
 
     clr_max_modl = dens_max * 5 / 8
-    clr_modl_rest = to_masked_clr(modl2d_norm, (@. !(masks.prfl | masks.fringe | masks.center)), hue_theme; max=clr_max_modl, thres_alpha=0.0, sat_max=0)
+    clr_modl_rest = to_masked_clr(modl2d_norm, (@. !(masks.side | masks.fringe | masks.center)), hue_theme; max=clr_max_modl, thres_alpha=0.0, sat_max=0)
     clr_modl_fringe = to_masked_clr(modl2d_norm, masks.fringe, hue_fringe; max=clr_max_modl, thres_alpha=0.0)
     clr_modl_center = to_masked_clr(modl2d_norm, masks.center, hue_center; max=clr_max_modl, thres_alpha=0.0)
-    clr_modl_prfl = to_masked_clr(modl2d_norm, masks.prfl, hue_theme; max=clr_max_modl, thres_alpha=0.0)
+    clr_modl_prfl = to_masked_clr(modl2d_norm, masks.side, hue_theme; max=clr_max_modl, thres_alpha=0.0)
     heatmap!(axs["modl"], y_modl, x_modl, clr_modl_rest; rasterize=true)
     heatmap!(axs["modl"], y_modl, x_modl, clr_modl_fringe; rasterize=true)
     heatmap!(axs["modl"], y_modl, x_modl, clr_modl_center; rasterize=true)
     heatmap!(axs["modl"], y_modl, x_modl, clr_modl_prfl; rasterize=true)
-    lines!(axs["upright"], y_modl_sm, essn.prfl_main_normed_px[essn.smwh_core[2]+1:end], color=(:black, 0.35), linestyle=:dash, linewidth=1)
-    lines!(axs["sideway"], essn.prfl_main_normed_px[essn.smwh_core[2]+1:end], y_modl_sm, color=(:black, 0.35), linestyle=:dash, linewidth=1)
-    lines!(axs["upright"], y_modl_sm, essn.prfl_modl_norm_px[essn.smwh_core[2]+1:end], color=(clr_prfl_masked, 0.7), linewidth=0.8)
-    lines!(axs["sideway"], essn.prfl_modl_norm_px[essn.smwh_core[2]+1:end], y_modl_sm, color=(clr_prfl_masked, 0.7), linewidth=0.8)
-    lines!(axs["upright"], y_modl_sm, extr.sidepeak.prfl_norm_tailess_px[essn.smwh_core[2]+1:end], color=clr_prfl_masked, linewidth=1.4)
-    lines!(axs["sideway"], extr.sidepeak.prfl_norm_tailess_px[essn.smwh_core[2]+1:end], y_modl_sm, color=clr_prfl_masked, linewidth=1.4)
+    lines!(axs["upright"], y_modl_sm, essn.prfl_modl.main.normed_px[essn.smwh_core[2]+1:end], color=(:black, 0.35), linestyle=:dash, linewidth=1)
+    lines!(axs["sideway"], essn.prfl_modl.main.normed_px[essn.smwh_core[2]+1:end], y_modl_sm, color=(:black, 0.35), linestyle=:dash, linewidth=1)
+    lines!(axs["upright"], y_modl_sm, essn.prfl_modl.side.normed_px[essn.smwh_core[2]+1:end], color=(:black, 0.65), linewidth=0.8)
+    lines!(axs["sideway"], essn.prfl_modl.side.normed_px[essn.smwh_core[2]+1:end], y_modl_sm, color=(:black, 0.65), linewidth=0.8)
+    lines!(axs["upright"], y_modl_sm, extr.sidepeak.prfl_norm_tailess_px[essn.smwh_core[2]+1:end], color=:black, linewidth=1.4)
+    lines!(axs["sideway"], extr.sidepeak.prfl_norm_tailess_px[essn.smwh_core[2]+1:end], y_modl_sm, color=:black, linewidth=1.4)
     axs["sideway"].yreversed = true
     axs["sideway"] |> hidedecorations!
     axs["modl"] |> hidedecorations!
     axs["dens"] |> hidedecorations!
-    axs["dens_core"] |> hidedecorations!
-    axs["dens_core_masked"] |> hidedecorations!
+    hidedecorations!(axs["dens_core"]; grid=false, minorgrid=false)
+    hidedecorations!(axs["dens_core_masked"]; grid=false, minorgrid=false)
     axs["upright"].yticklabelsvisible = false
     axs["upright"].xticklabelsvisible = false
     axs["dens"].aspect = DataAspect()
@@ -132,6 +153,8 @@ function draw_solo_modl!(axs::Dict{String}, extr::SoloExtract, info_solo; dens_m
     limits!(axs["dens"], lims_full...)
     limits!(axs["dens_core"], lims_core...)
     limits!(axs["dens_core_masked"], lims_core...)
+    set_core_density_grid!(axs["dens_core"], lims_core)
+    set_core_density_grid!(axs["dens_core_masked"], lims_core)
     xlims!(axs["upright"], 0, 0.6)
     limits!(axs["modl"], (0, 0.6), (-0.6, 0.6))
     ylims!(axs["upright"], -0.2, peak_height_max + 0.2)
@@ -168,16 +191,16 @@ function draw_solo_essn_2d!(axs::Dict{String,Axis}, essn::SoloEssentials, info_s
     modl2d_norm = essn.modl2d |> m -> m ./ (sum(m) * (essn.step_modl[2] / 2)^2)
     x_modl, y_modl = essn.smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_modl
     x_posi, y_posi = essn.smwh |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_posi
-    y_modl_sm = (0:1:essn.smwh[2]) * essn.step_modl[2]
+    y_modl_sm = (0:1:essn.smwh_core[2]) * essn.step_modl[2]
     hue_theme = hue_theme_istp[info_solo["istp"]]
-    clrmap = gen_clrmap_solo(hue_theme)
+    clrmap_dens = gen_clrmap_solo(hue_theme; thres_alpha=0.05, alpha_base=0.05)
     clr_moments = Oklch(0.52, 0.14, hue_theme)
 
-    heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, dens_max), colormap=clrmap, rasterize=true)
+    heatmap!(axs["dens"], x_posi, y_posi, essn.dens2d'; colorrange=(0, dens_max), colormap=clrmap_dens, rasterize=true)
 
-    heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh[2]+1:end, :]; colorrange=(0, dens_max * 5 / 8), colormap=clrmap, rasterize=true)
-    lines!(axs["upright"], y_modl_sm, essn.prfl_modl_norm_px[essn.smwh[2]+1:end], color=(:black, 1.0), linewidth=1)
-    lines!(axs["sideway"], essn.prfl_modl_norm_px[essn.smwh[2]+1:end], y_modl_sm, color=(:black, 0.4), linewidth=1)
+    heatmap!(axs["modl"], y_modl_sm, x_modl, modl2d_norm[essn.smwh_core[2]+1:end, :]; colorrange=(0, dens_max * 5 / 8), colormap=clrmap_dens, rasterize=true)
+    lines!(axs["upright"], y_modl_sm, essn.prfl_modl.side.normed_px[essn.smwh_core[2]+1:end], color=(:black, 1.0), linewidth=1)
+    lines!(axs["sideway"], essn.prfl_modl.side.normed_px[essn.smwh_core[2]+1:end], y_modl_sm, color=(:black, 0.4), linewidth=1)
     axs["sideway"].yreversed = true
     axs["dens"].aspect = DataAspect()
     xlims!(axs["upright"], 0, 0.6)

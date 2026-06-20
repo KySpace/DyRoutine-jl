@@ -95,7 +95,7 @@ function draw_solo_modl_mask!(axs::Dict{String}, extr::SoloExtract, info_solo, m
     heatmap!(axs["modl"], y_modl, x_modl, clr_modl_mask2; rasterize=true)
     heatmap!(axs["modl"], y_modl, x_modl, clr_modl_mask_prfl; rasterize=true)
     rng_prfl = essn.smwh_core[2] |> h -> h+1:(2*h + 1)
-    lines!(axs["upright"], y_modl, essn.prfl_modl_norm_px, color=(:black, 0.4), linewidth=1)
+    lines!(axs["upright"], y_modl, essn.prfl_modl.side.normed_px, color=(:black, 0.4), linewidth=1)
     lines!(axs["upright"], y_modl, extr.sidepeak.prfl_norm_tailess_px, color=:black, linewidth=1)
     lines!(axs["upright"], y_modl, prfls_masked.prfl_main_normed_px, color=:black, linestyle=:dash, linewidth=1)
     lines!(axs["upright"], y_modl, prfls_masked.prfl_sidepeak_normed_px, color=clr_prfl_masked, linewidth=0.6)
@@ -156,7 +156,7 @@ log_done("stacked essentials over rep only", t_stage)
 t_stage = log_step("fitting stacked modulation tails")
 fit_prfl_modl_over_rep_1d = [
     essn_stacked_over_rep[c, t, i] |>
-    e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl_norm_px, selector_tail_stack(y_modl); fit_stack_kwargs...)
+    e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl.side.normed_px, selector_tail_stack(y_modl); fit_stack_kwargs...)
     for c in axes(essn_2d_fmt, 1), t in axes(essn_2d_fmt, 3), i in axes(essn_2d_fmt, 4)
 ]
 log_done("fit stacked modulation tails", t_stage)

@@ -119,7 +119,7 @@ log_done("stacked essentials", t_stage)
 t_stage = log_step("fitting stacked modulation tails")
 fit_prfl_modl_over_rep_t_1d = [
     essn_stacked_over_rep_t[istp] |>
-    e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl_norm_px, selector_tail_stack(y_modl))
+    e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl.side.normed_px, selector_tail_stack(y_modl))
     for istp in axes(essn_stacked_over_rep_t, 1)
 ]
 log_done("fit stacked modulation tails", t_stage)

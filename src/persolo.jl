@@ -236,25 +236,27 @@ function build_modl_masks(mask_modl::NamedTuple, x_modl::AbstractVector, y_modl:
     mask_main_base = build_modl_mask(mask_modl.main, x_modl, y_modl)
     mask_fringe = hasproperty(mask_modl, :fringe) ? build_modl_mask(mask_modl.fringe, x_modl, y_modl) : falses(length(y_modl), length(x_modl))
     mask_center = hasproperty(mask_modl, :center) ? build_modl_mask(mask_modl.center, x_modl, y_modl) : falses(length(y_modl), length(x_modl))
-    mask_prfl = @. mask_base & !(mask_fringe | mask_center)
+    mask_side = @. mask_base & !(mask_fringe | mask_center)
     mask_main = @. mask_main_base & !mask_fringe
-    return (; fringe=mask_fringe, center=mask_center, prfl=mask_prfl, main=mask_main)
+    return (; fringe=mask_fringe, center=mask_center, side=mask_side, main=mask_main)
 end
 
 function build_default_modl_masks(x_modl::AbstractVector, y_modl::AbstractVector)
     mask_all = trues(length(y_modl), length(x_modl))
     mask_none = falses(length(y_modl), length(x_modl))
-    return (; fringe=mask_none, center=mask_none, prfl=mask_all, main=mask_all)
+    return (; fringe=mask_none, center=mask_none, side=mask_all, main=mask_all)
 end
 
 function calc_prfl_norm_px_masked(modl2d::AbstractMatrix{<:Real}, masks::NamedTuple, step_modl::Tuple{<:Real,<:Real})
-    prfl_main = calc_masked_prfl_modl(modl2d, masks.main)
-    prfl_modl = calc_masked_prfl_modl(modl2d, masks.prfl)
-    norm_prfl_main = sum(prfl_main) * step_modl[2] / 2
-    norm_prfl_main > 0 || throw(ArgumentError("masked main modulation profile has nonpositive normalization $norm_prfl_main."))
-    prfl_main_normed_px = prfl_main ./ norm_prfl_main
-    prfl_modl_norm_px = prfl_modl ./ norm_prfl_main
-    return (; norm_prfl_main, prfl_main, prfl_main_normed_px, prfl_modl, prfl_modl_norm_px)
+    main_raw = calc_masked_prfl_modl(modl2d, masks.main)
+    side_raw = calc_masked_prfl_modl(modl2d, masks.side)
+    norm_main = sum(main_raw) * step_modl[2] / 2
+    norm_main > 0 || throw(ArgumentError("masked main modulation profile has nonpositive normalization $norm_main."))
+    return (;
+        main=(; norm=norm_main, raw=main_raw, normed_px=main_raw ./ norm_main),
+        side=(; raw=side_raw, normed_px=side_raw ./ norm_main),
+        mask=masks,
+    )
 end
 
 function fit_dens2d_gaussian_elliptic_disk(
@@ -389,12 +391,7 @@ struct SoloEssentials
     offset_cent_core::Tuple{<:Real,<:Real}
     smwh_core::Tuple{<:Real,<:Real}
     prfl_strip::AbstractVector
-    norm_prfl_main::Real
-    prfl_main::AbstractVector
-    prfl_main_normed_px::AbstractVector
-    prfl_modl::AbstractVector
-    prfl_modl_norm_px::AbstractVector
-    mask_modl::NamedTuple
+    prfl_modl::NamedTuple
     smwh::Tuple{<:Real,<:Real}
     smwh_strip::Tuple{<:Real,<:Real}
     step_posi::Tuple{Real,Real}
@@ -451,12 +448,7 @@ function calc_solo_essn_2d(
         (x_posi[cent_core[1]], y_posi[cent_core[2]]),
         smwh_core,
         prfl_strip,
-        prfls.norm_prfl_main,
-        prfls.prfl_main,
-        prfls.prfl_main_normed_px,
-        prfls.prfl_modl,
-        prfls.prfl_modl_norm_px,
-        masks,
+        prfls,
         smwh,
         smwh_strip,
         step_posi,
@@ -482,7 +474,7 @@ function calc_solo_extr(
     sidepeak = proc_sidepeak ?
     begin
         mask_mmt = selector_moment(y_modl)
-        prfl_tailess = essn.prfl_modl_norm_px - fit_stack.tail(y_modl)
+        prfl_tailess = essn.prfl_modl.side.normed_px - fit_stack.tail(y_modl)
         fit_tailess = fit_prfl_modl_sidepeak_1d(y_modl, prfl_tailess, sel_sidepeak; fit_tailess_kwargs...)
         params_tailess = (;
             height=fit_tailess.params[1],
