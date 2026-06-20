@@ -65,6 +65,7 @@ end
 function calc_spct_rep_evol(evols::AbstractVector{<:AbstractVector}, val_t::AbstractVector, freq_query::AbstractVector; sel_evol::Function=(_ -> true))
     n_rep = length(evols)
     mask_evol = map(sel_evol, val_t)
+    val_t_sel = val_t[mask_evol]
     evol_mean = mean(evols)
     spct_mean_full = evol_mean |> evo -> query_weight(evo, :, val_t, freq_query)
     spct_mean_mask = evol_mean |> evo -> query_weight(evo, mask_evol, val_t, freq_query)
@@ -72,7 +73,7 @@ function calc_spct_rep_evol(evols::AbstractVector{<:AbstractVector}, val_t::Abst
         evols[r] |> ev -> query_weight(ev, mask_evol, val_t, freq_query)
         for r in 1:n_rep
     ]
-    return (; n_rep, val_t, freq_query, sel_evol, mask_evol, evols, evol_mean, spectra_reps_mask, spct_mean_full, spct_mean_mask)
+    return (; n_rep, val_t, val_t_sel, freq_query, mask_evol, evols, evol_mean, spectra_reps_mask, spct_mean_full, spct_mean_mask)
 end
 
 function query_weight(evo, mask, t_vec, freq_query; scaling::Real=1000.0)

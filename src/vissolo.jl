@@ -89,7 +89,14 @@ function set_core_density_grid!(ax::Axis, lims_core)
     return ax
 end
 
-function draw_solo_modl!(axs::Dict{String}, extr::SoloExtract, info_solo; dens_max=16.0, peak_height_max=2)
+function draw_solo_modl!(
+    axs::Dict{String},
+    extr::SoloExtract,
+    info_solo;
+    dens_max=16.0,
+    peak_height_max=2,
+    fit_tailess_model::Function=fit_prfl_modl_sidepeak_1d_model,
+)
     isnothing(extr.envelope) && return
     isnothing(extr.sidepeak) && return
 
@@ -133,7 +140,13 @@ function draw_solo_modl!(axs::Dict{String}, extr::SoloExtract, info_solo; dens_m
     heatmap!(axs["modl"], y_modl, x_modl, clr_modl_fringe; rasterize=true)
     heatmap!(axs["modl"], y_modl, x_modl, clr_modl_center; rasterize=true)
     heatmap!(axs["modl"], y_modl, x_modl, clr_modl_prfl; rasterize=true)
-    band!(axs["upright"], y_modl_sm, 0, extr.sidepeak.fit_tailess.fitfn(y_modl_sm), color=(:darkseagreen1, 0.28)) |> b -> translate!(b, 0, 0, -1)
+    band!(
+        axs["upright"],
+        y_modl_sm,
+        0,
+        fit_tailess_model(y_modl_sm, extr.sidepeak.fit_tailess.params);
+        color=(:darkseagreen1, 0.28),
+    ) |> b -> translate!(b, 0, 0, -1)
     lines!(axs["upright"], y_modl_sm, essn.prfl_modl.main.normed_px[essn.smwh_core[2]+1:end], color=(:black, 0.35), linestyle=:dash, linewidth=1)
     lines!(axs["sideway"], essn.prfl_modl.main.normed_px[essn.smwh_core[2]+1:end], y_modl_sm, color=(:black, 0.35), linestyle=:dash, linewidth=1)
     lines!(axs["upright"], y_modl_sm, essn.prfl_modl.side.normed_px[essn.smwh_core[2]+1:end], color=(:black, 0.65), linewidth=0.8)

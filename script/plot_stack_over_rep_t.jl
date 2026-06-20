@@ -24,8 +24,10 @@ draw_solo_essn_2d!(
         "IB" => val_vars.IB[c],
     ))
 
-band!(axs_live["upright"], y_modl, 0, fit_result.tail(y_modl), color=(:indianred, 0.7)) |> b -> translate!(b, 0, 0, -1)
-band!(axs_live["upright"], y_modl, fit_result.tail(y_modl), fit_result.model(y_modl, fit_result.params), color=(:darkseagreen1, 0.5)) |> b -> translate!(b, 0, 0, -1)
+tail_fit = fit_prfl_modl_sidepeak_decay_1d_tail(y_modl, fit_result.params)
+full_fit = fit_prfl_modl_sidepeak_decay_1d_model(y_modl, fit_result.params)
+band!(axs_live["upright"], y_modl, 0, tail_fit, color=(:indianred, 0.7)) |> b -> translate!(b, 0, 0, -1)
+band!(axs_live["upright"], y_modl, tail_fit, full_fit, color=(:darkseagreen1, 0.5)) |> b -> translate!(b, 0, 0, -1)
 xlims!(axs_live["upright"], 0, 1.2)
 
 axs_live["sideway"] |> hidedecorations!

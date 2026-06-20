@@ -8,6 +8,8 @@ using DSP.Windows: hanning
 using NumericalIntegration: integrate
 using StatsBase: geomean
 
+isdefined(Main, :fit_prfl_modl_sidepeak_1d_model) || include(joinpath(@__DIR__, "fitmodels.jl"))
+
 function subtract_corner_mean(arr::AbstractMatrix, wh_corner::Tuple{<:Integer,<:Integer})
     (h_corner, w_corner) = wh_corner
     h_corner > 0 || throw(ArgumentError("corner_height must be positive."))
@@ -151,21 +153,13 @@ function fit_prfl_modl_twinpeak_decay_1d(
     λ_hint=(max=5.0, min=0.5, init=0.8),
 )
     # parameters: [MainPeak.Height MainPeak.Width SidePeak.Height SidePeak.Width SidePeak.Pos Decay.Height Decay.Length]
-    model(k, params) = begin
-        M, σ0, P, σ, p, D, λ = params
-        @. M * exp(-k^2 / (2 * σ0^2)) + P * exp(-(k - p)^2 / (2 * σ^2)) + D * exp(-abs(k) / λ)
-    end
-    model_tail(k, params) = begin
-        M, σ0, P, σ, p, D, λ = params
-        @. D * exp(-abs(k) / λ)
-    end
     p_init = Float64[M_hint.init, σ0_hint.init, P_hint.init, σ_hint.init, p_hint.init, D_hint.init, λ_hint.init]
     p_upper = Float64[M_hint.max, σ0_hint.max, P_hint.max, σ_hint.max, p_hint.max, D_hint.max, λ_hint.max]
     p_lower = Float64[M_hint.min, σ0_hint.min, P_hint.min, σ_hint.min, p_hint.min, D_hint.min, λ_hint.min]
-    fit = curve_fit(model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
+    fit = curve_fit(fit_prfl_modl_twinpeak_decay_1d_model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
     params_fit = coef(fit)
     rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (prfl[mask] |> d -> sqrt(sum(abs2, d)))
-    return (; fit, model, params=params_fit, tail=k -> model_tail(k, params_fit), rss_rel)
+    return (; params=params_fit, rss_rel)
 end
 
 function fit_prfl_modl_sidepeak_decay_1d(
@@ -177,21 +171,13 @@ function fit_prfl_modl_sidepeak_decay_1d(
     λ_hint=(max=5.0, min=0.5, init=0.8),
 )
     # parameters: [SidePeak.Height SidePeak.Width SidePeak.Pos Decay.Height Decay.Length]
-    model(k, params) = begin
-        P, σ, p, D, λ = params
-        @. P * exp(-(k - p)^2 / (2 * σ^2)) + D * exp(-abs(k) / λ)
-    end
-    model_tail(k, params) = begin
-        P, σ, p, D, λ = params
-        @. D * exp(-abs(k) / λ)
-    end
     p_init = Float64[P_hint.init, σ_hint.init, p_hint.init, D_hint.init, λ_hint.init]
     p_upper = Float64[P_hint.max, σ_hint.max, p_hint.max, D_hint.max, λ_hint.max]
     p_lower = Float64[P_hint.min, σ_hint.min, p_hint.min, D_hint.min, λ_hint.min]
-    fit = curve_fit(model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
+    fit = curve_fit(fit_prfl_modl_sidepeak_decay_1d_model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
     params_fit = coef(fit)
     rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (prfl[mask] |> d -> sqrt(sum(abs2, d)))
-    return (; fit, model, params=params_fit, tail=k -> model_tail(k, params_fit), rss_rel)
+    return (; params=params_fit, rss_rel)
 end
 
 function copy_symmetric_2d(mask::AbstractMatrix{Bool})
@@ -269,18 +255,6 @@ function fit_dens2d_gaussian_elliptic_disk(
     Y = [y for y in ys, x in xs]
     xydata = hcat(vec(X[mask]), vec(Y[mask]))
     zdata = dens |> preprocess |> ds -> ds[mask] |> vec
-    model(coords, p) = begin
-        x = coords[:, 1]
-        y = coords[:, 2]
-        A, x0, y0, σx, σy, θ = p
-        c = cos(θ)
-        s = sin(θ)
-        dx = x .- x0
-        dy = y .- y0
-        xp = c .* dx .+ s .* dy
-        yp = (-s) .* dx .+ c .* dy
-        return @. A * exp.(-(xp^2 / (2σx^2) + yp^2 / (2σy^2)))
-    end
     x_min, x_max = [minimum(xs), maximum(xs)]
     y_min, y_max = [minimum(ys), maximum(ys)]
     x_mid, y_mid = [(x_min + x_max) / 2, (y_min + y_max) / 2]
@@ -289,15 +263,14 @@ function fit_dens2d_gaussian_elliptic_disk(
     params_upper = Float64[A_hint.max, x_max, y_max, x_scale*10, y_scale*10, θ_hint.max]
     params_lower = Float64[A_hint.min, x_min, y_min, x_scale/10, y_scale/10, θ_hint.min]
     fit = curve_fit(
-        model, xydata, zdata,
+        fit_dens2d_gaussian_elliptic_disk_model, xydata, zdata,
         params_init;
         lower=params_lower,
         upper=params_upper,
     )
     params_fit = coef(fit)
-    fitfn(coords) = model(coords, params_fit)
     rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (dens[mask] |> d -> sqrt(sum(abs2, d)))
-    return (; fit, model, params=params_fit, fitfn, rss_rel)
+    return (; params=params_fit, rss_rel)
 end
 
 function fit_dens2d_gaussian_round_disk(
@@ -308,14 +281,6 @@ function fit_dens2d_gaussian_round_disk(
     Y = [y for y in ys, x in xs]
     xydata = hcat(vec(X[mask]), vec(Y[mask]))
     zdata = vec(dens[mask])
-    model(coords, p) = begin
-        x = coords[:, 1]
-        y = coords[:, 2]
-        A, x0, y0, σ = p
-        dx = x .- x0
-        dy = y .- y0
-        return @. A * exp.(-(dx^2 / (2σ^2) + dy^2 / (2σ^2)))
-    end
     x_min, x_max = [minimum(xs), maximum(xs)]
     y_min, y_max = [minimum(ys), maximum(ys)]
     x_mid, y_mid = [(x_min + x_max) / 2, (y_min + y_max) / 2]
@@ -324,15 +289,14 @@ function fit_dens2d_gaussian_round_disk(
     params_upper = Float64[A_hint.max, x_max, y_max, scale*10]
     params_lower = Float64[A_hint.min, x_min, y_min, scale/10]
     fit = curve_fit(
-        model, xydata, zdata,
+        fit_dens2d_gaussian_round_disk_model, xydata, zdata,
         params_init;
         lower=params_lower,
         upper=params_upper,
     )
     params_fit = coef(fit)
-    fitfn(coords) = model(coords, params_fit)
     rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (dens[mask] |> d -> sqrt(sum(abs2, d)))
-    return (; fit, model, params=params_fit, fitfn, rss_rel)
+    return (; params=params_fit, rss_rel)
 end
 
 function fit_prfl_modl_twinpeak_1d(
@@ -344,23 +308,13 @@ function fit_prfl_modl_twinpeak_1d(
     p_hint=(max=0.37, min=0.23, init=0.3),
 )
     # parameters: [MainPeak.Height MainPeak.Width SidePeak.Height SidePeak.Width SidePeak.Pos]
-    model(k, params) = begin
-        M, σ0, P, σ, p = params
-        @. M * exp(-k^2 / (2 * σ0^2)) + P * exp(-(k - p)^2 / (2 * σ^2))
-    end
-    model_main(k, params) = begin
-        M, σ0, P, σ, p = params
-        @. M * exp(-k^2 / (2 * σ0^2))
-    end
     p_init = Float64[M_hint.init, σ0_hint.init, P_hint.init, σ_hint.init, p_hint.init]
     p_upper = Float64[M_hint.max, σ0_hint.max, P_hint.max, σ_hint.max, p_hint.max]
     p_lower = Float64[M_hint.min, σ0_hint.min, P_hint.min, σ_hint.min, p_hint.min]
-    fit = curve_fit(model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
+    fit = curve_fit(fit_prfl_modl_twinpeak_1d_model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
     params_fit = coef(fit)
-    fitfn_main(k) = model_main(k, params_fit)
-    fitfn(k) = model(k, params_fit)
     rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (prfl[mask] |> d -> sqrt(sum(abs2, d)))
-    return (; fit, model, params=params_fit, fitfn_main, fitfn, rss_rel)
+    return (; params=params_fit, rss_rel)
 end
 
 function fit_prfl_modl_sidepeak_1d(
@@ -370,18 +324,13 @@ function fit_prfl_modl_sidepeak_1d(
     p_hint=(max=0.37, min=0.23, init=0.3),
 )
     # parameters: [SidePeak.Height SidePeak.Width SidePeak.Pos]
-    model(k, params) = begin
-        P, σ, p = params
-        @. P * exp(-(k - p)^2 / (2 * σ^2))
-    end
     p_init = Float64[P_hint.init, σ_hint.init, p_hint.init]
     p_upper = Float64[P_hint.max, σ_hint.max, p_hint.max]
     p_lower = Float64[P_hint.min, σ_hint.min, p_hint.min]
-    fit = curve_fit(model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
+    fit = curve_fit(fit_prfl_modl_sidepeak_1d_model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
     params_fit = coef(fit)
-    fitfn(k) = model(k, params_fit)
     rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (prfl[mask] |> d -> sqrt(sum(abs2, d)))
-    return (; fit, model, params=params_fit, fitfn, rss_rel)
+    return (; params=params_fit, rss_rel)
 end
 
 struct SoloEssentials
@@ -430,12 +379,12 @@ function calc_solo_essn_2d(
     mask_modl::NamedTuple=NamedTuple(),
 )
     px_in_um = length(px_in_um) == 1 ? (px_in_um, px_in_um) : px_in_um
-    dens_roi = crop_center(dens, cent, smwh)
+    dens_roi = crop_center(dens, cent, smwh) |> copy
     sum_dens = sum(dens)
     step_posi = px_in_um
     step_modl = 1 ./ (2 .* smwh_core .* px_in_um)
     x_posi, y_posi = map(u -> (-u:1:u), smwh) .* step_posi
-    dens2d_core = crop_center(dens, cent_core, smwh_core)
+    dens2d_core = crop_center(dens, cent_core, smwh_core) |> copy
     prfl_strip = crop_center(dens, cent_core, smwh_strip) |> m -> mean(m, dims=2) |> vec
     modl_roi = dens2d_core .* gen_win_hann_2d(smwh_core) |> fft |> fftshift |> c -> abs.(c)
     x_modl, y_modl = smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* step_modl
@@ -467,6 +416,7 @@ function calc_solo_extr(
     fit_tailess_kwargs::NamedTuple=NamedTuple(),
     fit_asymm_kwargs::NamedTuple=NamedTuple(),
     fit_round_kwargs::NamedTuple=NamedTuple(),
+    fit_stack_tail_model::Function=fit_prfl_modl_sidepeak_decay_1d_tail,
 )
     x_modl, y_modl = essn.smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_modl
     x_posi, y_posi = essn.smwh |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_posi
@@ -474,7 +424,7 @@ function calc_solo_extr(
     sidepeak = proc_sidepeak ?
     begin
         mask_mmt = selector_moment(y_modl)
-        prfl_tailess = essn.prfl_modl.side.normed_px - fit_stack.tail(y_modl)
+        prfl_tailess = essn.prfl_modl.side.normed_px - fit_stack_tail_model(y_modl, fit_stack.params)
         fit_tailess = fit_prfl_modl_sidepeak_1d(y_modl, prfl_tailess, sel_sidepeak; fit_tailess_kwargs...)
         params_tailess = (;
             height=fit_tailess.params[1],

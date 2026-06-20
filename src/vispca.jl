@@ -93,7 +93,15 @@ function plot_mode_evol_spct_duet!(axs::Dict{String}, mode::ModeWeight, spectral
     x_vec, y_vec = smwh |> s -> map(u -> (-u:1:u), s)
     x_posi, y_posi = (x_vec, y_vec) .* step_posi
     x_modl, y_modl = (x_vec, y_vec) .* step_modl
-    n_rep, val_t, freq_query, sel_evol, mask_evol, evols_weight, evol_weight_mean, spectra_reps_mask, spct_mean_full, spct_mean_mask = spectral
+    n_rep = spectral.n_rep
+    val_t = spectral.val_t
+    freq_query = spectral.freq_query
+    mask_evol = spectral.mask_evol
+    evols_weight = spectral.evols
+    evol_weight_mean = spectral.evol_mean
+    spectra_reps_mask = spectral.spectra_reps_mask
+    spct_mean_full = spectral.spct_mean_full
+    spct_mean_mask = spectral.spct_mean_mask
     axs |> clear_axes!
     axs["mode"] |> clear_axes!
     length(mode.profile) == 2 || throw(ArgumentError("mode.profile must have 2 components."))

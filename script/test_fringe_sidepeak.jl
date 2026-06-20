@@ -74,8 +74,8 @@ function draw_solo_modl_mask!(axs::Dict{String}, extr::SoloExtract, info_solo, m
     lims_modl = ((0, 0.6), (-0.6, 0.6))
 
     nvlp = extr.envelope.params_asymm
-    shade_mainpeak = extr.sidepeak.fit_tailess.fitfn_main(y_modl_sm)
-    shade_peaks = extr.sidepeak.fit_tailess.fitfn(y_modl_sm)
+    shade_mainpeak = zeros(length(y_modl_sm))
+    shade_peaks = fit_prfl_modl_sidepeak_1d_model(y_modl_sm, extr.sidepeak.fit_tailess.params)
     band!(axs["upright"], y_modl_sm, 0, shade_mainpeak, color=(:gray, 0.1))
     band!(axs["upright"], y_modl_sm, shade_mainpeak, shade_peaks, color=(:darkseagreen1, 0.5))
 
@@ -196,7 +196,7 @@ c, r, t, i = (3, 2,  3, 2)
 extr = extr_fmt[c, r, t, i]
 info = info_fmt[c, r, t, i]
 essn = extr.essentials
-fit_tail = fit_prfl_modl_over_rep_1d[c, t, i].tail
+fit_tail = y -> fit_prfl_modl_twinpeak_decay_1d_tail(y, fit_prfl_modl_over_rep_1d[c, t, i].params)
 x_modl, y_modl = essn.smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_modl
 x_posi, y_posi = essn.smwh |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_posi
 x_posi_core, y_posi_core = essn.smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* essn.step_posi
