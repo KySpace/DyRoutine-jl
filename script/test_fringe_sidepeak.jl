@@ -185,13 +185,14 @@ crti_samples = [
     (4, 1, 30, 2, "small modulation peak")
     (3, 2,  4, 2, "")
     (3, 2,  3, 2, "small spacing")
+    (5, 3, 34, 2, "large spacing side peak")
 ]
 fig = Figure()
 gl = GridLayout(fig[1, 1])
 axs = set_panel_solo_modl_masks!(gl)
 foreach(a -> a isa Axis && empty!(a), values(axs))
 
-c, r, t, i = (5, 2, 03, 2)
+c, r, t, i = (3, 2,  3, 2)
 extr = extr_fmt[c, r, t, i]
 info = info_fmt[c, r, t, i]
 essn = extr.essentials

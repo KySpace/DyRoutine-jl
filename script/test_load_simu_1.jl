@@ -64,7 +64,6 @@ px_in_um = (0.2344, 0.7812) .* step_in_μm
 smwh_core = smwh_roi = (80, 125)
 step_posi = px_in_um
 step_modl = 1 ./ (2 .* smwh_roi .* px_in_um)
-smw_ft = 5
 x_modl, y_modl = smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* step_modl
 x_posi, y_posi = smwh_roi |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* step_posi
 
@@ -102,7 +101,7 @@ info_fmt = [
 
 t_stage = log_step("calculating solo essentials for $(length(dens_full_fmt)) shots")
 essn_2d_fmt = map(
-    d -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, smw_ft, px_in_um, smwh_roi .+ 1, smwh_core),
+    d -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, px_in_um, smwh_roi .+ 1, smwh_core),
     dens_full_fmt,
 )
 log_done("calculated solo essentials", t_stage)

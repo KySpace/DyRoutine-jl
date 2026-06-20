@@ -18,7 +18,7 @@ xy_peak_duet = dens_full_fmt |>
                 ) |> p -> repeat(p, inner=ntuple(i -> i == idx_istp_axis ? n_istp_per_condition : 1, length(n_dim_vars)))
 
 essn_2d_fmt = map(
-    (d, xy) -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, smw_ft, px_in_um, xy, smwh_core; smwh_strip),
+    (d, xy) -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, px_in_um, xy, smwh_core; smwh_strip),
     dens_full_fmt,
     xy_peak_duet,
 )

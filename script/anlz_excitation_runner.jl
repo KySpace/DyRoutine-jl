@@ -18,7 +18,7 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 path_runner = @__FILE__
 path_anlz_excitation = joinpath(@__DIR__, "anlz_excitation.jl")
 # commit 7347419be159c7f6da58c2b1db8d7ac4991a051d
-title_anlz = "[06.17].74.CoreROIforSidePeak.Lite"
+title_anlz = "[06.20].77.SidePeak2DMask.Dev.Lite"
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
@@ -78,8 +78,8 @@ runinfos = runinfos_grouped
 # ids_runinfo = eachindex(runinfos)
 ids_runinfo = 1:1
 # sel_vars = NamedTuple()
-sel_vars = (; t_hold=t -> 0 .<= t .<= 80)
-# sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 50)
+# sel_vars = (; t_hold=t -> 0 .<= t .<= 80)
+sel_vars = (; IB=b -> 5.316 .<= b .<= 5.317, t_hold=t -> 0 .<= t .<= 20)
 
 
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
@@ -89,12 +89,11 @@ cp(path_runner, joinpath(path_output, basename(path_runner)); force=true)
 cp(path_anlz_excitation, joinpath(path_output, basename(path_anlz_excitation)); force=true)
 
 wh_corner = (10, 10)
-smwh_roi = (50, 180)
+smwh_roi = (50, 100)
 smwh_essn = (30, 60)
 smwh_core = (30, 60)
 wh_peak = smwh_roi .* 2 .+ 1
 smw_peak, smh_peak = smwh_roi
-smw_ft = 5
 px_in_um = 6.5 / 22.06
 len_avg_peak = 10
 
@@ -124,8 +123,20 @@ selector_t_spectrum = (;
     nvlp=t -> 0 .< t .< 60,
 )
 selector_t_pca = t -> 20 .< t .< 80
-selector_tail_stack = y -> y .> 0.02
+selector_tail_sidepeak = y -> y .> 0.2
 filter_core_pca = im -> imfilter(im, Kernel.gaussian(1.5))
+
+mask_modl = (;
+    fringe=(x, y) -> ((x - 0.37) / 0.16)^2 + ((y - 0.32) / 0.1)^2 < 1,
+    center=(x, y) -> begin
+        θ = -20 * π / 180
+        x_r = cos(θ) * x - sin(θ) * y
+        y_r = sin(θ) * x + cos(θ) * y
+        ((x_r / 0.4)^2 + (y_r / 0.15)^2 < 1) || ((x / 0.55)^2 + (y / 0.1)^2 < 1)
+    end,
+    sidepeak=(x, y) -> abs(x) < 0.51,
+    main=(x, y) -> abs(x) < 0.51,
+)
 
 fit_stack_kwargs = NamedTuple()
 fit_tailess_kwargs = NamedTuple()

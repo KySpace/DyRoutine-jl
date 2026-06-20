@@ -48,7 +48,7 @@ xy_peak_core_per_IB_rep = [
 xy_peak_core = xy_peak_core_per_IB_rep |> p -> repeat(p, inner=ntuple(i -> i in (3, 4) ? n_dim_vars[i] : 1, length(n_dim_vars)))
 t_stage = log_step("calculating solo essentials for $(length(dens_full_fmt)) shots")
 essn_2d_fmt = map(
-    (d, xy) -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, smw_ft, px_in_um, xy, smwh_core; smwh_strip=smwh_core),
+    (d, xy) -> calc_solo_essn_2d(d, smwh_roi .+ 1, smwh_roi, px_in_um, xy, smwh_core; smwh_strip=smwh_core, mask_modl),
     dens_full_fmt,
     xy_peak_core
 )
@@ -67,30 +67,21 @@ info_fmt = [
 t_stage = log_step("stacking essentials over repeats and full time traces")
 essn_stacked_over_rep = [
     begin
-        print("\r  [$tag] stacking over rep IB_idx=$c t_idx=$t istp_idx=$i")
+        essns_r = [essn_2d_fmt[c, r, t, i] for r in axes(essn_2d_fmt, 2)] |> vec
+        print("\r  [$tag] stacking over rep IB_idx=$c t_hold=$t istp_idx=$i n=$(length(essns_r))")
         flush(stdout)
-        calc_stacked_essn(@view essn_2d_fmt[c, :, t, i])
+        calc_stacked_essn(essns_r)
     end
     for c in axes(essn_2d_fmt, 1), t in axes(essn_2d_fmt, 3), i in axes(essn_2d_fmt, 4)
 ]
 println()
-essn_stacked_over_rep_t = [
-    begin
-        essns_rt = [essn_2d_fmt[c, r, t, i] for r in axes(essn_2d_fmt, 2), t in axes(essn_2d_fmt, 3)] |> vec
-        print("\r  [$tag] stacking over rep+t IB_idx=$c istp_idx=$i n=$(length(essns_rt))")
-        flush(stdout)
-        calc_stacked_essn(essns_rt)
-    end
-    for c in axes(essn_2d_fmt, 1), i in axes(essn_2d_fmt, 4)
-]
-println()
-log_done("stacked essentials", t_stage)
+log_done("stacked essentials over rep only", t_stage)
 
 t_stage = log_step("fitting stacked modulation tails")
-fit_prfl_modl_over_rep_t_1d = [
-    essn_stacked_over_rep_t[c, istp] |>
-    e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl_norm_px, selector_tail_stack(y_modl); fit_stack_kwargs...)
-    for c in axes(essn_stacked_over_rep_t, 1), istp in axes(essn_stacked_over_rep_t, 2)
+fit_prfl_modl_over_rep_1d = [
+    essn_stacked_over_rep[c, t, i] |>
+    e -> fit_prfl_modl_sidepeak_decay_1d(y_modl, e.prfl_modl_norm_px, selector_tail_sidepeak(y_modl); fit_stack_kwargs...)
+    for c in axes(essn_2d_fmt, 1), t in axes(essn_2d_fmt, 3), i in axes(essn_2d_fmt, 4)
 ]
 log_done("fit stacked modulation tails", t_stage)
 
@@ -101,7 +92,7 @@ extr_fmt = [
         flush(stdout)
         essn_2d_fmt[c, r, t, i] |> e -> calc_solo_extr(
             e,
-            fit_prfl_modl_over_rep_t_1d[c, i];
+            fit_prfl_modl_over_rep_1d[c, t, i];
             proc_sidepeak,
             proc_envelope,
             selector_moment,
@@ -123,7 +114,7 @@ extr_stacked_over_rep = [
         flush(stdout)
         essn_stacked_over_rep[c, t, i] |> e -> calc_solo_extr(
             e,
-            fit_prfl_modl_over_rep_t_1d[c, i];
+            fit_prfl_modl_over_rep_1d[c, t, i];
             proc_sidepeak,
             proc_envelope,
             selector_moment,
@@ -141,7 +132,7 @@ log_done("extracted stacked-over-repeat values", t_stage)
 # t_stage = log_step("preparing PCA samples")
 # modl2d_side = essn_2d_fmt |> f -> map(a -> a.modl2d, f) |>
 #                                   m ->
-#     map(a -> a[smwh_core[2]+1+8:smwh_core[2]+1+15, smwh_core[1]+1-smw_ft:smwh_core[1]+1+smw_ft], m) |>
+#     map(a -> a[smwh_core[2]+1+8:smwh_core[2]+1+15, :], m) |>
 #     # d -> [permutedims(stack(@view d[i, j, :]), (3, 1, 2))
 #     #     for i in axes(d, 1), j in axes(d, 2)];
 #     d -> d
@@ -229,7 +220,7 @@ log_done("saved spectrum-vs-IB figures", t_stage)
 # info_fmt
 # essn_stacked_over_rep
 # essn_stacked_over_rep_t
-# fit_prfl_modl_over_rep_t_1d
+# fit_prfl_modl_over_rep_1d
 # extr_fmt[1,1,1,1].sidepeak.fit_tailess
 # extr_stacked_over_rep
 # modl2d_side
@@ -322,7 +313,7 @@ fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars_per_IB, set_panel_sol
 println("Full axes ready: dimensions $(n_dim_vars_per_IB)")
 for c in 1:n_dim_vars[1]
     tag_IB = gen_run_tag(get_bind_runinfo(runinfo, val_vars, c))
-    t_stage = log_step("Now plotting full modulation table for $tag_IB.")
+    local t_stage = log_step("Now plotting full modulation table for $tag_IB.")
     for t in 1:n_dim_vars[3], i in 1:n_dim_vars[4]
         for  r in 1:n_dim_vars[2]
             info = info_fmt[c, r, t, i]

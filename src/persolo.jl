@@ -168,6 +168,95 @@ function fit_prfl_modl_twinpeak_decay_1d(
     return (; fit, model, params=params_fit, tail=k -> model_tail(k, params_fit), rss_rel)
 end
 
+function fit_prfl_modl_sidepeak_decay_1d(
+    coor, prfl, mask;
+    P_hint=(max=2.0, min=0.0, init=0.5),
+    σ_hint=(max=0.100, min=0.018, init=0.05),
+    p_hint=(max=0.37, min=0.23, init=0.3),
+    D_hint=(max=Inf, min=0.0, init=0.5),
+    λ_hint=(max=5.0, min=0.5, init=0.8),
+)
+    # parameters: [SidePeak.Height SidePeak.Width SidePeak.Pos Decay.Height Decay.Length]
+    model(k, params) = begin
+        P, σ, p, D, λ = params
+        @. P * exp(-(k - p)^2 / (2 * σ^2)) + D * exp(-abs(k) / λ)
+    end
+    model_tail(k, params) = begin
+        P, σ, p, D, λ = params
+        @. D * exp(-abs(k) / λ)
+    end
+    p_init = Float64[P_hint.init, σ_hint.init, p_hint.init, D_hint.init, λ_hint.init]
+    p_upper = Float64[P_hint.max, σ_hint.max, p_hint.max, D_hint.max, λ_hint.max]
+    p_lower = Float64[P_hint.min, σ_hint.min, p_hint.min, D_hint.min, λ_hint.min]
+    fit = curve_fit(model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
+    params_fit = coef(fit)
+    rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (prfl[mask] |> d -> sqrt(sum(abs2, d)))
+    return (; fit, model, params=params_fit, tail=k -> model_tail(k, params_fit), rss_rel)
+end
+
+function copy_symmetric_2d(mask::AbstractMatrix{Bool})
+    size(mask, 1) |> isodd || throw(ArgumentError("mask height must be odd, got $(size(mask, 1))."))
+    return mask .| reverse(mask; dims=(1, 2))
+end
+
+function copy_symmetric_2d(modl::AbstractMatrix{<:Real})
+    size(modl, 1) |> isodd || throw(ArgumentError("modl height must be odd, got $(size(modl, 1))."))
+    pos_cent = (size(modl, 1) + 1) ÷ 2
+    modl_symm = modl .+ reverse(modl; dims=(1, 2))
+    modl_symm[pos_cent, :] ./= 2
+    return modl_symm
+end
+
+function calc_masked_prfl_modl(modl2d::AbstractMatrix{<:Real}, mask::AbstractMatrix{Bool})
+    size(modl2d) == size(mask) || throw(DimensionMismatch("modl2d size $(size(modl2d)) does not match mask size $(size(mask))."))
+    sum_mask = sum(Int.(mask); dims=2)
+    prfl_sum = sum(modl2d .* mask; dims=2)
+    return map((val, n) -> n == 0 ? 0.0 : val / n, vec(prfl_sum), vec(sum_mask))
+end
+
+function build_modl_mask(mask_spec, x_modl::AbstractVector, y_modl::AbstractVector)
+    mask =
+        if mask_spec isa AbstractMatrix{Bool}
+            mask_spec
+        elseif mask_spec isa Function
+            [mask_spec(x, y) for y in y_modl, x in x_modl]
+        else
+            throw(ArgumentError("modulation mask entries must be Bool matrices or functions of (x, y); got $(typeof(mask_spec))."))
+        end
+    size(mask) == (length(y_modl), length(x_modl)) ||
+        throw(DimensionMismatch("mask size $(size(mask)) must match modulation grid $((length(y_modl), length(x_modl)))."))
+    return copy_symmetric_2d(mask)
+end
+
+function build_modl_masks(mask_modl::NamedTuple, x_modl::AbstractVector, y_modl::AbstractVector)
+    required = (:main, :sidepeak)
+    all(hasproperty(mask_modl, key) for key in required) ||
+        throw(ArgumentError("mask_modl must include at least :main and :sidepeak masks."))
+    mask_base = build_modl_mask(mask_modl.sidepeak, x_modl, y_modl)
+    mask_main_base = build_modl_mask(mask_modl.main, x_modl, y_modl)
+    mask_fringe = hasproperty(mask_modl, :fringe) ? build_modl_mask(mask_modl.fringe, x_modl, y_modl) : falses(length(y_modl), length(x_modl))
+    mask_center = hasproperty(mask_modl, :center) ? build_modl_mask(mask_modl.center, x_modl, y_modl) : falses(length(y_modl), length(x_modl))
+    mask_prfl = @. mask_base & !(mask_fringe | mask_center)
+    mask_main = @. mask_main_base & !mask_fringe
+    return (; fringe=mask_fringe, center=mask_center, prfl=mask_prfl, main=mask_main)
+end
+
+function build_default_modl_masks(x_modl::AbstractVector, y_modl::AbstractVector)
+    mask_all = trues(length(y_modl), length(x_modl))
+    mask_none = falses(length(y_modl), length(x_modl))
+    return (; fringe=mask_none, center=mask_none, prfl=mask_all, main=mask_all)
+end
+
+function calc_prfl_norm_px_masked(modl2d::AbstractMatrix{<:Real}, masks::NamedTuple, step_modl::Tuple{<:Real,<:Real})
+    prfl_main = calc_masked_prfl_modl(modl2d, masks.main)
+    prfl_modl = calc_masked_prfl_modl(modl2d, masks.prfl)
+    norm_prfl_main = sum(prfl_main) * step_modl[2] / 2
+    norm_prfl_main > 0 || throw(ArgumentError("masked main modulation profile has nonpositive normalization $norm_prfl_main."))
+    prfl_main_normed_px = prfl_main ./ norm_prfl_main
+    prfl_modl_norm_px = prfl_modl ./ norm_prfl_main
+    return (; norm_prfl_main, prfl_main, prfl_main_normed_px, prfl_modl, prfl_modl_norm_px)
+end
+
 function fit_dens2d_gaussian_elliptic_disk(
     xs, ys, dens, mask;
     θ_hint=(max=20.0 / 180 * π, min=-10.0 / 180 * π, init=10.0 / 180 * π),
@@ -272,6 +361,27 @@ function fit_prfl_modl_twinpeak_1d(
     return (; fit, model, params=params_fit, fitfn_main, fitfn, rss_rel)
 end
 
+function fit_prfl_modl_sidepeak_1d(
+    coor, prfl, mask;
+    P_hint=(max=10.0, min=0.0, init=0.5),
+    σ_hint=(max=0.200, min=0.018, init=0.05),
+    p_hint=(max=0.37, min=0.23, init=0.3),
+)
+    # parameters: [SidePeak.Height SidePeak.Width SidePeak.Pos]
+    model(k, params) = begin
+        P, σ, p = params
+        @. P * exp(-(k - p)^2 / (2 * σ^2))
+    end
+    p_init = Float64[P_hint.init, σ_hint.init, p_hint.init]
+    p_upper = Float64[P_hint.max, σ_hint.max, p_hint.max]
+    p_lower = Float64[P_hint.min, σ_hint.min, p_hint.min]
+    fit = curve_fit(model, coor[mask], prfl[mask], p_init; lower=p_lower, upper=p_upper)
+    params_fit = coef(fit)
+    fitfn(k) = model(k, params_fit)
+    rss_rel = (fit |> residuals |> r -> sqrt(sum(abs2, r))) / (prfl[mask] |> d -> sqrt(sum(abs2, d)))
+    return (; fit, model, params=params_fit, fitfn, rss_rel)
+end
+
 struct SoloEssentials
     dens2d::AbstractMatrix
     modl2d::AbstractMatrix
@@ -279,11 +389,14 @@ struct SoloEssentials
     offset_cent_core::Tuple{<:Real,<:Real}
     smwh_core::Tuple{<:Real,<:Real}
     prfl_strip::AbstractVector
+    norm_prfl_main::Real
+    prfl_main::AbstractVector
+    prfl_main_normed_px::AbstractVector
     prfl_modl::AbstractVector
     prfl_modl_norm_px::AbstractVector
+    mask_modl::NamedTuple
     smwh::Tuple{<:Real,<:Real}
     smwh_strip::Tuple{<:Real,<:Real}
-    smw_modl::Integer
     step_posi::Tuple{Real,Real}
     step_modl::Tuple{Real,Real}
     sum_dens_full::Real
@@ -313,24 +426,24 @@ function calc_solo_essn_2d(
     dens::AbstractMatrix,
     cent::Tuple{<:Real,<:Real},
     smwh::Tuple{<:Real,<:Real},
-    smw_modl::Integer,
     px_in_um::Union{Real,Tuple{<:Real,<:Real}},
     cent_core::Tuple{<:Real,<:Real},
     smwh_core::Tuple{<:Real,<:Real};
-    smwh_strip::Tuple{<:Real,<:Real}=smwh
+    smwh_strip::Tuple{<:Real,<:Real}=smwh,
+    mask_modl::NamedTuple=NamedTuple(),
 )
     px_in_um = length(px_in_um) == 1 ? (px_in_um, px_in_um) : px_in_um
     dens_roi = crop_center(dens, cent, smwh)
     sum_dens = sum(dens)
-    x_cent_modl = smwh_core[1] + 1
     step_posi = px_in_um
     step_modl = 1 ./ (2 .* smwh_core .* px_in_um)
     x_posi, y_posi = map(u -> (-u:1:u), smwh) .* step_posi
     dens2d_core = crop_center(dens, cent_core, smwh_core)
     prfl_strip = crop_center(dens, cent_core, smwh_strip) |> m -> mean(m, dims=2) |> vec
     modl_roi = dens2d_core .* gen_win_hann_2d(smwh_core) |> fft |> fftshift |> c -> abs.(c)
-    prfl_modl = modl_roi[:, x_cent_modl-smw_modl:x_cent_modl+smw_modl] |> m -> sum(m, dims=2) ./ (smw_modl * 2 + 1) |> vec
-    prfl_modl_norm_px = prfl_modl ./ (sum(prfl_modl) * step_modl[2] / 2)
+    x_modl, y_modl = smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* step_modl
+    masks = isempty(mask_modl) ? build_default_modl_masks(x_modl, y_modl) : build_modl_masks(mask_modl, x_modl, y_modl)
+    prfls = calc_prfl_norm_px_masked(modl_roi, masks, step_modl)
     return SoloEssentials(
         dens_roi,
         modl_roi,
@@ -338,11 +451,14 @@ function calc_solo_essn_2d(
         (x_posi[cent_core[1]], y_posi[cent_core[2]]),
         smwh_core,
         prfl_strip,
-        prfl_modl,
-        prfl_modl_norm_px,
+        prfls.norm_prfl_main,
+        prfls.prfl_main,
+        prfls.prfl_main_normed_px,
+        prfls.prfl_modl,
+        prfls.prfl_modl_norm_px,
+        masks,
         smwh,
         smwh_strip,
-        smw_modl,
         step_posi,
         step_modl,
         sum_dens
@@ -367,12 +483,12 @@ function calc_solo_extr(
     begin
         mask_mmt = selector_moment(y_modl)
         prfl_tailess = essn.prfl_modl_norm_px - fit_stack.tail(y_modl)
-        fit_tailess = fit_prfl_modl_twinpeak_1d(y_modl, prfl_tailess, sel_sidepeak; fit_tailess_kwargs...)
+        fit_tailess = fit_prfl_modl_sidepeak_1d(y_modl, prfl_tailess, sel_sidepeak; fit_tailess_kwargs...)
         params_tailess = (;
-            height=fit_tailess.params[3],
-            width=fit_tailess.params[4],
-            wavenum=fit_tailess.params[5],
-            weight=sqrt(2 * pi) * fit_tailess.params[3] * fit_tailess.params[4],
+            height=fit_tailess.params[1],
+            width=fit_tailess.params[2],
+            wavenum=fit_tailess.params[3],
+            weight=sqrt(2 * pi) * fit_tailess.params[1] * fit_tailess.params[2],
             rel_residue=fit_tailess.rss_rel,
         )
         moments = calc_prfl_moment(y_modl[mask_mmt], prfl_tailess[mask_mmt])

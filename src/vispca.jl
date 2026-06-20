@@ -100,8 +100,8 @@ function plot_mode_evol_spct_duet!(axs::Dict{String}, mode::ModeWeight, spectral
     clrmap = gen_clrmap_posneg_nonlin(0.57 * 360, 0.96 * 360)
     clr_grid = RGBAf(Oklch(0.84, 0.0, 262), 1)
     c = maximum(abs, mode.profile |> stack)
-    step_t = val_t |> diff |> minimum
-    t_span_lim = val_t[mask_evol] |> t -> (minimum(t) - step_t / 2, maximum(t) + step_t / 2)
+    step_t = length(val_t) > 1 ? minimum(diff(val_t)) : one(eltype(val_t))
+    t_span_lim = any(mask_evol) ? val_t[mask_evol] |> t -> (minimum(t) - step_t / 2, maximum(t) + step_t / 2) : nothing
     for i in 1:2
         clrmap_modl = gen_clrmap_solo(hue_theme_istp[val_istp[i]]; thres_alpha=0.6, alpha_base=0.2)
         ax_dens = axs["mode"][i]
@@ -139,7 +139,7 @@ function plot_mode_evol_spct_duet!(axs::Dict{String}, mode::ModeWeight, spectral
         str_val_rel = @sprintf("%.2f", pk.value_reduced) |> s -> replace(s, r"^0" => "")
         text!(axs["spct"], pk.freq, pk.value; text=@sprintf("%.0f Hz \n%s", pk.freq, str_val_rel), color=(:darkorchid4, 1), fontsize=14, align=(:left, :bottom))
     end
-    vspan!(axs["evol"], t_span_lim...; color=RGBAf(Oklch(0.4, 0.01, 240), 0.04))
+    isnothing(t_span_lim) || vspan!(axs["evol"], t_span_lim...; color=RGBAf(Oklch(0.4, 0.01, 240), 0.04))
     for rep = 1:n_rep
         clr = Oklch(0.86, 0.053, mod(rep / 6 - 0.1, 1) * 360) |> c -> RGBAf(c, 1)
         scatter!(axs["evol"], val_t, evols_weight[rep]; color=clr)

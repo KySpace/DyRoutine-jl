@@ -46,7 +46,6 @@ smwh_core = (20, 20)
 smwh_strip = (2, 20)
 wh_peak = smwh_roi .* 2 .+ 1
 smw_peak, smh_peak = smwh_roi
-smw_ft = 5
 px_in_um = 6.5 / 22.06
 len_avg_peak = 10
 
