@@ -6,6 +6,12 @@
   only the relevant later script section against the variables already in that
   REPL. Keep that REPL alive across related tests instead of repeating the
   expensive upstream processing.
+- For excitation analysis, use `script/anlz_excitation_runner.jl` as the fresh
+  analysis entry point, and use `script/anlz_excitation_rerun.jl` as the REPL
+  debugging/replotting entry point when loading saved extraction or correlation
+  caches. The split stage scripts are meant to be included from those entry
+  points; visualization is split by purpose, for example correlation plots and
+  extraction/solo plots can be toggled by choosing the corresponding vslz script.
 
 ## Packaging
 for now, some codes are not packaged, just included. Do package them in the future to decouple function calls from the environment by using `module`

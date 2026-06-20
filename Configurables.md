@@ -4,6 +4,13 @@
 
 Name change notice: the excitation workflow scripts formerly named `script/anlz_routine.jl` and `script/anlz_routine_batch.jl` are now `script/anlz_excitation.jl` and `script/anlz_excitation_runner.jl`.
 
+Excitation routine note: use `script/anlz_excitation_runner.jl` for fresh
+analysis runs, and use `script/anlz_excitation_rerun.jl` from a REPL for
+debugging or replotting from saved extraction/correlation caches. The runner and
+rerun scripts choose which split stages to include; the individual
+`anlz_excitation_*`, `load_excitation_*`, and visualization scripts are stage
+files rather than the main user entry points.
+
 - `year_test`
 - `path_root`
   - excitation runner: `raw"...\Data\Excitations"`

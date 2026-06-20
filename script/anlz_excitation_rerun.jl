@@ -16,48 +16,18 @@ include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
-path_runner = @__FILE__
-path_load_excitation_extr = joinpath(@__DIR__, "load_excitation_extr.jl")
-path_anlz_excitation_corr = joinpath(@__DIR__, "anlz_excitation_corr.jl")
-path_load_excitation_corr = joinpath(@__DIR__, "load_excitation_corr.jl")
-path_anlz_excitation_vslz = joinpath(@__DIR__, "anlz_excitation_vslz.jl")
-path_anlz_excitation_extr = joinpath(@__DIR__, "anlz_excitation_extr.jl")
-
+# commit
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
-tag_load = get(ENV, "DYROUTINE_EXCITATION_TAG", "CFNM")
-mode_rerun = Symbol(get(ENV, "DYROUTINE_EXCITATION_RERUN_MODE", "corr_from_extr"))
-
-if mode_rerun == :corr_from_extr
-    title_load = get(ENV, "DYROUTINE_EXCITATION_LOAD_TITLE", "[06.20].81.Dev.Save")
-    title_anlz = get(ENV, "DYROUTINE_EXCITATION_OUTPUT_TITLE", "[06.20].82.Dev.Load.Corr")
-elseif mode_rerun == :corr_vslz_from_corr
-    title_load = get(ENV, "DYROUTINE_EXCITATION_LOAD_TITLE", "[06.20].82.Dev.Load.Corr")
-    title_anlz = get(ENV, "DYROUTINE_EXCITATION_OUTPUT_TITLE", "[06.20].83.Dev.Load.Corr.Vslz")
-elseif mode_rerun == :extr_vslz_from_extr
-    title_load = get(ENV, "DYROUTINE_EXCITATION_LOAD_TITLE", "[06.20].82.Dev.Load.Corr")
-    title_anlz = get(ENV, "DYROUTINE_EXCITATION_OUTPUT_TITLE", "[06.20].84.Dev.Load.Extr.Vslz")
-else
-    throw(ArgumentError("Unknown mode_rerun=$mode_rerun"))
-end
+tag = "CFNM"
+title_load = "[06.20].82.Dev.Load.Corr"
+title_anlz = "[06.20].84.Dev.Load.Extr.Vslz"
 
 path_load = joinpath(path_root, "AnlzRoutine", title_load)
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
 
-for path_script in [
-    path_runner,
-    path_load_excitation_extr,
-    path_anlz_excitation_corr,
-    path_load_excitation_corr,
-    path_anlz_excitation_vslz,
-    path_anlz_excitation_extr,
-]
-    isfile(path_script) && cp(path_script, joinpath(path_output, basename(path_script)); force=true)
-end
-
-tag = tag_load
-path_load_extr = joinpath(path_load, @sprintf("%s_essn_extr.jld2", tag_load))
-path_load_corr = joinpath(path_load, @sprintf("%s_corr.jld2", tag_load))
+path_load_extr = joinpath(path_load, @sprintf("%s_essn_extr.jld2", tag))
+path_load_corr = joinpath(path_load, @sprintf("%s_corr.jld2", tag))
 
 # Recomputed correlation settings. Change these here if the rerun should use
 # different analysis choices from the saved extraction metadata.
@@ -73,18 +43,14 @@ selector_t_pca = t -> 20 .< t .< 80
 filter_core_pca = im -> imfilter(im, Kernel.gaussian(1.5))
 query_weight_kwargs = NamedTuple()
 
-if mode_rerun == :corr_from_extr
-    include(path_load_excitation_extr)
-    cp(path_load_extr, joinpath(path_output, basename(path_load_extr)); force=true)
-    include(path_anlz_excitation_corr)
-elseif mode_rerun == :corr_vslz_from_corr
-    include(path_load_excitation_corr)
-    plot_corr_figures = true
-    plot_extr_figures = false
-    include(path_anlz_excitation_vslz)
-elseif mode_rerun == :extr_vslz_from_extr
-    include(path_load_excitation_extr)
-    plot_corr_figures = false
-    plot_extr_figures = true
-    include(path_anlz_excitation_vslz)
+cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
+copy_and_include = (name_script) -> begin
+    path_script = joinpath(@__DIR__, name_script)
+    cp(path_script, joinpath(path_output, basename(path_script)); force=true)
+    include(path_script)
 end
+"load_excitation_extr.jl" |> copy_and_include
+"anlz_excitation_corr.jl" |> copy_and_include
+# "load_excitation_corr.jl" |> copy_and_include
+"anlz_excitation_vslz_corr.jl" |> copy_and_include
+# "anlz_excitation_vslz_extr.jl" |> copy_and_include
