@@ -133,6 +133,7 @@ function draw_solo_modl!(axs::Dict{String}, extr::SoloExtract, info_solo; dens_m
     heatmap!(axs["modl"], y_modl, x_modl, clr_modl_fringe; rasterize=true)
     heatmap!(axs["modl"], y_modl, x_modl, clr_modl_center; rasterize=true)
     heatmap!(axs["modl"], y_modl, x_modl, clr_modl_prfl; rasterize=true)
+    band!(axs["upright"], y_modl_sm, 0, extr.sidepeak.fit_tailess.fitfn(y_modl_sm), color=(:darkseagreen1, 0.28)) |> b -> translate!(b, 0, 0, -1)
     lines!(axs["upright"], y_modl_sm, essn.prfl_modl.main.normed_px[essn.smwh_core[2]+1:end], color=(:black, 0.35), linestyle=:dash, linewidth=1)
     lines!(axs["sideway"], essn.prfl_modl.main.normed_px[essn.smwh_core[2]+1:end], y_modl_sm, color=(:black, 0.35), linestyle=:dash, linewidth=1)
     lines!(axs["upright"], y_modl_sm, essn.prfl_modl.side.normed_px[essn.smwh_core[2]+1:end], color=(:black, 0.65), linewidth=0.8)
@@ -176,7 +177,7 @@ function draw_solo_modl!(axs::Dict{String}, extr::SoloExtract, info_solo; dens_m
     band!(axs["upright"], [mmt_coor_min, mmt_coor_max], 0 |> make_dual, -0.02 |> make_dual; color=(clr_moments, 1))
 
     sprint2f = (x) -> @sprintf("%.2f", x)
-    axs["label"].text = "$(@sprintf("%.1f", info_solo["t_hold"])) ms | rep $(info_solo["repeat"])"
+    axs["label"].text = @sprintf("%.03f A | %.01f ms | rep %s", info_solo["IB"], info_solo["t_hold"], info_solo["repeat"])
     text!(axs["dens"], 0.05, 0.05; text="[$(nvlp.size[1] |> sprint2f), $(nvlp.size[2] |> sprint2f)] μm \nrss/sum: $(nvlp.rel_residue |> sprint2f)", space=:relative, color=clr_mark_nvlp, strokewidth=0.5, strokecolor=:white, font=:bold, fontsize=11, align=(:left, :bottom))
     text!(axs["sideway"], 0.98, 0.78; text="fit: $(sp.height |> sprint2f), $(sp.weight |> sprint2f)", space=:relative, color=:springgreen3, fontsize=14, align=(:right, :top))
     text!(axs["sideway"], 0.98, 0.88; text="μ₀: $(mmt.height |> sprint2f), $(mmt.weight |> sprint2f)", space=:relative, color=clr_moments, fontsize=14, align=(:right, :top))
