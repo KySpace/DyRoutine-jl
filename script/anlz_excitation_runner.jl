@@ -18,7 +18,7 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 path_runner = @__FILE__
 path_anlz_excitation = joinpath(@__DIR__, "anlz_excitation.jl")
 # commit 7347419be159c7f6da58c2b1db8d7ac4991a051d
-title_anlz = "[06.20].78.SidePeak2DMask.Table"
+title_anlz = "[06.20].79.SidePeak2DMask.2DDistrFit"
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
@@ -76,7 +76,7 @@ runinfos = runinfos_grouped
 # runinfos = runinfos_separated
 
 # ids_runinfo = eachindex(runinfos)
-ids_runinfo = 1:2
+ids_runinfo = 1:1
 # sel_vars = NamedTuple()
 sel_vars = (; t_hold=t -> 0 .<= t .<= 80)
 # sel_vars = (; IB=b -> 5.316 .<= b .<= 5.317, t_hold=t -> 0 .<= t .<= 20)

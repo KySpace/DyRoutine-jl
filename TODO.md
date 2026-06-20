@@ -5,6 +5,7 @@
 - 162 164 use symbols
 - functional, map, functors
 - function placement
+- trend, band, etc.
 - current centers and rois
   in unit of pixels
   smwh_roi = (40, 80)

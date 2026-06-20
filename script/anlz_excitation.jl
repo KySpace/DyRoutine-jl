@@ -173,12 +173,21 @@ trend_extr_stacked_over_rep = [
     extr_stacked_over_rep[c, :, i] |> e -> anlz_trend_from_extr(val_vars.t_hold, e, freq_query; selector_t_spectrum, query_weight_kwargs)
     for c in axes(extr_stacked_over_rep, 1), i in axes(extr_stacked_over_rep, 3)
 ]
-log_done("analyzed stacked trends", t_stage)
-
 trend_stacked_over_rep = [
     trend_sidepeak_nvlp[c, :, i] |> mean_dict
     for c in axes(trend_sidepeak_nvlp, 1), i in axes(trend_sidepeak_nvlp, 3)
 ]
+log_done("analyzed stacked trends", t_stage)
+
+t_stage = log_step("composing FT sidepeak profile evolution")
+# n_IB × n_istp of n_t × length(prfl)
+prfl_evol = [
+    [   extr_fmt[c, r, t, i].sidepeak.prfl_norm_tailess_px
+        for r in axes(extr_fmt, 2), t in axes(extr_fmt, 3)
+    ] |> prfls -> mean(prfls; dims=1) |> vec |> prfls -> reduce(hcat, prfls)
+    for c in axes(extr_fmt, 1), i in axes(extr_fmt, 4)
+]
+log_done("finished composing FT sidepeak profile evolution", t_stage)
 
 t_stage = log_step("building and saving spectrum-vs-IB figures")
 trend_spectrum_groups = (;
@@ -212,6 +221,7 @@ for spec in trend_property_specs
     end
 end
 log_done("saved spectrum-vs-IB figures", t_stage)
+
 ##  saving data, still problematic
 
 # @save joinpath(path_output, @sprintf("%s_data.jld2", tag))
@@ -230,6 +240,26 @@ log_done("saved spectrum-vs-IB figures", t_stage)
 for (c, IB) in enumerate(val_vars.IB)
     tag_IB = gen_run_tag(get_bind_runinfo(runinfo, val_vars, c))
     runinfo_plot = get_bind_runinfo(runinfo, val_vars, c)
+
+    local t_stage = log_step("sidepeak distribution evolution for $tag_IB")
+    fig_prfl_evol = Figure()
+    ax_prfl_evol = [Axis(fig_prfl_evol[i,1]; width=30 * size(prfl_evol[1,1], 2), height=400) for i in axes(prfl_evol, 2)]
+    Label(fig_prfl_evol[0, 1]; text="$tag_IB modulation sidepeak profile", tellwidth=false, tellheight=true, halign=:left, valign=:bottom)
+    rowsize!(fig_prfl_evol.layout, 0, 12)
+    for i in axes(prfl_evol, 2)
+        val_istp = val_vars.istp[i]
+        clrmap = gen_clrmap_solo(hue_theme_istp[val_istp])
+        hm = heatmap!(ax_prfl_evol[i], val_vars.t_hold, y_modl, prfl_evol[c,i]'; colorrange=(0, 1.0), colormap=clrmap)
+        Colorbar(fig_prfl_evol[i, 2], hm)
+        ylims!(ax_prfl_evol[i], (0, 0.6))
+        ax_prfl_evol[i].xticks = 0:10:210
+        ax_prfl_evol[i].yticks = 0:0.1:0.6
+    end
+    fig_prfl_evol |> resize_to_layout!
+    for format in ["svg", "png"]
+        fig_prfl_evol |> f -> save(joinpath(path_output, @sprintf("%s_prfl_modl_evol.%s", tag_IB, format)), f; backend=CairoMakie)
+    end
+    log_done("finished sidepeak distribution for $tag_IB", t_stage)
 
     local t_stage = log_step("building trend figures for $tag_IB")
     panel_setter = (gl, col; extra=false) -> set_panel_trend_properties!(
