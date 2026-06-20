@@ -214,7 +214,7 @@ for spec in trend_property_specs
     resize_to_layout!(fig_spectrum)
     for format in ["pdf", "png"]
         fig_spectrum |> f -> save(
-            joinpath(path_output, @sprintf("%s_spectrum_%s_IB.%s", tag, spec.name, format)),
+            joinpath(path_output, @sprintf("bands_IB_%s_[%s].%s", spec.name, tag, format)),
             f;
             backend=CairoMakie,
         )
@@ -257,7 +257,7 @@ for (c, IB) in enumerate(val_vars.IB)
     end
     fig_prfl_evol |> resize_to_layout!
     for format in ["svg", "png"]
-        fig_prfl_evol |> f -> save(joinpath(path_output, @sprintf("%s_prfl_modl_evol.%s", tag_IB, format)), f; backend=CairoMakie)
+        fig_prfl_evol |> f -> save(joinpath(path_output, @sprintf("prfl_modl_evol_[%s].%s", tag_IB, format)), f; backend=CairoMakie)
     end
     log_done("finished sidepeak distribution for $tag_IB", t_stage)
 
@@ -279,7 +279,7 @@ for (c, IB) in enumerate(val_vars.IB)
         plot_trend_all!(axs_trend, trend_reps, trend_stacked, val_istp; property_specs=trend_property_specs)
         resize_to_layout!(fig_trend)
         for format in ["pdf", "png"]
-            fig_trend |> f -> save(joinpath(path_output, @sprintf("%s_%s_trend.%s", tag_IB, val_istp, format)), f; backend=CairoMakie)
+            fig_trend |> f -> save(joinpath(path_output, @sprintf("property_trends_[%s.%s].%s", tag_IB, val_istp, format)), f; backend=CairoMakie)
         end
         log_done("saved trends for $tag_IB istp=$val_istp", t_plot_stage)
     end
@@ -327,7 +327,7 @@ for spec in trend_property_specs
     resize_to_layout!(fig_property)
     for format in ["pdf", "png"]
         fig_property |> f -> save(
-            joinpath(path_output, @sprintf("%s_trend_%s_all_IB.%s", tag, spec.name, format)),
+            joinpath(path_output, @sprintf("trend_%s_[%s].%s", spec.name, tag, format)),
             f;
             backend=CairoMakie,
         )
@@ -359,6 +359,6 @@ for c in 1:n_dim_vars[1]
     println("")
     println("Full modulation table drawn.")
     resize_to_layout!(fig_full)
-    fig_full |> f -> save(joinpath(path_output, @sprintf("%s_essn_table.pdf", tag_IB)), f; backend=CairoMakie)
+    fig_full |> f -> save(joinpath(path_output, @sprintf("solo_table_[%s].pdf", tag_IB)), f; backend=CairoMakie)
     log_done("Full modulation plot saved for $tag_IB.", t_stage)
 end
