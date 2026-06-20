@@ -16,16 +16,8 @@ include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
-path_runner = @__FILE__
-path_anlz_excitation = joinpath(@__DIR__, "anlz_excitation.jl")
-path_anlz_excitation_extr = joinpath(@__DIR__, "anlz_excitation_extr.jl")
-path_load_excitation_extr = joinpath(@__DIR__, "load_excitation_extr.jl")
-path_anlz_excitation_corr = joinpath(@__DIR__, "anlz_excitation_corr.jl")
-path_load_excitation_corr = joinpath(@__DIR__, "load_excitation_corr.jl")
-path_anlz_excitation_vslz = joinpath(@__DIR__, "anlz_excitation_vslz.jl")
-path_anlz_excitation_rerun = joinpath(@__DIR__, "anlz_excitation_rerun.jl")
-# commit 7347419be159c7f6da58c2b1db8d7ac4991a051d
-title_anlz = "[06.20].81.Dev.Save"
+# commit e7e236c8acbfa21d5d9a1f867b0545f62cc0fd2e
+title_anlz = "[06.20].85.Cache.LongTime"
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
@@ -84,26 +76,13 @@ runinfos = runinfos_grouped
 
 # ids_runinfo = eachindex(runinfos)
 ids_runinfo = 1:1
-# sel_vars = NamedTuple()
+sel_vars = NamedTuple()
 # sel_vars = (; t_hold=t -> 0 .<= t .<= 80)
-sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 20)
+# sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 20)
 
 
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
-
-for path_script in [
-    path_runner,
-    path_anlz_excitation,
-    path_anlz_excitation_extr,
-    path_load_excitation_extr,
-    path_anlz_excitation_corr,
-    path_load_excitation_corr,
-    path_anlz_excitation_vslz,
-    path_anlz_excitation_rerun,
-]
-    isfile(path_script) && cp(path_script, joinpath(path_output, basename(path_script)); force=true)
-end
 
 wh_corner = (10, 10)
 smwh_roi = (50, 100)
@@ -132,14 +111,14 @@ proc_envelope = true
 selector_moment = y -> (y .> 0.10) .& (y .< 0.50)
 selector_sidepeak = y -> (y .> 0.1) .& (y .< 0.5)
 selector_t_spectrum = (;
-    number=t -> 0 .< t .< 120,
-    sp_weight=t -> 0 .< t .< 80,
-    sp_height=t -> 0 .< t .< 80,
-    sp_width=t -> 0 .< t .< 80,
-    sp_wavenum=t -> 0 .< t .< 80,
-    nvlp=t -> 0 .< t .< 80,
+    number=t -> 0 .< t .< 300,
+    sp_weight=t -> 0 .< t .< 300,
+    sp_height=t -> 0 .< t .< 300,
+    sp_width=t -> 0 .< t .< 300,
+    sp_wavenum=t -> 0 .< t .< 300,
+    nvlp=t -> 0 .< t .< 300,
 )
-selector_t_pca = t -> 20 .< t .< 80
+selector_t_pca = t -> 40 .< t .< 300
 selector_tail_sidepeak = y -> y .> 0.2
 filter_core_pca = im -> imfilter(im, Kernel.gaussian(1.5))
 
@@ -253,6 +232,14 @@ plot_corr_figures = true
 plot_extr_figures = false
 
 ##
+cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
+copy_and_include = (name_script) -> begin
+    path_script = joinpath(@__DIR__, name_script)
+    cp(path_script, joinpath(path_output, basename(path_script)); force=true)
+    include(path_script)
+end
+
+
 
 for idx_runinfo_iter in ids_runinfo
     global idx_runinfo = idx_runinfo_iter
@@ -260,7 +247,9 @@ for idx_runinfo_iter in ids_runinfo
     # global tag = gen_run_tag(runinfo)
     global tag = tag_head = runinfo.tag_head
     println("Processing: $tag")
-    include(path_anlz_excitation_extr)
-    include(path_anlz_excitation_corr)
-    include(path_anlz_excitation_vslz)
+
+    "anlz_excitation_extr.jl" |> copy_and_include
+    "anlz_excitation_corr.jl" |> copy_and_include
+    # "anlz_excitation_vslz_corr.jl" |> copy_and_include
+    # "anlz_excitation_vslz_corr.jl" |> copy_and_include
 end

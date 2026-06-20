@@ -36,19 +36,21 @@ for (c, tag_IB) in enumerate(tag_IBs)
     runinfo_plot = runinfo_plots[c]
 
     local t_stage = log_step("sidepeak distribution evolution for $tag_IB")
-    fig_prfl_evol = Figure()
-    ax_prfl_evol = [Axis(fig_prfl_evol[i, 1]; width=30 * size(prfl_evol[1, 1], 2), height=400) for i in axes(prfl_evol, 2)]
-    Label(fig_prfl_evol[0, 1]; text="$tag_IB modulation sidepeak profile", tellwidth=false, tellheight=true, halign=:left, valign=:bottom)
-    rowsize!(fig_prfl_evol.layout, 0, 12)
-    for i in axes(prfl_evol, 2)
-        val_istp = val_vars.istp[i]
-        clrmap = gen_clrmap_solo(hue_theme_istp[val_istp])
-        hm = heatmap!(ax_prfl_evol[i], val_vars.t_hold, y_modl, prfl_evol[c, i]'; colorrange=(0, 1.0), colormap=clrmap)
-        Colorbar(fig_prfl_evol[i, 2], hm)
-        ylims!(ax_prfl_evol[i], (0, 0.6))
-        ax_prfl_evol[i].xticks = 0:10:210
-        ax_prfl_evol[i].yticks = 0:0.1:0.6
-    end
+    fig_prfl_evol, axs_prfl_evol = set_axis_prfl_modl_evol!(
+        val_vars.rep,
+        val_vars.istp,
+        "$tag_IB modulation sidepeak profile";
+        width=30 * size(prfl_evol[c, 1, 1], 2),
+        height=400,
+    )
+    plot_prfl_modl_evol!(
+        axs_prfl_evol,
+        prfl_evol[c, :, :],
+        prfl_evol_stacked[c, :],
+        val_vars.t_hold,
+        y_modl,
+        val_vars.istp,
+    )
     fig_prfl_evol |> resize_to_layout!
     for format in ["svg", "png"]
         fig_prfl_evol |> f -> save(joinpath(path_output, @sprintf("prfl_modl_evol_[%s].%s", tag_IB, format)), f; backend=CairoMakie)

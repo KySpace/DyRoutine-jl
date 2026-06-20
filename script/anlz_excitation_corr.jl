@@ -41,6 +41,13 @@ t_stage = log_step("composing FT sidepeak profile evolution")
 prfl_evol = [
     [
         extr_fmt[c, r, t, i].sidepeak.prfl_norm_tailess_px
+        for t in axes(extr_fmt, 3)
+    ] |> prfls -> reduce(hcat, prfls)
+    for c in axes(extr_fmt, 1), r in axes(extr_fmt, 2), i in axes(extr_fmt, 4)
+]
+prfl_evol_stacked = [
+    [
+        extr_fmt[c, r, t, i].sidepeak.prfl_norm_tailess_px
         for r in axes(extr_fmt, 2), t in axes(extr_fmt, 3)
     ] |> prfls -> mean(prfls; dims=1) |> vec |> prfls -> reduce(hcat, prfls)
     for c in axes(extr_fmt, 1), i in axes(extr_fmt, 4)
@@ -68,6 +75,7 @@ JLD2.jldsave(
     trend_extr_stacked_over_rep,
     trend_stacked_over_rep,
     prfl_evol,
+    prfl_evol_stacked,
     modes_pca_dens2d,
     pca_spectra,
 )

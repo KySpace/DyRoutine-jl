@@ -41,7 +41,16 @@ trend_spectrum_IB_plot_kwargs = meta_corr.trend_spectrum_IB_plot_kwargs
 trend_sidepeak_nvlp = cache_corr["trend_sidepeak_nvlp"]
 trend_extr_stacked_over_rep = cache_corr["trend_extr_stacked_over_rep"]
 trend_stacked_over_rep = cache_corr["trend_stacked_over_rep"]
-prfl_evol = cache_corr["prfl_evol"]
+if haskey(cache_corr, "prfl_evol_stacked")
+    prfl_evol = cache_corr["prfl_evol"]
+    prfl_evol_stacked = cache_corr["prfl_evol_stacked"]
+elseif haskey(cache_corr, "prfl_evol_reps")
+    prfl_evol = cache_corr["prfl_evol_reps"]
+    prfl_evol_stacked = cache_corr["prfl_evol"]
+else
+    prfl_evol = nothing
+    prfl_evol_stacked = cache_corr["prfl_evol"]
+end
 modes_pca_dens2d = cache_corr["modes_pca_dens2d"]
 pca_spectra = cache_corr["pca_spectra"]
 log_done("loaded excitation correlation cache", t_stage)

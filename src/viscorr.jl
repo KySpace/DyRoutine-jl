@@ -55,6 +55,89 @@ function set_axis_sidepeak_nvlp!(n_dim_vars::Tuple{<:Integer,<:Integer,<:Integer
     return fig, Dict("repeats" => axs_repeats, "stacked" => axs_stacked, "all" => axs_all)
 end
 
+function set_axis_prfl_modl_evol!(
+    val_rep::AbstractVector,
+    val_istp::AbstractVector,
+    title::AbstractString;
+    width::Real=240,
+    height::Real=400,
+)
+    isempty(val_rep) && throw(ArgumentError("val_rep must not be empty"))
+    isempty(val_istp) && throw(ArgumentError("val_istp must not be empty"))
+
+    fig = Figure()
+    n_rep = length(val_rep)
+    n_istp = length(val_istp)
+    n_col = n_rep + 2
+    axs_repeats = Array{Axis}(undef, n_rep, n_istp)
+    axs_stacked = Vector{Axis}(undef, n_istp)
+    slots_colorbar = Vector{Any}(undef, n_istp)
+
+    Label(fig[0, 1:n_col]; text=title, tellwidth=false, tellheight=true, halign=:left, valign=:bottom)
+    rowsize!(fig.layout, 0, 12)
+    for (r, rep) in enumerate(val_rep)
+        Label(fig[1, r]; text="repeat $rep", tellwidth=false, tellheight=true, halign=:center, valign=:bottom)
+    end
+    Box(fig[2:n_istp+1, n_rep+1]; color=:black, strokewidth=0)
+    colsize!(fig.layout, n_rep + 1, Fixed(2))
+    Label(fig[1, n_rep+2]; text="Processed after stacked", tellwidth=false, tellheight=true, halign=:center, valign=:bottom)
+
+    for (i, istp) in enumerate(val_istp)
+        row = i + 1
+        Label(fig[row, 0]; text="istp=$istp", tellwidth=true, tellheight=false)
+        for r in eachindex(val_rep)
+            axs_repeats[r, i] = Axis(fig[row, r]; width, height)
+        end
+        axs_stacked[i] = Axis(fig[row, n_rep+2]; width, height)
+        slots_colorbar[i] = fig[row, n_rep+3]
+    end
+    rowgap!(fig.layout, 4)
+    colgap!(fig.layout, 8)
+    return fig, Dict("repeats" => axs_repeats, "stacked" => axs_stacked, "colorbars" => slots_colorbar)
+end
+
+function plot_prfl_modl_evol!(
+    axs::Dict,
+    prfl_evol::AbstractArray,
+    prfl_evol_stacked::AbstractVector,
+    val_t::AbstractVector,
+    y_modl::AbstractVector,
+    val_istp::AbstractVector;
+    colorrange=(0, 1.0),
+    x_ticks=0:10:210,
+    y_ticks=0:0.1:0.6,
+    y_lims=(0, 0.6),
+)
+    axs_repeats = axs["repeats"]
+    axs_stacked = axs["stacked"]
+    slots_colorbar = axs["colorbars"]
+    size(prfl_evol, 1) == size(axs_repeats, 1) ||
+        throw(DimensionMismatch("repeat profile count $(size(prfl_evol, 1)) does not match repeat axes $(size(axs_repeats, 1))"))
+    size(prfl_evol, 2) == length(val_istp) ||
+        throw(DimensionMismatch("profile istp count $(size(prfl_evol, 2)) does not match val_istp length $(length(val_istp))"))
+    length(prfl_evol_stacked) == length(val_istp) ||
+        throw(DimensionMismatch("stacked profile count $(length(prfl_evol_stacked)) does not match val_istp length $(length(val_istp))"))
+
+    for (i, val_istp) in enumerate(val_istp)
+        clrmap = gen_clrmap_solo(hue_theme_istp[val_istp])
+        hm = nothing
+        for r in axes(prfl_evol, 1)
+            ax = axs_repeats[r, i]
+            hm = heatmap!(ax, val_t, y_modl, prfl_evol[r, i]'; colorrange, colormap=clrmap)
+            ylims!(ax, y_lims)
+            ax.xticks = x_ticks
+            ax.yticks = y_ticks
+        end
+        ax = axs_stacked[i]
+        hm = heatmap!(ax, val_t, y_modl, prfl_evol_stacked[i]'; colorrange, colormap=clrmap)
+        Colorbar(slots_colorbar[i], hm)
+        ylims!(ax, y_lims)
+        ax.xticks = x_ticks
+        ax.yticks = y_ticks
+    end
+    return nothing
+end
+
 function set_axes_2axes!(vals::NamedTuple, panel_setter::Function, runinfo)
     fig = Figure()
     n_dim_vars = vals |> vs -> map(length, vs) |> Tuple

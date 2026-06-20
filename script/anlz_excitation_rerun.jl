@@ -19,8 +19,8 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 # commit
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
 tag = "CFNM"
-title_load = "[06.20].82.Dev.Load.Corr"
-title_anlz = "[06.20].84.Dev.Load.Extr.Vslz"
+title_load = "[06.20].81.Dev.Save"
+title_anlz = "[06.20].86.[←81].Dev.PrflEvol.Lite"
 
 path_load = joinpath(path_root, "AnlzRoutine", title_load)
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
