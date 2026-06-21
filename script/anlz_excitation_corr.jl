@@ -29,6 +29,10 @@ trend_sidepeak_nvlp = [
 ]
 log_done("analyzed per-shot trends", t_stage)
 
+t_stage = log_step("fitting trend evolution properties")
+fit_evol_properties = fit_evol_properties_from_trends(trend_sidepeak_nvlp, trend_property_specs)
+log_done("fit trend evolution properties", t_stage)
+
 t_stage = log_step("analyzing stacked trends")
 trend_extr_stacked_over_rep = [
     extr_stacked_over_rep[c, :, i] |> e -> anlz_trend_from_extr(val_vars.t_hold, e, freq_query; selector_t_spectrum, query_weight_kwargs)
@@ -92,6 +96,7 @@ meta_corr = merge(
         kind="excitation_corr",
         path_output,
         n_pca_modes_prfl_modl,
+        trend_property_specs,
         y_modl_pca,
         freq_query_pca_modl,
         selector_t_pca_dens_val=val_vars.t_hold[selector_t_pca_dens(val_vars.t_hold)],
@@ -108,6 +113,7 @@ JLD2.jldsave(
     path_cache_corr;
     meta_corr,
     trend_sidepeak_nvlp,
+    fit_evol_properties,
     trend_extr_stacked_over_rep,
     trend_stacked_over_rep,
     prfl_evol,

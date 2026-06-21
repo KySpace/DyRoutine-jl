@@ -1,7 +1,7 @@
 using GLMakie: Grid
 using CairoMakie: extract_attributes!
 using CairoMakie, GLMakie
-using CairoMakie: Axis
+using CairoMakie: Axis, linewidth
 using Colors: Oklch
 using LaTeXStrings
 
@@ -601,7 +601,7 @@ function set_axis_trend_variant_IB_istp!(
     isempty(val_IB) && throw(ArgumentError("val_IB must not be empty"))
     isempty(val_istp) && throw(ArgumentError("val_istp must not be empty"))
     fig = Figure()
-    fig[0, 1:(2 * length(val_istp))] = Label(
+    fig[0, 1:(2*length(val_istp))] = Label(
         fig,
         title;
         tellwidth=false,
@@ -668,6 +668,7 @@ function plot_trend_variant_overlay!(
     spec,
     variant,
     istp;
+    fit_evol=nothing,
     to_legend::Bool=false,
 )
     key_ax_evol = "evol-$(spec.name)"
@@ -690,13 +691,31 @@ function plot_trend_variant_overlay!(
         end
         clr = Oklch(0.86, 0.053, mod(r / 6 - 0.1, 1) * 360)
         if isnothing(fidl_key)
-            scatter!(axs[key_ax_evol], trend["t_vec"], trend[key_evol]; color=RGBAf(clr, 1.0), label="rep $r")
+            scatter!(axs[key_ax_evol], trend["t_vec"], trend[key_evol]; color=RGBAf(clr, 1.0), label="rep $r", markersize=5)
         else
             haskey(trend, fidl_key) || throw(KeyError(fidl_key))
             clr_points = [RGBAf(clr, 0.2 + 0.8 * clamp(fidl, 0, 1)) for fidl in trend[fidl_key]]
-            scatter!(axs[key_ax_evol], trend["t_vec"], trend[key_evol]; color=clr_points, label="rep $r")
+            scatter!(axs[key_ax_evol], trend["t_vec"], trend[key_evol]; color=clr_points, label="rep $r", markersize=5)
         end
         lines!(axs[key_ax_spct], trend["freq_query"], trend[key_spct]; color=RGBAf(clr, 1.0), label="rep $r")
+    end
+    if !isnothing(fit_evol)
+        !isnothing(fit_evol) && fit_evol.model == :oscillation_decay ||
+            throw(ArgumentError("unsupported evol fit model $(fit_evol.model)"))
+        t_fit = range(fit_evol.t_fit[1], fit_evol.t_fit[2]; length=256)
+        evol_fit = fit_evol_oscillation_decay_model(t_fit, fit_evol.params)
+        lines!(axs[key_ax_evol], t_fit, evol_fit; color=(:black, 1), linewidth=1)
+        vlines!(axs[key_ax_spct], fit_evol.ν; color=(:black, 1 - fit_evol.rel_residue))
+        text!(
+            axs[key_ax_evol],
+            0.98,
+            0.96;
+            text=@sprintf("ν %.1f Hz\nλ %.1f ms\nrel_rss %.2f", fit_evol.ν, fit_evol.λ, fit_evol.rel_residue),
+            space=:relative,
+            align=(:right, :top),
+            color=:black,
+            fontsize=11,
+        )
     end
     if !isnothing(spec.ylim)
         ylims!(axs[key_ax_evol], spec.ylim...)

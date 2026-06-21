@@ -179,12 +179,14 @@ for spec in trend_property_specs
             trend_panel_per_prop_kwargs...,
         )
         for c in axes(trend_sidepeak_nvlp, 1), i in axes(trend_sidepeak_nvlp, 3)
+            fit_evol = (!@isdefined(fit_evol_properties) || isnothing(fit_evol_properties)) ? nothing : get(fit_evol_properties[c, i], variant.name, nothing)
             plot_trend_variant_overlay!(
                 axs_IB_istp[c, i],
                 trend_sidepeak_nvlp[c, :, i],
                 spec,
                 variant,
                 val_vars.istp[i];
+                fit_evol,
                 to_legend=(c == firstindex(trend_sidepeak_nvlp, 1) && i == firstindex(trend_sidepeak_nvlp, 3)),
             )
         end

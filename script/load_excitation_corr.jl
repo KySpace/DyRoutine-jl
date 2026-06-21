@@ -42,6 +42,7 @@ trend_spectrum_IB_kwargs = meta_corr.trend_spectrum_IB_kwargs
 trend_spectrum_IB_plot_kwargs = meta_corr.trend_spectrum_IB_plot_kwargs
 
 trend_sidepeak_nvlp = cache_corr["trend_sidepeak_nvlp"]
+fit_evol_properties = haskey(cache_corr, "fit_evol_properties") ? cache_corr["fit_evol_properties"] : nothing
 trend_extr_stacked_over_rep = cache_corr["trend_extr_stacked_over_rep"]
 trend_stacked_over_rep = cache_corr["trend_stacked_over_rep"]
 if haskey(cache_corr, "prfl_evol_stacked")

@@ -36,6 +36,12 @@ function fit_prfl_modl_sidepeak_1d_model(k, params)
     return @. P * exp(-(k - p)^2 / (2 * σ^2))
 end
 
+function fit_evol_oscillation_decay_model(t, params)
+    A, C, λ, ν, φ = params
+    scaling = 1000
+    return @. A * exp(- t / λ) * cos(2π * ν * t / scaling + φ) + C
+end
+
 function fit_dens2d_gaussian_elliptic_disk_model(coords, params)
     x = coords[:, 1]
     y = coords[:, 2]

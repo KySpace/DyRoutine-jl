@@ -155,6 +155,7 @@ trend_property_specs = [
         ylim=nothing,
         selection_key="t_vec_sel_number",
         overlay_evol_col=1,
+        fit_evol=nothing,
         variants=[(name="dens-sum", evol_spct=("all", "sel"), color=:theme, label="sum", extra=false)],
     ),
     (
@@ -163,6 +164,13 @@ trend_property_specs = [
         ylim=(-0.02, 0.17),
         selection_key="t_vec_sel_sp_weight",
         overlay_evol_col=1,
+        fit_evol=(
+            model=:oscillation_decay,
+            kwargs=(
+                C_hint=(max=0.10, min=0.02, init=0.08),
+                A_hint=(max=0.07, min=0.00, init=0.05),
+            ),
+        ),
         variants=[
             (name="fit-weight", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
             (name="moment-weight", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
@@ -174,6 +182,13 @@ trend_property_specs = [
         ylim=(-0.1, 1.1),
         selection_key="t_vec_sel_sp_height",
         overlay_evol_col=1,
+        fit_evol=(
+            model=:oscillation_decay,
+            kwargs=(
+                C_hint=(max=0.7, min=0.10, init=0.5),
+                A_hint=(max=0.5, min=0.00, init=0.5),
+            ),
+        ),
         variants=[
             (name="fit-height", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
             (name="moment-height", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
@@ -185,6 +200,13 @@ trend_property_specs = [
         ylim=(0.02, 0.205),
         selection_key="t_vec_sel_sp_width",
         overlay_evol_col=1,
+        fit_evol=(
+            model=:oscillation_decay,
+            kwargs=(
+                C_hint=(max=0.10, min=0.02, init=0.05),
+                A_hint=(max=0.10, min=0.00, init=0.05),
+            ),
+        ),
         variants=[
             (name="fit-width", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
             (name="moment-width", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
@@ -196,6 +218,13 @@ trend_property_specs = [
         ylim=(0.22, 0.38),
         selection_key="t_vec_sel_sp_wavenum",
         overlay_evol_col=1,
+        fit_evol=(
+            model=:oscillation_decay,
+            kwargs=(
+                C_hint=(max=0.30, min=0.25, init=0.28),
+                A_hint=(max=0.07, min=0.00, init=0.04),
+            ),
+        ),
         variants=[
             (name="fit-wavenum", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
             (name="moment-wavenum", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
@@ -207,6 +236,13 @@ trend_property_specs = [
         ylim=(1, 8),
         selection_key="t_vec_sel_nvlp_size",
         overlay_evol_col=2,
+        fit_evol=(
+            model=:oscillation_decay,
+            kwargs=(
+                C_hint=(max=8, min=1, init=4),
+                A_hint=(max=5, min=0, init=1),
+            ),
+        ),
         variants=[
             (name="fit-size-x", evol_spct=("all", "sel"), color=:variant_low, label="fit size radial", extra=false),
             (name="fit-size-y", evol_spct=("all", "sel"), color=:variant_high, label="fit size axial", extra=false),
@@ -218,6 +254,7 @@ trend_property_specs = [
         ylim=(-10, 10),
         selection_key="t_vec_sel_nvlp_cent",
         overlay_evol_col=2,
+        fit_evol=nothing,
         variants=[
             (name="fit-cent-x", evol_spct=("all", "sel"), color=:variant_low, label="fit cent radial", extra=false),
             (name="fit-cent-y", evol_spct=("all", "sel"), color=:variant_high, label="fit cent axial", extra=false),

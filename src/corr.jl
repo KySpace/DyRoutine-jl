@@ -1,6 +1,7 @@
 using MultivariateStats: PCA, fit, predict, projection
 using Statistics: mean
 using Peaks
+using LsqFit: curve_fit, coef, residuals
 
 struct ModeWeight{TProfile<:AbstractArray,TWeight<:AbstractArray}
     profile::TProfile
@@ -94,6 +95,138 @@ function query_weight(evol, mask, t_vec, freq_query; scaling::Real=1000.0, weigh
         for f in freq_query] |> e -> abs2.(e)
     spct_max = maximum(spct)
     return isfinite(spct_max) && spct_max > 0 ? spct ./ spct_max : zeros(eltype(spct), size(spct))
+end
+
+function get_hint_value(hints::NamedTuple, name::Symbol, fallback)
+    return haskey(hints, name) ? getproperty(hints, name) : fallback
+end
+
+function fit_evol_oscillation_decay(
+    t_vec::AbstractVector{<:Real},
+    evol::AbstractVector{<:Real};
+    weight::Union{Nothing,AbstractVector{<:Real}}=nothing,
+    A_hint=(max=maximum(evol) - minimum(evol), min=0.0, init=(maximum(evol) - minimum(evol)) / 2),
+    C_hint=(max=maximum(evol), min=minimum(evol), init=mean(evol)),
+    λ_hint=(max=1000, min=20, init=50),
+    ν_hint=(max=85, min=10, init=50),
+    φ_hint=(max=π, min=-π, init=0),
+)
+    length(t_vec) == length(evol) ||
+        throw(DimensionMismatch("t_vec length $(length(t_vec)) must match evol length $(length(evol))"))
+    if !isnothing(weight)
+        length(weight) == length(evol) ||
+            throw(DimensionMismatch("weight length $(length(weight)) must match evol length $(length(evol))"))
+    end
+    p_init = Float64[A_hint.init, C_hint.init, λ_hint.init, ν_hint.init, φ_hint.init]
+    p_lower = Float64[A_hint.min, C_hint.min, λ_hint.min, ν_hint.min, φ_hint.min]
+    p_upper = Float64[A_hint.max, C_hint.max, λ_hint.max, ν_hint.max, φ_hint.max]
+    if isnothing(weight)
+        fit = curve_fit(fit_evol_oscillation_decay_model, t_vec, evol, p_init; lower=p_lower, upper=p_upper)
+        weight_fit = ones(Float64, length(evol))
+    else
+        weight_fit = Float64.(weight)
+        any(>(0), weight_fit) || throw(ArgumentError("fit weights must contain at least one positive value."))
+        fit = curve_fit(fit_evol_oscillation_decay_model, t_vec, evol, weight_fit, p_init; lower=p_lower, upper=p_upper)
+    end
+    params_fit = coef(fit)
+    evol_fit = fit_evol_oscillation_decay_model(t_vec, params_fit)
+    rss = sqrt(sum(@. weight_fit * (evol - evol_fit)^2))
+    norm_evol = sqrt(sum(@. weight_fit * evol^2))
+    rel_residue = isfinite(norm_evol) && norm_evol > 0 ? rss / norm_evol : Inf
+    return (;
+        model=:oscillation_decay,
+        model_function="fit_evol_oscillation_decay_model",
+        params=params_fit,
+        A=params_fit[1],
+        C=params_fit[2],
+        λ=params_fit[3],
+        ν=params_fit[4],
+        φ=params_fit[5],
+        rel_residue,
+    )
+end
+
+function fit_evol_property_variant(
+    trend_reps::AbstractVector{<:AbstractDict},
+    spec,
+    variant;
+    fit_evol,
+)
+    isnothing(fit_evol) && return nothing
+    fit_evol.model == :oscillation_decay ||
+        throw(ArgumentError("unsupported evol fit model $(fit_evol.model) for property $(spec.name)"))
+    evol_kind, _ = trend_variant_evol_spct(variant)
+    key_evol = "evol-$evol_kind-$(variant.name)"
+    fidl_key = trend_variant_fidl_key(spec.name, variant.name)
+    hints_user = hasproperty(fit_evol, :kwargs) ? fit_evol.kwargs : NamedTuple()
+
+    t_all = Float64[]
+    evol_all = Float64[]
+    weight_all = Float64[]
+    for trend in trend_reps
+        for key in (key_evol, spec.selection_key, "t_vec")
+            haskey(trend, key) || throw(KeyError(key))
+        end
+        mask_sel = in.(trend["t_vec"], Ref(trend[spec.selection_key]))
+        append!(t_all, Float64.(trend["t_vec"][mask_sel]))
+        append!(evol_all, Float64.(trend[key_evol][mask_sel]))
+        if isnothing(fidl_key)
+            append!(weight_all, ones(Float64, count(mask_sel)))
+        else
+            haskey(trend, fidl_key) || throw(KeyError(fidl_key))
+            append!(weight_all, Float64.(trend[fidl_key][mask_sel]))
+        end
+    end
+    !isempty(t_all) || throw(ArgumentError("no selected evol data for $(variant.name)"))
+    any(>(0), weight_all) || return nothing
+
+    hint_default_A = (max=maximum(evol_all) - minimum(evol_all), min=0.0, init=(maximum(evol_all) - minimum(evol_all)) / 2)
+    hint_default_C = (max=maximum(evol_all), min=minimum(evol_all), init=mean(evol_all))
+    fit = fit_evol_oscillation_decay(
+        t_all,
+        evol_all;
+        weight=weight_all,
+        A_hint=get_hint_value(hints_user, :A_hint, hint_default_A),
+        C_hint=get_hint_value(hints_user, :C_hint, hint_default_C),
+        λ_hint=get_hint_value(hints_user, :λ_hint, (max=1000, min=20, init=50)),
+        ν_hint=get_hint_value(hints_user, :ν_hint, (max=85, min=10, init=30)),
+        φ_hint=get_hint_value(hints_user, :φ_hint, (max=2π, min=-2π, init=-0)),
+    )
+    return merge(
+        fit,
+        (;
+            property=spec.name,
+            variant=variant.name,
+            selection_key=spec.selection_key,
+            t_fit=(minimum(t_all), maximum(t_all)),
+            n_sample=length(t_all),
+            n_weight_nonzero=count(>(0), weight_all),
+        ),
+    )
+end
+
+function fit_evol_properties_from_trends(
+    trend_sidepeak_nvlp::AbstractArray,
+    property_specs::AbstractVector,
+)
+    return [
+        begin
+            fits = Dict{String,Any}()
+            for spec in property_specs
+                (hasproperty(spec, :fit_evol) && !isnothing(spec.fit_evol)) || continue
+                for variant in spec.variants
+                    fits[variant.name] = fit_evol_property_variant(
+                        vec(trend_sidepeak_nvlp[c, :, i]),
+                        spec,
+                        variant;
+                        fit_evol=spec.fit_evol,
+                    )
+                end
+            end
+            fits
+        end
+        for c in axes(trend_sidepeak_nvlp, 1), i in axes(trend_sidepeak_nvlp, 3)
+    ]
 end
 
 function default_selector_t_spectrum(;
