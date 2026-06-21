@@ -16,8 +16,8 @@ include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
-# commit e7e236c8acbfa21d5d9a1f867b0545f62cc0fd2e
-title_anlz = "[06.20].85.Cache.LongTime"
+# commit 89384be35faef4bf140f661b2d87ae56382a9250
+title_anlz = "[06.21].90.Extr.Table.Nvlp.SmallBlur.NoRot"
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
@@ -75,9 +75,9 @@ runinfos = runinfos_grouped
 # runinfos = runinfos_separated
 
 # ids_runinfo = eachindex(runinfos)
-ids_runinfo = 1:1
-sel_vars = NamedTuple()
-# sel_vars = (; t_hold=t -> 0 .<= t .<= 80)
+ids_runinfo = 1:2
+# sel_vars = NamedTuple()
+sel_vars = (; t_hold=t -> 0 .<= t .<= 100)
 # sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 20)
 
 
@@ -139,7 +139,7 @@ mask_modl = (;
 fit_stack_kwargs = NamedTuple()
 fit_tailess_kwargs = NamedTuple()
 fit_asymm_kwargs = (;
-        preprocess=ds -> imfilter(ds, Kernel.gaussian(10)),
+        preprocess=ds -> imfilter(ds, Kernel.gaussian(3)),
         θ_hint=(
             max=0.0 / 180 * π,
             min=0.0 / 180 * π,
@@ -155,7 +155,7 @@ trend_property_specs = [
         ylim=nothing,
         selection_key="t_vec_sel_number",
         overlay_evol_col=1,
-        variants=[(name="dens-sum", evol_freq=("all", "sel"), color=:theme, label="sum", extra=false)],
+        variants=[(name="dens-sum", evol_spct=("all", "sel"), color=:theme, label="sum", extra=false)],
     ),
     (
         name="weight",
@@ -164,8 +164,8 @@ trend_property_specs = [
         selection_key="t_vec_sel_sp_weight",
         overlay_evol_col=1,
         variants=[
-            (name="fit-weight", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
-            (name="moment-weight", evol_freq=("all", "sel"), color=:moment, label="moment", extra=true),
+            (name="fit-weight", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
+            (name="moment-weight", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
         ],
     ),
     (
@@ -175,8 +175,8 @@ trend_property_specs = [
         selection_key="t_vec_sel_sp_height",
         overlay_evol_col=1,
         variants=[
-            (name="fit-height", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
-            (name="moment-height", evol_freq=("all", "sel"), color=:moment, label="moment", extra=true),
+            (name="fit-height", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
+            (name="moment-height", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
         ],
     ),
     (
@@ -186,8 +186,8 @@ trend_property_specs = [
         selection_key="t_vec_sel_sp_width",
         overlay_evol_col=1,
         variants=[
-            (name="fit-width", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
-            (name="moment-width", evol_freq=("all", "sel"), color=:moment, label="moment", extra=true),
+            (name="fit-width", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
+            (name="moment-width", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
         ],
     ),
     (
@@ -197,8 +197,8 @@ trend_property_specs = [
         selection_key="t_vec_sel_sp_wavenum",
         overlay_evol_col=1,
         variants=[
-            (name="fit-wavenum", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
-            (name="moment-wavenum", evol_freq=("all", "sel"), color=:moment, label="moment", extra=true),
+            (name="fit-wavenum", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
+            (name="moment-wavenum", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
         ],
     ),
     (
@@ -208,8 +208,8 @@ trend_property_specs = [
         selection_key="t_vec_sel_nvlp_size",
         overlay_evol_col=2,
         variants=[
-            (name="fit-size-x", evol_freq=("all", "sel"), color=:variant_low, label="fit size radial", extra=false),
-            (name="fit-size-y", evol_freq=("all", "sel"), color=:variant_high, label="fit size axial", extra=false),
+            (name="fit-size-x", evol_spct=("all", "sel"), color=:variant_low, label="fit size radial", extra=false),
+            (name="fit-size-y", evol_spct=("all", "sel"), color=:variant_high, label="fit size axial", extra=false),
         ],
     ),
     (
@@ -219,13 +219,13 @@ trend_property_specs = [
         selection_key="t_vec_sel_nvlp_cent",
         overlay_evol_col=2,
         variants=[
-            (name="fit-cent-x", evol_freq=("all", "sel"), color=:variant_low, label="fit cent radial", extra=false),
-            (name="fit-cent-y", evol_freq=("all", "sel"), color=:variant_high, label="fit cent axial", extra=false),
+            (name="fit-cent-x", evol_spct=("all", "sel"), color=:variant_low, label="fit cent radial", extra=false),
+            (name="fit-cent-y", evol_spct=("all", "sel"), color=:variant_high, label="fit cent axial", extra=false),
         ],
     ),
 ]
-trend_panel_per_IB_kwargs = (width_evol=400, width_freq=400, height=200)
-trend_panel_per_prop_kwargs = (width_evol=400, width_freq=400, height=120)
+trend_panel_per_IB_kwargs = (width_evol=400, width_spct=400, height=200)
+trend_panel_per_prop_kwargs = (width_evol=400, width_spct=400, height=120)
 trend_all_IB_groups = (:stacked, :all)
 trend_spectrum_IB_groups = (:stacked, :all)
 trend_spectrum_IB_kwargs = (width=360, height=180)
@@ -253,5 +253,5 @@ for idx_runinfo_iter in ids_runinfo
     "anlz_excitation_extr.jl" |> copy_and_include
     "anlz_excitation_corr.jl" |> copy_and_include
     # "anlz_excitation_vslz_corr.jl" |> copy_and_include
-    # "anlz_excitation_vslz_corr.jl" |> copy_and_include
+    "anlz_excitation_vslz_extr.jl" |> copy_and_include
 end

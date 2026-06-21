@@ -199,7 +199,7 @@ function default_trend_property_specs()
             ylim=nothing,
             selection_key="t_vec_sel_number",
             overlay_evol_col=1,
-            variants=[(name="dens-sum", evol_freq=("all", "sel"), color=:theme, label="sum", extra=false)],
+            variants=[(name="dens-sum", evol_spct=("all", "sel"), color=:theme, label="sum", extra=false)],
         ),
         (
             name="weight",
@@ -208,8 +208,8 @@ function default_trend_property_specs()
             selection_key="t_vec_sel_sp_weight",
             overlay_evol_col=1,
             variants=[
-                (name="fit-weight", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
-                (name="moment-weight", evol_freq=("all", "sel"), color=:moment, label="moment", extra=true),
+                (name="fit-weight", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
+                (name="moment-weight", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
             ],
         ),
         (
@@ -219,8 +219,8 @@ function default_trend_property_specs()
             selection_key="t_vec_sel_sp_height",
             overlay_evol_col=1,
             variants=[
-                (name="fit-height", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
-                (name="moment-height", evol_freq=("all", "sel"), color=:moment, label="moment", extra=true),
+                (name="fit-height", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
+                (name="moment-height", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
             ],
         ),
         (
@@ -230,8 +230,8 @@ function default_trend_property_specs()
             selection_key="t_vec_sel_sp_width",
             overlay_evol_col=1,
             variants=[
-                (name="fit-width", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
-                (name="moment-width", evol_freq=("all", "sel"), color=:moment, label="moment", extra=true),
+                (name="fit-width", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
+                (name="moment-width", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
             ],
         ),
         (
@@ -241,8 +241,8 @@ function default_trend_property_specs()
             selection_key="t_vec_sel_sp_wavenum",
             overlay_evol_col=1,
             variants=[
-                (name="fit-wavenum", evol_freq=("all", "sel"), color=:fit, label="fit", extra=false),
-                (name="moment-wavenum", evol_freq=("all", "sel"), color=:moment, label="moment", extra=true),
+                (name="fit-wavenum", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
+                (name="moment-wavenum", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
             ],
         ),
         (
@@ -252,8 +252,8 @@ function default_trend_property_specs()
             selection_key="t_vec_sel_nvlp_size",
             overlay_evol_col=2,
             variants=[
-                (name="fit-size-x", evol_freq=("all", "sel"), color=:variant_low, label="fit size radial", extra=false),
-                (name="fit-size-y", evol_freq=("all", "sel"), color=:variant_high, label="fit size axial", extra=false),
+                (name="fit-size-x", evol_spct=("all", "sel"), color=:variant_low, label="fit size radial", extra=false),
+                (name="fit-size-y", evol_spct=("all", "sel"), color=:variant_high, label="fit size axial", extra=false),
             ],
         ),
         (
@@ -263,8 +263,8 @@ function default_trend_property_specs()
             selection_key="t_vec_sel_nvlp_cent",
             overlay_evol_col=2,
             variants=[
-                (name="fit-cent-x", evol_freq=("all", "sel"), color=:variant_low, label="fit cent radial", extra=false),
-                (name="fit-cent-y", evol_freq=("all", "sel"), color=:variant_high, label="fit cent axial", extra=false),
+                (name="fit-cent-x", evol_spct=("all", "sel"), color=:variant_low, label="fit cent radial", extra=false),
+                (name="fit-cent-y", evol_spct=("all", "sel"), color=:variant_high, label="fit cent axial", extra=false),
             ],
         ),
     ]
@@ -278,22 +278,24 @@ function set_panel_trend_properties!(
     extra::Bool=false,
     align_overlay::Bool=true,
     width_evol::Real=400,
-    width_freq::Real=400,
+    width_spct::Real=400,
+    width_freq::Union{Nothing,Real}=nothing,
     height::Real=200,
 )
+    isnothing(width_freq) || (width_spct = width_freq)
     gl |> clean_gridlayout!
     isempty(property_specs) && throw(ArgumentError("property_specs must not be empty"))
     kwargs_evol = (width=width_evol, height=height, yticklabelspace=40.0)
-    kwargs_freq = (width=width_freq, height=height, yticklabelspace=40.0)
+    kwargs_spct = (width=width_spct, height=height, yticklabelspace=40.0)
     has_extra_variant = any(spec -> any(v.extra for v in spec.variants), property_specs)
     use_extra_col = extra && (align_overlay || has_extra_variant)
-    col_freq = use_extra_col ? 3 : 2
+    col_spct = use_extra_col ? 3 : 2
     dict_axs = Dict{String,Axis}()
     for (row, spec) in enumerate(property_specs)
         name = spec.name
         col_evol = use_extra_col ? spec.overlay_evol_col : 1
         dict_axs["evol-$name"] = Axis(gl[row, col_evol]; kwargs_evol..., ylabel=spec.ylabel)
-        dict_axs["freq-$name"] = Axis(gl[row, col_freq]; kwargs_freq...)
+        dict_axs["spct-$name"] = Axis(gl[row, col_spct]; kwargs_spct...)
         if extra && any(v.extra for v in spec.variants)
             dict_axs["evol-extra-$name"] = Axis(gl[row, 2]; kwargs_evol..., ylabel=spec.ylabel)
         end
@@ -302,9 +304,9 @@ function set_panel_trend_properties!(
     colsize!(gl, 1, Fixed(width_evol))
     if use_extra_col
         colsize!(gl, 2, Fixed(width_evol))
-        colsize!(gl, 3, Fixed(width_freq))
+        colsize!(gl, 3, Fixed(width_spct))
     else
-        colsize!(gl, 2, Fixed(width_freq))
+        colsize!(gl, 2, Fixed(width_spct))
     end
     rowgap!(gl, 4)
     colgap!(gl, 4)
@@ -317,14 +319,14 @@ function set_panel_trend_properties!(
     end
     last_name = last(property_specs).name
     if row_cmpl == 0
-        for key in ("evol-$last_name", "freq-$last_name", "evol-extra-$last_name")
+        for key in ("evol-$last_name", "spct-$last_name", "evol-extra-$last_name")
             haskey(dict_axs, key) || continue
             dict_axs[key].xticklabelsvisible = true
             dict_axs[key].xlabelvisible = true
         end
     end
     dict_axs["evol-$last_name"].xlabel = "t hold (ms)"
-    dict_axs["freq-$last_name"].xlabel = "freq (Hz)"
+    dict_axs["spct-$last_name"].xlabel = "freq (Hz)"
     haskey(dict_axs, "evol-extra-$last_name") && (dict_axs["evol-extra-$last_name"].xlabel = "t hold (ms)")
     return dict_axs
 end
@@ -363,13 +365,19 @@ function split_property_variant(property_variant::AbstractString)
     return Tuple(parts)
 end
 
+function trend_variant_evol_spct(variant)
+    hasproperty(variant, :evol_spct) && return variant.evol_spct
+    hasproperty(variant, :evol_freq) && return variant.evol_freq
+    throw(ArgumentError("trend variant $(variant.name) must define evol_spct"))
+end
+
 function plot_trend_property_variant!(
     axs::AbstractDict,
     trend::AbstractDict,
     property_variant::AbstractString,
     istp;
     axis_property::Union{Nothing,AbstractString}=nothing,
-    evol_freq::Tuple{<:AbstractString,<:AbstractString}=("all", "sel"),
+    evol_spct::Tuple{<:AbstractString,<:AbstractString}=("all", "sel"),
     color=:theme,
     alpha::Real=1.0,
     label::AbstractString=property_variant,
@@ -378,16 +386,16 @@ function plot_trend_property_variant!(
     _, property = split_property_variant(property_variant)
     property_axis = isnothing(axis_property) ? property : axis_property
     key_ax_evol = evol_extra ? "evol-extra-$property_axis" : "evol-$property_axis"
-    key_ax_freq = "freq-$property_axis"
-    key_evol = "evol-$(evol_freq[1])-$property_variant"
-    key_freq = "freq-$(evol_freq[2])-$property_variant"
-    for key in (key_ax_evol, key_ax_freq, key_evol, key_freq, "t_vec", "freq_query")
-        source = startswith(key, "evol-") || startswith(key, "freq-") ? (haskey(axs, key) ? axs : trend) : trend
+    key_ax_spct = "spct-$property_axis"
+    key_evol = "evol-$(evol_spct[1])-$property_variant"
+    key_spct = "spct-$(evol_spct[2])-$property_variant"
+    for key in (key_ax_evol, key_ax_spct, key_evol, key_spct, "t_vec", "freq_query")
+        source = startswith(key, "evol-") || startswith(key, "spct-") ? (haskey(axs, key) ? axs : trend) : trend
         haskey(source, key) || throw(KeyError(key))
     end
     clr = color isa Symbol ? trend_variant_color(color, istp) : color
     lines!(axs[key_ax_evol], trend["t_vec"], trend[key_evol]; color=(clr, alpha), label)
-    lines!(axs[key_ax_freq], trend["freq_query"], trend[key_freq]; color=(clr, alpha), label)
+    lines!(axs[key_ax_spct], trend["freq_query"], trend[key_spct]; color=(clr, alpha), label)
     return nothing
 end
 
@@ -398,7 +406,7 @@ function set_trend_tick_grid!(axs::AbstractDict)
             ax.xminorticksvisible = true
             ax.xminorgridvisible = true
             ax.xminorticks = IntervalsBetween(5)
-        elseif startswith(key, "freq-")
+        elseif startswith(key, "spct-")
             ax.xticks = 0:10:200
             ax.xminorticksvisible = true
             ax.xminorgridvisible = true
@@ -419,8 +427,8 @@ function plot_trend_property!(
     to_overlay::Bool=false,
 )
     key_evol = "evol-$(spec.name)"
-    key_freq = "freq-$(spec.name)"
-    keys_axes = [key_evol, key_freq]
+    key_spct = "spct-$(spec.name)"
+    keys_axes = [key_evol, key_spct]
     haskey(axs, "evol-extra-$(spec.name)") && push!(keys_axes, "evol-extra-$(spec.name)")
     if to_clean
         clear_axes!([axs[key] for key in keys_axes])
@@ -437,7 +445,7 @@ function plot_trend_property!(
             variant.name,
             istp;
             axis_property=spec.name,
-            evol_freq=variant.evol_freq,
+            evol_spct=trend_variant_evol_spct(variant),
             color=variant.color,
             alpha,
             label=variant.label,
@@ -448,7 +456,7 @@ function plot_trend_property!(
         ylims!(axs[key_evol], spec.ylim...)
         haskey(axs, "evol-extra-$(spec.name)") && ylims!(axs["evol-extra-$(spec.name)"], spec.ylim...)
     end
-    to_legend && axislegend(axs[key_freq]; position=:lt, framevisible=false, labelsize=14)
+    to_legend && axislegend(axs[key_spct]; position=:lt, framevisible=false, labelsize=14)
     return nothing
 end
 
@@ -461,9 +469,11 @@ function set_axis_trend_property_IB_istp!(
     groups::Tuple=(:repeats, :stacked, :all),
     align_overlay::Bool=false,
     width_evol::Real=400,
-    width_freq::Real=400,
+    width_spct::Real=400,
+    width_freq::Union{Nothing,Real}=nothing,
     height::Real=200,
 )
+    isnothing(width_freq) || (width_spct = width_freq)
     n_rep > 0 || throw(ArgumentError("n_rep must be positive, got $n_rep"))
     isempty(val_istp) && throw(ArgumentError("val_istp must not be empty"))
     isempty(groups) && throw(ArgumentError("groups must not be empty"))
@@ -548,7 +558,7 @@ function set_axis_trend_property_IB_istp!(
                         col=column.rep,
                         row_cmpl=length(val_IB) - row_IB,
                         width_evol,
-                        width_freq,
+                        width_spct,
                         height,
                     )
                 else
@@ -560,7 +570,7 @@ function set_axis_trend_property_IB_istp!(
                         extra=column.group == :all,
                         align_overlay,
                         width_evol,
-                        width_freq,
+                        width_spct,
                         height,
                     )
                 end
@@ -574,6 +584,125 @@ function set_axis_trend_property_IB_istp!(
     rowgap!(fig.layout, 4)
     colgap!(fig.layout, 32)
     return fig, axs_IB_istp
+end
+
+function set_axis_trend_variant_IB_istp!(
+    val_IB::AbstractVector,
+    val_istp::AbstractVector,
+    spec,
+    variant,
+    title::AbstractString;
+    width_evol::Real=400,
+    width_spct::Real=400,
+    width_freq::Union{Nothing,Real}=nothing,
+    height::Real=120,
+)
+    isnothing(width_freq) || (width_spct = width_freq)
+    isempty(val_IB) && throw(ArgumentError("val_IB must not be empty"))
+    isempty(val_istp) && throw(ArgumentError("val_istp must not be empty"))
+    fig = Figure()
+    fig[0, 1:(2 * length(val_istp))] = Label(
+        fig,
+        title;
+        tellwidth=false,
+        tellheight=true,
+        halign=:left,
+        valign=:top,
+    )
+    axs_IB_istp = Array{Dict{String,Axis}}(undef, length(val_IB), length(val_istp))
+    for (idx_istp, istp) in enumerate(val_istp)
+        col_evol = 2 * idx_istp - 1
+        col_spct = 2 * idx_istp
+        Label(fig[1, col_evol], "istp=$istp evol"; tellwidth=false, tellheight=true, halign=:center, valign=:bottom)
+        Label(fig[1, col_spct], "istp=$istp spct"; tellwidth=false, tellheight=true, halign=:center, valign=:bottom)
+        for (idx_IB, IB) in enumerate(val_IB)
+            row = idx_IB + 1
+            idx_istp == 1 && Label(
+                fig[row, 0],
+                "IB=$(@sprintf("%.3f", IB)) A";
+                tellwidth=true,
+                tellheight=false,
+            )
+            ax_evol = Axis(
+                fig[row, col_evol];
+                width=width_evol,
+                height,
+                ylabel=idx_istp == 1 ? spec.ylabel : "",
+                yticklabelspace=40.0,
+            )
+            ax_spct = Axis(
+                fig[row, col_spct];
+                width=width_spct,
+                height,
+                yticklabelspace=40.0,
+            )
+            if idx_IB < length(val_IB)
+                hidexdecorations!(ax_evol; label=true, ticklabels=true, ticks=false, grid=false, minorticks=false, minorgrid=false)
+                hidexdecorations!(ax_spct; label=true, ticklabels=true, ticks=false, grid=false, minorticks=false, minorgrid=false)
+            end
+            idx_istp > 1 && hideydecorations!(ax_evol; label=true, ticklabels=false, ticks=false, grid=false, minorticks=false, minorgrid=false)
+            hideydecorations!(ax_spct; label=true, ticklabels=false, ticks=false, grid=false, minorticks=false, minorgrid=false)
+            ax_evol.xlabel = "t hold (ms)"
+            ax_spct.xlabel = "freq (Hz)"
+            axs_IB_istp[idx_IB, idx_istp] = Dict("evol-$(spec.name)" => ax_evol, "spct-$(spec.name)" => ax_spct)
+            rowsize!(fig.layout, row, Fixed(height))
+        end
+        colsize!(fig.layout, col_evol, Fixed(width_evol))
+        colsize!(fig.layout, col_spct, Fixed(width_spct))
+    end
+    rowgap!(fig.layout, 4)
+    colgap!(fig.layout, 8)
+    return fig, axs_IB_istp
+end
+
+function trend_variant_fidl_key(property_variant::AbstractString)
+    startswith(property_variant, "fit-") && return "evol-all-fit-sp-fidl"
+    startswith(property_variant, "moment-") && return "evol-all-moment-sp-fidl"
+    return nothing
+end
+
+function plot_trend_variant_overlay!(
+    axs::AbstractDict,
+    trend_reps::AbstractVector,
+    spec,
+    variant,
+    istp;
+    to_legend::Bool=false,
+)
+    key_ax_evol = "evol-$(spec.name)"
+    key_ax_spct = "spct-$(spec.name)"
+    evol_kind, spct_kind = trend_variant_evol_spct(variant)
+    key_evol = "evol-$evol_kind-$(variant.name)"
+    key_spct = "spct-$spct_kind-$(variant.name)"
+    fidl_key = trend_variant_fidl_key(variant.name)
+    for key in (key_ax_evol, key_ax_spct)
+        haskey(axs, key) || throw(KeyError(key))
+    end
+    clear_axes!([axs[key_ax_evol], axs[key_ax_spct]])
+    if !isempty(trend_reps)
+        plot_shade_range!([axs[key_ax_evol]], first(trend_reps)[spec.selection_key], RGBAf(Oklch(0.95, 0.1, hue_theme_istp[istp]), 0.2))
+    end
+    for r in eachindex(trend_reps)
+        trend = trend_reps[r]
+        for key in (key_evol, key_spct, "t_vec", "freq_query")
+            haskey(trend, key) || throw(KeyError(key))
+        end
+        clr = Oklch(0.86, 0.053, mod(r / 6 - 0.1, 1) * 360)
+        if isnothing(fidl_key)
+            scatter!(axs[key_ax_evol], trend["t_vec"], trend[key_evol]; color=RGBAf(clr, 1.0), label="rep $r")
+        else
+            haskey(trend, fidl_key) || throw(KeyError(fidl_key))
+            clr_points = [RGBAf(clr, 0.2 + 0.8 * clamp(fidl, 0, 1)) for fidl in trend[fidl_key]]
+            scatter!(axs[key_ax_evol], trend["t_vec"], trend[key_evol]; color=clr_points, label="rep $r")
+        end
+        lines!(axs[key_ax_spct], trend["freq_query"], trend[key_spct]; color=RGBAf(clr, 1.0), label="rep $r")
+    end
+    if !isnothing(spec.ylim)
+        ylims!(axs[key_ax_evol], spec.ylim...)
+    end
+    set_trend_tick_grid!(axs)
+    to_legend && axislegend(axs[key_ax_spct]; position=:lt, framevisible=false, labelsize=14)
+    return nothing
 end
 
 function set_axis_spectrum_property_IB_istp!(
@@ -655,13 +784,15 @@ end
 function calc_freq_IB_matrix(
     trends::AbstractMatrix{<:AbstractDict},
     variant;
-    freq_kind::AbstractString="sel",
+    spct_kind::AbstractString="sel",
+    freq_kind::Union{Nothing,AbstractString}=nothing,
 )
-    key_freq = "freq-$freq_kind-$(variant.name)"
+    isnothing(freq_kind) || (spct_kind = freq_kind)
+    key_spct = "spct-$spct_kind-$(variant.name)"
     return [
         begin
-            haskey(trends[c, i], key_freq) || throw(KeyError(key_freq))
-            trends[c, i][key_freq]
+            haskey(trends[c, i], key_spct) || throw(KeyError(key_spct))
+            trends[c, i][key_spct]
         end
         for c in axes(trends, 1), i in axes(trends, 2)
     ] |> stack
@@ -673,9 +804,11 @@ function plot_spectrum_property_IB_istp!(
     val_IB::AbstractVector,
     val_istp::AbstractVector,
     spec;
-    freq_kind::AbstractString="sel",
+    spct_kind::AbstractString="sel",
+    freq_kind::Union{Nothing,AbstractString}=nothing,
     colorrange=(0.3, 1.0),
 )
+    isnothing(freq_kind) || (spct_kind = freq_kind)
     for (idx_istp, istp) in enumerate(val_istp)
         hue_theme = hue_theme_istp[istp]
         clrmap = gen_clrmap_solo(hue_theme)
@@ -687,13 +820,13 @@ function plot_spectrum_property_IB_istp!(
                 throw(DimensionMismatch("group $group has $(size(trends, 2)) istp columns, expected $(length(val_istp))"))
             for (idx_variant, variant) in enumerate(spec.variants)
                 ax = axs_variant[idx_variant]
-                mat_freq_IB_istp = calc_freq_IB_matrix(trends, variant; freq_kind)
+                mat_spct_IB_istp = calc_freq_IB_matrix(trends, variant; spct_kind)
                 freq_query = trends[1, idx_istp]["freq_query"]
                 heatmap!(
                     ax,
                     val_IB,
                     freq_query,
-                    mat_freq_IB_istp[:, :, idx_istp]';
+                    mat_spct_IB_istp[:, :, idx_istp]';
                     colormap=clrmap,
                     colorrange,
                 )
@@ -710,7 +843,7 @@ function plot_trends_sidepeak!(axs::Dict, trend::Dict, istp; to_clean=false, alp
     clr_theme = Oklch(0.52, 0.14, hue_theme)
     clr_shade_selected = RGBAf(Oklch(0.95, 0.1, hue_theme), 0.2)
     axs_sidepeaks_evol = axs |> a -> matching_axes(a, r"(evol(-extra)?)-(weight|width|height|wavenum)")
-    axs_sidepeaks_freq = axs |> a -> matching_axes(a, r"freq-(weight|width|height|wavenum)")
+    axs_sidepeaks_spct = axs |> a -> matching_axes(a, r"spct-(weight|width|height|wavenum)")
     if to_clean
         axs |> a -> matching_axes(a, r"(freq|(evol(-extra)?))-(number|dens-sum|weight|width|height|wavenum)") |> clear_axes!
         plot_shade_range!(axs_sidepeaks_evol, trend["t_vec_sel_sp"], clr_shade_selected)
@@ -732,21 +865,21 @@ function plot_trends_sidepeak!(axs::Dict, trend::Dict, istp; to_clean=false, alp
         lines!(axs["evol-width"], trend["t_vec"], trend["evol-all-moment-width"]; color=(clr_mmt, alpha), label="moment")
         lines!(axs["evol-wavenum"], trend["t_vec"], trend["evol-all-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
     end
-    lines!(axs["freq-weight"], trend["freq_query"], trend["freq-sel-fit-weight"]; color=(clr_fit, alpha), label="fit")
-    lines!(axs["freq-height"], trend["freq_query"], trend["freq-sel-fit-height"]; color=(clr_fit, alpha), label="fit")
-    lines!(axs["freq-width"], trend["freq_query"], trend["freq-sel-fit-width"]; color=(clr_fit, alpha), label="fit")
-    lines!(axs["freq-wavenum"], trend["freq_query"], trend["freq-sel-fit-wavenum"]; color=(clr_fit, alpha), label="fit")
-    lines!(axs["freq-weight"], trend["freq_query"], trend["freq-sel-moment-weight"]; color=(clr_mmt, alpha), label="moment")
-    lines!(axs["freq-height"], trend["freq_query"], trend["freq-sel-moment-height"]; color=(clr_mmt, alpha), label="moment")
-    lines!(axs["freq-width"], trend["freq_query"], trend["freq-sel-moment-width"]; color=(clr_mmt, alpha), label="moment")
-    lines!(axs["freq-wavenum"], trend["freq_query"], trend["freq-sel-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
+    lines!(axs["spct-weight"], trend["freq_query"], trend["spct-sel-fit-weight"]; color=(clr_fit, alpha), label="fit")
+    lines!(axs["spct-height"], trend["freq_query"], trend["spct-sel-fit-height"]; color=(clr_fit, alpha), label="fit")
+    lines!(axs["spct-width"], trend["freq_query"], trend["spct-sel-fit-width"]; color=(clr_fit, alpha), label="fit")
+    lines!(axs["spct-wavenum"], trend["freq_query"], trend["spct-sel-fit-wavenum"]; color=(clr_fit, alpha), label="fit")
+    lines!(axs["spct-weight"], trend["freq_query"], trend["spct-sel-moment-weight"]; color=(clr_mmt, alpha), label="moment")
+    lines!(axs["spct-height"], trend["freq_query"], trend["spct-sel-moment-height"]; color=(clr_mmt, alpha), label="moment")
+    lines!(axs["spct-width"], trend["freq_query"], trend["spct-sel-moment-width"]; color=(clr_mmt, alpha), label="moment")
+    lines!(axs["spct-wavenum"], trend["freq_query"], trend["spct-sel-moment-wavenum"]; color=(clr_mmt, alpha), label="moment")
     ylims!(axs["evol-weight"], -0.02, 0.52)
     ylims!(axs["evol-height"], -0.1, 3.1)
     ylims!(axs["evol-width"], 0.02, 0.205)
     ylims!(axs["evol-wavenum"], 0.22, 0.38)
     if to_legend
         axislegend(axs[key_number_evol]; position=:rt, framevisible=false, labelsize=14)
-        axislegend(axs["freq-weight"]; position=:lt, framevisible=false, labelsize=14)
+        axislegend(axs["spct-weight"]; position=:lt, framevisible=false, labelsize=14)
     end
     if to_overlay
         ylims!(axs["evol-extra-weight"], -0.02, 0.52)
@@ -764,16 +897,16 @@ function plot_trends_nvlp!(axs::Dict, trend::Dict, istp; to_clean=false, alpha=1
     clr_theme2 = Oklch(0.52, 0.14, hue_theme + 20)
     key_nvlp = haskey(axs, "evol-nvlp-size") ? "nvlp-size" : "sizes"
     if to_clean
-        axs |> a -> matching_axes(a, r"(freq|evol)-(nvlp-size|sizes)") |> clear_axes!
+        axs |> a -> matching_axes(a, r"(spct|evol)-(nvlp-size|sizes)") |> clear_axes!
         plot_shade_range!([axs["evol-$key_nvlp"]], trend["t_vec_sel_nvlp"], clr_shade_selected)
     end
     lines!(axs["evol-$key_nvlp"], trend["t_vec"], trend["evol-all-fit-size-x"]; color=(clr_theme1, alpha), label="fit")
     lines!(axs["evol-$key_nvlp"], trend["t_vec"], trend["evol-all-fit-size-y"]; color=(clr_theme2, alpha), label="fit")
-    lines!(axs["freq-$key_nvlp"], trend["freq_query"], trend["freq-sel-fit-size-x"]; color=(clr_theme1, alpha), label="fit size x")
-    lines!(axs["freq-$key_nvlp"], trend["freq_query"], trend["freq-sel-fit-size-y"]; color=(clr_theme2, alpha), label="fit size y")
+    lines!(axs["spct-$key_nvlp"], trend["freq_query"], trend["spct-sel-fit-size-x"]; color=(clr_theme1, alpha), label="fit size x")
+    lines!(axs["spct-$key_nvlp"], trend["freq_query"], trend["spct-sel-fit-size-y"]; color=(clr_theme2, alpha), label="fit size y")
     ylims!(axs["evol-$key_nvlp"], 1, 11)
     if to_legend
-        axislegend(axs["freq-$key_nvlp"]; position=:lt, framevisible=false, labelsize=14)
+        axislegend(axs["spct-$key_nvlp"]; position=:lt, framevisible=false, labelsize=14)
     end
 end
 
@@ -835,14 +968,14 @@ end
 function plot_trend_nvlp!(axs_trend::Dict, trend_reps::AbstractVector, trend_stacked_over_rep::Dict, istp)
     function set_tick_grid!(axs)
         axs_sidepeaks_evol = axs |> a -> matching_axes(a, r"(evol(-extra)?)-(weight|width|height|wavenum|number|dens-sum|nvlp-size|nvlp-cent|sizes)")
-        axs_sidepeaks_freq = axs |> a -> matching_axes(a, r"freq-(weight|width|height|wavenum|number|dens-sum|nvlp-size|nvlp-cent|sizes)")
+        axs_sidepeaks_spct = axs |> a -> matching_axes(a, r"spct-(weight|width|height|wavenum|number|dens-sum|nvlp-size|nvlp-cent|sizes)")
         for ax in axs_sidepeaks_evol
             ax.xticks = 0:10:200
             ax.xminorticksvisible = true
             ax.xminorgridvisible = true
             ax.xminorticks = IntervalsBetween(5)
         end
-        for ax in axs_sidepeaks_freq
+        for ax in axs_sidepeaks_spct
             ax.xticks = 0:10:200
             ax.xminorticksvisible = true
             ax.xminorgridvisible = true

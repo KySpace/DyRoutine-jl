@@ -165,3 +165,36 @@ for spec in trend_property_specs
         )
     end
 end
+
+for spec in trend_property_specs
+    for variant in spec.variants
+        name_variant_file = replace(variant.label, r"[^A-Za-z0-9]+" => "_") |> s -> replace(s, r"^_|_$" => "")
+        title_property = "$tag | $(spec.name) | $(variant.label)"
+        fig_property, axs_IB_istp = set_axis_trend_variant_IB_istp!(
+            val_vars.IB,
+            val_vars.istp,
+            spec,
+            variant,
+            title_property;
+            trend_panel_per_prop_kwargs...,
+        )
+        for c in axes(trend_sidepeak_nvlp, 1), i in axes(trend_sidepeak_nvlp, 3)
+            plot_trend_variant_overlay!(
+                axs_IB_istp[c, i],
+                trend_sidepeak_nvlp[c, :, i],
+                spec,
+                variant,
+                val_vars.istp[i];
+                to_legend=(c == firstindex(trend_sidepeak_nvlp, 1) && i == firstindex(trend_sidepeak_nvlp, 3)),
+            )
+        end
+        resize_to_layout!(fig_property)
+        for format in ["pdf", "png"]
+            fig_property |> f -> save(
+                joinpath(path_output, @sprintf("trend_overlay_%s_%s_[%s].%s", spec.name, name_variant_file, tag, format)),
+                f;
+                backend=CairoMakie,
+            )
+        end
+    end
+end

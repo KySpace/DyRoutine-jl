@@ -76,12 +76,24 @@ function calc_spct_rep_evol(evols::AbstractVector{<:AbstractVector}, val_t::Abst
     return (; n_rep, val_t, val_t_sel, freq_query, mask_evol, evols, evol_mean, spectra_reps_mask, spct_mean_full, spct_mean_mask)
 end
 
-function query_weight(evo, mask, t_vec, freq_query; scaling::Real=1000.0)
-    weight = evo[mask] |> e -> e .- mean(e) |> e -> [
-        sum(@. e * exp(-2im * pi * freq_query[f] * t_vec[mask] / scaling))
+function query_weight(evol, mask, t_vec, freq_query; scaling::Real=1000.0, weight=nothing)
+    mask_use = mask isa Colon ? trues(length(t_vec)) : mask
+    evol_sel = evol[mask_use]
+    t_sel = t_vec[mask_use]
+    if isnothing(weight)
+        weight_sel = ones(Float64, length(evol_sel))
+        evol_centered = evol_sel .- mean(evol_sel)
+    else
+        weight_sel = Float64.(weight[mask_use])
+        sum_weight = sum(weight_sel)
+        mean_weighted = sum_weight > 0 ? sum(evol_sel .* weight_sel) / sum_weight : mean(evol_sel)
+        evol_centered = evol_sel .- mean_weighted
+    end
+    spct = [
+        sum(@. weight_sel * evol_centered * exp(-2im * pi * freq_query[f] * t_sel / scaling))
         for f in freq_query] |> e -> abs2.(e)
-    weight_max = maximum(weight)
-    return isfinite(weight_max) && weight_max > 0 ? weight ./ weight_max : zeros(eltype(weight), size(weight))
+    spct_max = maximum(spct)
+    return isfinite(spct_max) && spct_max > 0 ? spct ./ spct_max : zeros(eltype(spct), size(spct))
 end
 
 function default_selector_t_spectrum(;
@@ -142,34 +154,37 @@ function anlz_trend_from_extr(
     )
     t_vec_sel = Dict(key => t_vec[mask] for (key, mask) in mask_sel)
 
-    query_weight_sel = key -> evo -> query_weight(evo, mask_sel[key], t_vec, freq_query; query_weight_kwargs...)
-    evo_dens_sum = extr |> e -> map(t -> t.essentials.sum_dens_full, e)
-    evo_fit_weight = extr |> e -> map(t -> t.sidepeak.params_tailess.weight, e)
-    evo_fit_height = extr |> e -> map(t -> t.sidepeak.params_tailess.height, e)
-    evo_fit_wavenum = extr |> e -> map(t -> t.sidepeak.params_tailess.wavenum, e)
-    evo_fit_width = extr |> e -> map(t -> t.sidepeak.params_tailess.width, e)
-    evo_fit_size_x = extr |> e -> map(t -> t.envelope.params_asymm.size[1], e)
-    evo_fit_size_y = extr |> e -> map(t -> t.envelope.params_asymm.size[2], e)
-    evo_fit_cent_x = extr |> e -> map(t -> t.envelope.params_asymm.cent[1], e)
-    evo_fit_cent_y = extr |> e -> map(t -> t.envelope.params_asymm.cent[2], e)
-    evo_moment_weight = extr |> e -> map(t -> t.sidepeak.moments.weight, e)
-    evo_moment_height = extr |> e -> map(t -> t.sidepeak.moments.height, e)
-    evo_moment_wavenum = extr |> e -> map(t -> t.sidepeak.moments.wavenum, e)
-    evo_moment_width = extr |> e -> map(t -> t.sidepeak.moments.width, e)
+    evol_fit_sp_fidl = extr |> e -> map(t -> t.sidepeak.params_tailess.rel_residue > 0.6 ? 0 : 1, e)
+    evol_moment_sp_fidl = extr |> e -> map(t -> t.sidepeak.moments.weight < 0.05 ? 0 : 1, e)
+    query_weight_sel = key -> evol -> query_weight(evol, mask_sel[key], t_vec, freq_query; query_weight_kwargs...)
+    query_weight_sel_fidl = (key, fidl) -> evol -> query_weight(evol, mask_sel[key], t_vec, freq_query; weight=fidl, query_weight_kwargs...)
+    evol_dens_sum = extr |> e -> map(t -> t.essentials.sum_dens_full, e)
+    evol_fit_weight = extr |> e -> map(t -> t.sidepeak.params_tailess.weight, e)
+    evol_fit_height = extr |> e -> map(t -> t.sidepeak.params_tailess.height, e)
+    evol_fit_wavenum = extr |> e -> map(t -> t.sidepeak.params_tailess.wavenum, e)
+    evol_fit_width = extr |> e -> map(t -> t.sidepeak.params_tailess.width, e)
+    evol_fit_size_x = extr |> e -> map(t -> t.envelope.params_asymm.size[1], e)
+    evol_fit_size_y = extr |> e -> map(t -> t.envelope.params_asymm.size[2], e)
+    evol_fit_cent_x = extr |> e -> map(t -> t.envelope.params_asymm.cent[1], e)
+    evol_fit_cent_y = extr |> e -> map(t -> t.envelope.params_asymm.cent[2], e)
+    evol_moment_weight = extr |> e -> map(t -> t.sidepeak.moments.weight, e)
+    evol_moment_height = extr |> e -> map(t -> t.sidepeak.moments.height, e)
+    evol_moment_wavenum = extr |> e -> map(t -> t.sidepeak.moments.wavenum, e)
+    evol_moment_width = extr |> e -> map(t -> t.sidepeak.moments.width, e)
 
-    ft_dens_sum = evo_dens_sum |> query_weight_sel(:number)
-    ft_fit_weight = evo_fit_weight |> query_weight_sel(:sp_weight)
-    ft_fit_height = evo_fit_height |> query_weight_sel(:sp_height)
-    ft_fit_wavenum = evo_fit_wavenum |> query_weight_sel(:sp_wavenum)
-    ft_fit_width = evo_fit_width |> query_weight_sel(:sp_width)
-    ft_moment_weight = evo_moment_weight |> query_weight_sel(:sp_weight)
-    ft_moment_height = evo_moment_height |> query_weight_sel(:sp_height)
-    ft_moment_wavenum = evo_moment_wavenum |> query_weight_sel(:sp_wavenum)
-    ft_moment_width = evo_moment_width |> query_weight_sel(:sp_width)
-    ft_fit_size_x = evo_fit_size_x |> query_weight_sel(:nvlp)
-    ft_fit_size_y = evo_fit_size_y |> query_weight_sel(:nvlp)
-    ft_fit_cent_x = evo_fit_cent_x |> query_weight_sel(:nvlp)
-    ft_fit_cent_y = evo_fit_cent_y |> query_weight_sel(:nvlp)
+    spct_dens_sum = evol_dens_sum |> query_weight_sel(:number)
+    spct_fit_weight = evol_fit_weight |> query_weight_sel(:sp_weight)
+    spct_fit_height = evol_fit_height |> query_weight_sel(:sp_height)
+    spct_fit_wavenum = evol_fit_wavenum |> query_weight_sel_fidl(:sp_wavenum, evol_fit_sp_fidl)
+    spct_fit_width = evol_fit_width |> query_weight_sel_fidl(:sp_width, evol_fit_sp_fidl)
+    spct_moment_weight = evol_moment_weight |> query_weight_sel(:sp_weight)
+    spct_moment_height = evol_moment_height |> query_weight_sel(:sp_height)
+    spct_moment_wavenum = evol_moment_wavenum |> query_weight_sel_fidl(:sp_wavenum, evol_moment_sp_fidl)
+    spct_moment_width = evol_moment_width |> query_weight_sel_fidl(:sp_width, evol_moment_sp_fidl)
+    spct_fit_size_x = evol_fit_size_x |> query_weight_sel(:nvlp)
+    spct_fit_size_y = evol_fit_size_y |> query_weight_sel(:nvlp)
+    spct_fit_cent_x = evol_fit_cent_x |> query_weight_sel(:nvlp)
+    spct_fit_cent_y = evol_fit_cent_y |> query_weight_sel(:nvlp)
     return Dict(
         "t_vec" => t_vec,
         "t_vec_sel_number" => t_vec_sel[:number],
@@ -183,32 +198,34 @@ function anlz_trend_from_extr(
         "t_vec_sel_nvlp" => t_vec_sel[:nvlp],
         "mask_sel" => mask_sel[:sp_weight],
         "freq_query" => freq_query,
-        "evol-all-dens-sum" => evo_dens_sum,
-        "evol-all-fit-weight" => evo_fit_weight,
-        "evol-all-fit-height" => evo_fit_height,
-        "evol-all-fit-wavenum" => evo_fit_wavenum,
-        "evol-all-fit-width" => evo_fit_width,
-        "evol-all-moment-weight" => evo_moment_weight,
-        "evol-all-moment-height" => evo_moment_height,
-        "evol-all-moment-wavenum" => evo_moment_wavenum,
-        "evol-all-moment-width" => evo_moment_width,
-        "evol-all-fit-size-x" => evo_fit_size_x,
-        "evol-all-fit-size-y" => evo_fit_size_y,
-        "evol-all-fit-cent-x" => evo_fit_cent_x,
-        "evol-all-fit-cent-y" => evo_fit_cent_y,
-        "freq-sel-dens-sum" => ft_dens_sum,
-        "freq-sel-fit-weight" => ft_fit_weight,
-        "freq-sel-fit-height" => ft_fit_height,
-        "freq-sel-fit-wavenum" => ft_fit_wavenum,
-        "freq-sel-fit-width" => ft_fit_width,
-        "freq-sel-moment-weight" => ft_moment_weight,
-        "freq-sel-moment-height" => ft_moment_height,
-        "freq-sel-moment-wavenum" => ft_moment_wavenum,
-        "freq-sel-moment-width" => ft_moment_width,
-        "freq-sel-fit-size-x" => ft_fit_size_x,
-        "freq-sel-fit-size-y" => ft_fit_size_y,
-        "freq-sel-fit-cent-x" => ft_fit_cent_x,
-        "freq-sel-fit-cent-y" => ft_fit_cent_y,
+        "evol-all-dens-sum" => evol_dens_sum,
+        "evol-all-fit-sp-fidl" => evol_fit_sp_fidl,
+        "evol-all-moment-sp-fidl" => evol_moment_sp_fidl,
+        "evol-all-fit-weight" => evol_fit_weight,
+        "evol-all-fit-height" => evol_fit_height,
+        "evol-all-fit-wavenum" => evol_fit_wavenum,
+        "evol-all-fit-width" => evol_fit_width,
+        "evol-all-moment-weight" => evol_moment_weight,
+        "evol-all-moment-height" => evol_moment_height,
+        "evol-all-moment-wavenum" => evol_moment_wavenum,
+        "evol-all-moment-width" => evol_moment_width,
+        "evol-all-fit-size-x" => evol_fit_size_x,
+        "evol-all-fit-size-y" => evol_fit_size_y,
+        "evol-all-fit-cent-x" => evol_fit_cent_x,
+        "evol-all-fit-cent-y" => evol_fit_cent_y,
+        "spct-sel-dens-sum" => spct_dens_sum,
+        "spct-sel-fit-weight" => spct_fit_weight,
+        "spct-sel-fit-height" => spct_fit_height,
+        "spct-sel-fit-wavenum" => spct_fit_wavenum,
+        "spct-sel-fit-width" => spct_fit_width,
+        "spct-sel-moment-weight" => spct_moment_weight,
+        "spct-sel-moment-height" => spct_moment_height,
+        "spct-sel-moment-wavenum" => spct_moment_wavenum,
+        "spct-sel-moment-width" => spct_moment_width,
+        "spct-sel-fit-size-x" => spct_fit_size_x,
+        "spct-sel-fit-size-y" => spct_fit_size_y,
+        "spct-sel-fit-cent-x" => spct_fit_cent_x,
+        "spct-sel-fit-cent-y" => spct_fit_cent_y,
     )
 end
 

@@ -20,7 +20,7 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
 tag = "CFNM"
 title_load = "[06.20].85.Cache.LongTime"
-title_anlz = "[06.20].89.[←85].Dev.PrflModlPCA"
+title_anlz = "[06.20].90.[←85].SidePeakFidl"
 
 path_load = joinpath(path_root, "AnlzRoutine", title_load)
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
