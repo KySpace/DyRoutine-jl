@@ -19,8 +19,8 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 # commit
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
 tag = "CFNM"
-title_load = "[06.20].81.Dev.Save"
-title_anlz = "[06.20].86.[←81].Dev.PrflEvol.Lite"
+title_load = "[06.20].85.Cache.LongTime"
+title_anlz = "[06.20].89.[←85].Dev.PrflModlPCA"
 
 path_load = joinpath(path_root, "AnlzRoutine", title_load)
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
@@ -39,7 +39,9 @@ selector_t_spectrum = (;
     sp_wavenum=t -> 0 .< t .< 80,
     nvlp=t -> 0 .< t .< 80,
 )
-selector_t_pca = t -> 20 .< t .< 80
+selector_t_pca_dens = t -> 20 .< t .< 80
+selector_t_pca_modl = t -> 00 .< t .< 80
+freq_query_pca_modl = 1:1:100
 filter_core_pca = im -> imfilter(im, Kernel.gaussian(1.5))
 query_weight_kwargs = NamedTuple()
 

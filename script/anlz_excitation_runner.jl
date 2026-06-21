@@ -105,6 +105,7 @@ idx_istp_axis = 4
 n_pca_modes = 16
 freq_query = 1:1:140
 freq_query_pca = 1:1:140
+freq_query_pca_modl = 1:1:100
 
 proc_sidepeak = true
 proc_envelope = true
@@ -118,7 +119,8 @@ selector_t_spectrum = (;
     sp_wavenum=t -> 0 .< t .< 300,
     nvlp=t -> 0 .< t .< 300,
 )
-selector_t_pca = t -> 40 .< t .< 300
+selector_t_pca_dens = t -> 20 .< t .< 80
+selector_t_pca_modl = t -> 30 .< t .< 170
 selector_tail_sidepeak = y -> y .> 0.2
 filter_core_pca = im -> imfilter(im, Kernel.gaussian(1.5))
 

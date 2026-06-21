@@ -12,6 +12,11 @@
   caches. The split stage scripts are meant to be included from those entry
   points; visualization is split by purpose, for example correlation plots and
   extraction/solo plots can be toggled by choosing the corresponding vslz script.
+- When developing excitation rerun workflows, new late-stage configurable
+  variables may be added directly to `script/anlz_excitation_rerun.jl` for quick
+  iteration. Once the change is stable, mirror those variables back into
+  `script/anlz_excitation_runner.jl` so fresh analysis and reruns share the same
+  configuration surface.
 
 ## Packaging
 for now, some codes are not packaged, just included. Do package them in the future to decouple function calls from the environment by using `module`

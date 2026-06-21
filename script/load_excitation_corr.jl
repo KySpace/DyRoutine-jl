@@ -18,14 +18,17 @@ n_rep = meta_corr.n_rep
 n_main = meta_corr.n_main
 n_istp = meta_corr.n_istp
 n_pca_modes = meta_corr.n_pca_modes
+n_pca_modes_prfl_modl = haskey(meta_corr, :n_pca_modes_prfl_modl) ? meta_corr.n_pca_modes_prfl_modl : 0
 px_in_um = meta_corr.px_in_um
 smwh_roi = meta_corr.smwh_roi
 smwh_core = meta_corr.smwh_core
 y_modl = meta_corr.y_modl
+y_modl_pca = haskey(meta_corr, :y_modl_pca) ? meta_corr.y_modl_pca : nothing
 x_posi = meta_corr.x_posi
 y_posi = meta_corr.y_posi
 freq_query = meta_corr.freq_query
 freq_query_pca = meta_corr.freq_query_pca
+freq_query_pca_modl = meta_corr.freq_query_pca_modl
 tag_IBs = meta_corr.tag_IBs
 runinfo_plots = meta_corr.runinfo_plots
 info_fmt = meta_corr.info_fmt
@@ -53,4 +56,6 @@ else
 end
 modes_pca_dens2d = cache_corr["modes_pca_dens2d"]
 pca_spectra = cache_corr["pca_spectra"]
+modes_pca_prfl_modl = haskey(cache_corr, "modes_pca_prfl_modl") ? cache_corr["modes_pca_prfl_modl"] : nothing
+pca_spectra_prfl_modl = haskey(cache_corr, "pca_spectra_prfl_modl") ? cache_corr["pca_spectra_prfl_modl"] : nothing
 log_done("loaded excitation correlation cache", t_stage)

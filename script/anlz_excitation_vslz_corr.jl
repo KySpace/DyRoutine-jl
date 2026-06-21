@@ -81,7 +81,7 @@ for (c, tag_IB) in enumerate(tag_IBs)
     end
 
     t_stage = log_step("building and saving PCA figure for $tag_IB")
-    path_pca = joinpath(path_output, "PCA modes", tag_IB)
+    path_pca = joinpath(path_output, "PCA density", tag_IB)
     isdir(path_pca) || mkpath(path_pca)
     fig_pca_mode = Figure()
     for idx_mode in 1:n_pca_modes
@@ -98,6 +98,42 @@ for (c, tag_IB) in enumerate(tag_IBs)
         fig_pca_mode |> f -> save(joinpath(path_pca, @sprintf("%s_%d.png", tag_IB, idx_mode)), f; backend=CairoMakie)
     end
     log_done("saved PCA figure for $tag_IB", t_stage)
+end
+
+if !isnothing(modes_pca_prfl_modl)
+    t_stage = log_step("building and saving modulation profile PCA figures")
+    path_pca_prfl = joinpath(path_output, "PCA prfl modl", tag)
+    isdir(path_pca_prfl) || mkpath(path_pca_prfl)
+    fig_pca_prfl = Figure()
+    for idx_mode in 1:n_pca_modes_prfl_modl
+        mode = modes_pca_prfl_modl[idx_mode]
+        spectra_params = [pca_spectra_prfl_modl[idx_mode, c] for c in axes(pca_spectra_prfl_modl, 2)]
+        fig_pca_prfl.layout |> clean_gridlayout!
+        gl_pca_prfl = GridLayout()
+        fig_pca_prfl[1, 1] = gl_pca_prfl
+        axs_pca_prfl = set_panel_pca_duet_params!(
+            gl_pca_prfl,
+            val_vars.IB;
+            mode_kind=:profile1d,
+            width_evol=400,
+            width_spct=400,
+            height_evol=120,
+            height_spct=120,
+        )
+        gl_pca_prfl[0, 1] = Label(fig_pca_prfl, "$tag | profile PCA #$idx_mode"; tellwidth=false, tellheight=true, halign=:left, valign=:top)
+        plot_mode_evol_spct_duet_params!(
+            axs_pca_prfl,
+            mode,
+            spectra_params,
+            val_vars.IB,
+            val_vars.istp;
+            mode_kind=:profile1d,
+            y_modl=y_modl_pca,
+        )
+        resize_to_layout!(fig_pca_prfl)
+        fig_pca_prfl |> f -> save(joinpath(path_pca_prfl, @sprintf("%s_prfl_modl_%d.png", tag, idx_mode)), f; backend=CairoMakie)
+    end
+    log_done("saved modulation profile PCA figures", t_stage)
 end
 
 for spec in trend_property_specs
