@@ -402,7 +402,7 @@ end
 function set_trend_tick_grid!(axs::AbstractDict)
     for (key, ax) in axs
         if startswith(key, "evol-")
-            ax.xticks = 0:10:200
+            ax.xticks = vcat(10:10:100, 120:20:220)
             ax.xminorticksvisible = true
             ax.xminorgridvisible = true
             ax.xminorticks = IntervalsBetween(5)
@@ -655,9 +655,10 @@ function set_axis_trend_variant_IB_istp!(
     return fig, axs_IB_istp
 end
 
-function trend_variant_fidl_key(property_variant::AbstractString)
+function trend_variant_fidl_key(property_name::AbstractString, property_variant::AbstractString)
+    startswith(property_name, "nvlp-") && return nothing
     startswith(property_variant, "fit-") && return "evol-all-fit-sp-fidl"
-    startswith(property_variant, "moment-") && return "evol-all-moment-sp-fidl"
+    startswith(property_variant, "moment-") && property_name in ("width", "wavenum") && return "evol-all-moment-sp-fidl"
     return nothing
 end
 
@@ -674,7 +675,7 @@ function plot_trend_variant_overlay!(
     evol_kind, spct_kind = trend_variant_evol_spct(variant)
     key_evol = "evol-$evol_kind-$(variant.name)"
     key_spct = "spct-$spct_kind-$(variant.name)"
-    fidl_key = trend_variant_fidl_key(variant.name)
+    fidl_key = trend_variant_fidl_key(spec.name, variant.name)
     for key in (key_ax_evol, key_ax_spct)
         haskey(axs, key) || throw(KeyError(key))
     end
@@ -970,7 +971,7 @@ function plot_trend_nvlp!(axs_trend::Dict, trend_reps::AbstractVector, trend_sta
         axs_sidepeaks_evol = axs |> a -> matching_axes(a, r"(evol(-extra)?)-(weight|width|height|wavenum|number|dens-sum|nvlp-size|nvlp-cent|sizes)")
         axs_sidepeaks_spct = axs |> a -> matching_axes(a, r"spct-(weight|width|height|wavenum|number|dens-sum|nvlp-size|nvlp-cent|sizes)")
         for ax in axs_sidepeaks_evol
-            ax.xticks = 0:10:200
+            ax.xticks = vcat(10:10:100, 120:20:220)
             ax.xminorticksvisible = true
             ax.xminorgridvisible = true
             ax.xminorticks = IntervalsBetween(5)

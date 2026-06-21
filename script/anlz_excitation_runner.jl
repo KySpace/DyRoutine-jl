@@ -139,13 +139,13 @@ mask_modl = (;
 fit_stack_kwargs = NamedTuple()
 fit_tailess_kwargs = NamedTuple()
 fit_asymm_kwargs = (;
-        preprocess=ds -> imfilter(ds, Kernel.gaussian(3)),
-        θ_hint=(
-            max=0.0 / 180 * π,
-            min=0.0 / 180 * π,
-            init=0.0 / 180 * π
-            )
-        )
+    preprocess=ds -> imfilter(ds, Kernel.gaussian(3)),
+    θ_hint=(
+        max=0.0 / 180 * π,
+        min=0.0 / 180 * π,
+        init=0.0 / 180 * π
+    )
+)
 fit_round_kwargs = NamedTuple()
 query_weight_kwargs = NamedTuple()
 trend_property_specs = [
@@ -181,7 +181,7 @@ trend_property_specs = [
     ),
     (
         name="width",
-        ylabel="side peak \nwidth (um^-1)",
+        ylabel="side peak \nwidth (μm⁻¹)",
         ylim=(0.02, 0.205),
         selection_key="t_vec_sel_sp_width",
         overlay_evol_col=1,
@@ -192,7 +192,7 @@ trend_property_specs = [
     ),
     (
         name="wavenum",
-        ylabel="side peak \nwavenum (um^-1)",
+        ylabel="side peak \nwavenum (μm⁻¹)",
         ylim=(0.22, 0.38),
         selection_key="t_vec_sel_sp_wavenum",
         overlay_evol_col=1,
@@ -214,7 +214,7 @@ trend_property_specs = [
     ),
     (
         name="nvlp-center",
-        ylabel="envelope center (μm)",
+        ylabel="envelope center \n (μm)",
         ylim=(-10, 10),
         selection_key="t_vec_sel_nvlp_cent",
         overlay_evol_col=2,
