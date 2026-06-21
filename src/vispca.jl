@@ -198,7 +198,13 @@ function draw_pca_mode_profile_duet!(
     return nothing
 end
 
-function plot_pca_evol_spct!(ax_evol::Axis, ax_spct::Axis, spectral::NamedTuple, rcrd_pks)
+function plot_pca_evol_spct!(
+    ax_evol::Axis,
+    ax_spct::Axis,
+    spectral::NamedTuple,
+    rcrd_pks;
+    show_xlabels::Bool=true,
+)
     n_rep = spectral.n_rep
     val_t = spectral.val_t
     freq_query = spectral.freq_query
@@ -228,8 +234,10 @@ function plot_pca_evol_spct!(ax_evol::Axis, ax_spct::Axis, spectral::NamedTuple,
         ax.yticklabelspace = 44.0
         ax.xticklabelspace = 30.0
     end
-    ax_evol.xlabel = "time (ms)"
-    ax_spct.xlabel = "frequency (Hz)"
+    ax_evol.xlabel = show_xlabels ? "time (ms)" : ""
+    ax_spct.xlabel = show_xlabels ? "frequency (Hz)" : ""
+    ax_evol.xticklabelsvisible = show_xlabels
+    ax_spct.xticklabelsvisible = show_xlabels
     ylims!(ax_spct, (-0.05, 1.15))
     return nothing
 end
@@ -265,7 +273,13 @@ function plot_mode_evol_spct_duet_params!(
     end
     for idx_param in eachindex(val_params)
         spectral, peaks = spectra_params[idx_param]
-        plot_pca_evol_spct!(axs["evol"][idx_param], axs["spct"][idx_param], spectral, peaks)
+        plot_pca_evol_spct!(
+            axs["evol"][idx_param],
+            axs["spct"][idx_param],
+            spectral,
+            peaks;
+            show_xlabels=idx_param == lastindex(val_params),
+        )
     end
     return nothing
 end
