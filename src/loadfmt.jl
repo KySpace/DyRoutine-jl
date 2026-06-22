@@ -1,4 +1,5 @@
 using HDF5
+using MAT
 using Printf
 using Statistics
 
@@ -209,4 +210,128 @@ function format_dens_runinfo(
     runinfo_sel = select_runinfo(runinfo, val_vars_sel, val_vars, idx_vars)
 
     return (; runinfo=runinfo_sel, val_vars=val_vars_sel, val_vars_full=val_vars, dens_full_fmt=dens_full_fmt_sel, wh_dens=(w_dens, h_dens), xy_peak_px, n_dim_vars=n_dim_vars_sel, name_dims)
+end
+
+function read_simulation_grid_units(path_input::AbstractString, filename_xy::AbstractString)
+    path_xy = joinpath(path_input, filename_xy)
+    isfile(path_xy) || throw(ArgumentError("Simulation grid file not found: $path_xy"))
+    file_xy = matopen(path_xy)
+    try
+        x_mat = read(file_xy, "Y")
+        y_mat = read(file_xy, "X")
+        unit_x_vals = x_mat[:, 1] |> diff |> unique
+        unit_y_vals = y_mat[1, :] |> diff |> unique
+        length(unit_x_vals) == 1 || throw(ArgumentError("Expected one x grid interval in $path_xy, got $(unit_x_vals)."))
+        length(unit_y_vals) == 1 || throw(ArgumentError("Expected one y grid interval in $path_xy, got $(unit_y_vals)."))
+        return (unit_x_vals[1], unit_y_vals[1])
+    finally
+        close(file_xy)
+    end
+end
+
+function load_dens_simulation_folder(
+    path_input::AbstractString;
+    names_istp::AbstractVector{<:AbstractString},
+    pattern_filename_data::Regex=Regex(raw"nxy_t=(?<idx_time>\d+).mat"),
+    names_density::AbstractVector{<:AbstractString}=["n1", "n2"],
+)
+    length(names_density) == length(names_istp) ||
+        throw(DimensionMismatch("names_density has length $(length(names_density)); expected $(length(names_istp)) to match names_istp."))
+    isdir(path_input) || throw(ArgumentError("Simulation input folder not found: $path_input"))
+
+    filenames_data = readdir(path_input) |> fs -> filter(f -> occursin(pattern_filename_data, f), fs)
+    isempty(filenames_data) && throw(ArgumentError("No simulation files matching $pattern_filename_data found in $path_input."))
+
+    ids_t = Vector{Int}(undef, length(filenames_data))
+    dens_raw = nothing
+    for (idx_file, filename) in enumerate(filenames_data)
+        ids_t[idx_file] = parse(Int, match(pattern_filename_data, filename)["idx_time"])
+        file = matopen(joinpath(path_input, filename))
+        try
+            dens_first = read(file, first(names_density))
+            if dens_raw === nothing
+                wh = size(dens_first)
+                dens_raw = Array{Float64}(undef, length(filenames_data), length(names_density), wh...)
+            end
+            dens_raw[idx_file, 1, :, :] .= dens_first
+            for idx_istp in 2:length(names_density)
+                dens_raw[idx_file, idx_istp, :, :] .= read(file, names_density[idx_istp])
+            end
+        finally
+            close(file)
+        end
+    end
+
+    perm_t = sortperm(ids_t)
+    return ids_t[perm_t], dens_raw[perm_t, :, :, :]
+end
+
+function format_dens_simulation_runinfo(
+    runinfo;
+    path_root::AbstractString,
+    smwh_roi::Tuple{<:Integer,<:Integer},
+    xy_peak_px::Tuple{<:Integer,<:Integer},
+    unit_t::Real,
+    unit_in_um::Real,
+    filename_xy::AbstractString="XY.mat",
+    pattern_filename_data::Regex=Regex(raw"nxy_t=(?<idx_time>\d+).mat"),
+    names_density::AbstractVector{<:AbstractString}=["n1", "n2"],
+    sel_vars=nothing,
+)
+    val_vars_base = format_vars(runinfo.vars)
+    hasproperty(val_vars_base, :istp) || throw(ArgumentError("simulation runinfo.vars must include istp."))
+    names_istp = String.(val_vars_base.istp)
+    path_input = joinpath(path_root, runinfo.dir)
+    ids_t, dens_raw = load_dens_simulation_folder(path_input; names_istp, pattern_filename_data, names_density)
+    unit_x, unit_y = read_simulation_grid_units(path_input, filename_xy)
+    px_in_um = (unit_x, unit_y) .* unit_in_um
+
+    for name_required in (:IB, :rep, :istp)
+        hasproperty(val_vars_base, name_required) ||
+            throw(ArgumentError("simulation runinfo.vars must include $name_required."))
+    end
+    val_vars_full = (;
+        IB=val_vars_base.IB,
+        rep=val_vars_base.rep,
+        t_hold=ids_t .* unit_t,
+        istp=val_vars_base.istp,
+    )
+    name_dims = propertynames(val_vars_full)
+    n_dim_vars = Tuple(map(length, val_vars_full))
+    expected = prod(n_dim_vars)
+    n_loaded = length(val_vars_full.IB) * length(val_vars_full.rep) * length(ids_t) * length(names_istp)
+    expected == n_loaded ||
+        throw(DimensionMismatch("Simulation variables describe $expected shots but loader produced $n_loaded from singleton IB/rep, $(length(ids_t)) times, and $(length(names_istp)) istp values."))
+
+    h_dens, w_dens = size(dens_raw, 3), size(dens_raw, 4)
+    dens_full_fmt = [
+        copy(@view dens_raw[t, i, :, :]) |> transpose |> d -> crop_center(d, xy_peak_px, smwh_roi) |> copy
+        for c in eachindex(val_vars_full.IB),
+            r in eachindex(val_vars_full.rep),
+            t in eachindex(val_vars_full.t_hold),
+            i in eachindex(val_vars_full.istp)
+    ]
+
+    val_vars_sel, idx_vars = select_val_vars(val_vars_full, sel_vars)
+    dens_full_fmt_sel = dens_full_fmt[idx_vars...]
+    n_dim_vars_sel = Tuple(map(length, val_vars_sel))
+    runinfo_sel = select_runinfo(runinfo, val_vars_sel, val_vars_full, idx_vars)
+
+    return (;
+        runinfo=runinfo_sel,
+        val_vars=val_vars_sel,
+        val_vars_full,
+        dens_full_fmt=dens_full_fmt_sel,
+        wh_dens=(w_dens, h_dens),
+        xy_peak_px,
+        n_dim_vars=n_dim_vars_sel,
+        name_dims,
+        unit_x,
+        unit_y,
+        unit_t,
+        unit_in_um,
+        px_in_um,
+        ids_t_full=ids_t,
+        ids_t=ids_t[idx_vars[3]],
+    )
 end

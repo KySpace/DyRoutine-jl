@@ -16,11 +16,11 @@ include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
-# commit
+# commit 180909b483deb890c66bd7ddd72d5223509bd2e5
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
 tag = "CFNM"
-title_load = "[06.20].85.Cache.LongTime"
-title_anlz = "[06.20].91.[←85].SidePeakFit"
+title_load = "[06.21].92.Extr.Table.Nvlp.SmallBlur.NoRot"
+title_anlz = "[06.21].94.Demo.Mask"
 
 path_load = joinpath(path_root, "AnlzRoutine", title_load)
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
@@ -157,6 +157,7 @@ selector_t_pca_modl = t -> 00 .< t .< 80
 freq_query_pca_modl = 1:1:100
 filter_core_pca = im -> imfilter(im, Kernel.gaussian(1.5))
 query_weight_kwargs = NamedTuple()
+draw_solo_modl_kwargs = NamedTuple()
 
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 copy_and_include = (name_script) -> begin
@@ -165,7 +166,7 @@ copy_and_include = (name_script) -> begin
     include(path_script)
 end
 "load_excitation_extr.jl" |> copy_and_include
-"anlz_excitation_corr.jl" |> copy_and_include
+# "anlz_excitation_corr.jl" |> copy_and_include
 # "load_excitation_corr.jl" |> copy_and_include
-"anlz_excitation_vslz_corr.jl" |> copy_and_include
+# "anlz_excitation_vslz_corr.jl" |> copy_and_include
 # "anlz_excitation_vslz_extr.jl" |> copy_and_include

@@ -22,12 +22,12 @@ log_done(msg, t_start) = (println("  [$tag] $msg ($(round(time() - t_start; digi
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations"
 dir_test = raw"01.[2026.06.01]"
-step_t = 0.1798
-step_in_μm = 0.2613
+unit_t = 0.1798
+unit_in_μm = 0.2613
 freq_query = 1:1:140
 
 # commit
-title = "Anlz.08.Simu-01.[2025.06.02].[30-100ms]"
+title = "Anlz.09.Simu-01.[2025.06.22].[30-100ms].Dev"
 path_test = joinpath(path_root, dir_test)
 path_this = @__FILE__
 path_output = joinpath(path_root, title)
@@ -49,18 +49,18 @@ for (i, fn) in enumerate(filenames_data)
     dens_raw[i, 2, :, :] = read(file, "n2")
     close(file)
 end
-(step_x, step_y) =
+(unit_x, unit_y) =
     begin
         file_xy = matopen(joinpath(path_test, filename_xy))
         x_mat = read(file_xy, "Y")
         y_mat = read(file_xy, "X")
         close(file_xy)
         (
-            x_mat[1, :] |> diff |> unique |> x -> x[1],
-            y_mat[2, :] |> diff |> unique |> y -> y[1]
+            x_mat[:, 1] |> diff |> unique |> x -> x[1],
+            y_mat[1, :] |> diff |> unique |> y -> y[1]
         )
     end
-px_in_um = (0.2344, 0.7812) .* step_in_μm
+px_in_um = (unit_x, unit_y) .* unit_in_μm
 smwh_core = smwh_roi = (80, 125)
 step_posi = px_in_um
 step_modl = 1 ./ (2 .* smwh_roi .* px_in_um)
@@ -81,9 +81,9 @@ ids_t = ids_t[perm_t]
 dens_raw = dens_raw[perm_t, :, :, :]
 istp = ["162", "164"]
 
-sel_t = 1:2:201 # ids_t |> ids -> findall(i -> (i * step_t > 100) & (mod(i, 12) == 0), ids)
+sel_t = 1:2:201 # ids_t |> ids -> findall(i -> (i * unit_t > 100) & (mod(i, 12) == 0), ids)
 val_vars = (;
-    t_hold=ids_t[sel_t] .* step_t,
+    t_hold=ids_t[sel_t] .* unit_t,
     istp,
 )
 n_dim_vars = val_vars |> vs -> map(length, vs) |> Tuple
@@ -94,7 +94,7 @@ info_fmt = [
     Dict(
         "repeat" => 1,
         "istp" => istp[i],
-        "t_hold" => ids_t[t] * step_t,
+        "t_hold" => ids_t[t] * unit_t,
     )
     for t in 1:n_dim_vars[1], i in 1:n_dim_vars[2]
 ]

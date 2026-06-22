@@ -21,7 +21,12 @@ get_bind_runinfo(runinfo, val_vars, idx_bind) = merge(
 
 name = propertynames(runinfo.vars)
 t_stage = log_step("formatting density data")
-fmt_dens = format_dens_runinfo(runinfo; path_root, year_test, wh_corner, smwh_roi, len_avg_peak, sel_vars)
+fmt_dens = if @isdefined(format_dens_runinfo_kwargs)
+    local formatter = @isdefined(format_dens_runinfo_fn) ? format_dens_runinfo_fn : format_dens_runinfo
+    formatter(runinfo; format_dens_runinfo_kwargs...)
+else
+    format_dens_runinfo(runinfo; path_root, year_test, wh_corner, smwh_roi, len_avg_peak, sel_vars)
+end
 runinfo = fmt_dens.runinfo
 (; val_vars, dens_full_fmt, wh_dens, xy_peak_px, n_dim_vars, name_dims) = fmt_dens
 n_variation = prod(n_dim_vars)
@@ -29,11 +34,15 @@ n_dim_vars_per_IB = Tuple(n_dim_vars[2:end])
 n_IB, n_rep, n_main, n_istp = n_dim_vars
 log_done("formatted density data: axes $(name_dims) dims $(n_dim_vars), per-IB dims $(n_dim_vars_per_IB), image $(size(first(dens_full_fmt)))", t_stage)
 
-xy_peak_core_per_IB_rep = [
-    dens_full_fmt[c, r, :, :] |> mean |> ds ->
-        find_positive_cluster_center(ds, smwh_core; len_avg=len_avg_peak) |> cent -> round.(Int, cent)
-    for c in 1:n_IB, r in 1:n_rep
-]
+xy_peak_core_per_IB_rep = if @isdefined(xy_peak_core_fixed)
+    fill(xy_peak_core_fixed, n_IB, n_rep)
+else
+    [
+        dens_full_fmt[c, r, :, :] |> mean |> ds ->
+            find_positive_cluster_center(ds, smwh_core; len_avg=len_avg_peak) |> cent -> round.(Int, cent)
+        for c in 1:n_IB, r in 1:n_rep
+    ]
+end
 xy_peak_core = xy_peak_core_per_IB_rep |> p -> repeat(p, inner=ntuple(i -> i in (3, 4) ? n_dim_vars[i] : 1, length(n_dim_vars)))
 
 t_stage = log_step("calculating solo essentials for $(length(dens_full_fmt)) shots")
@@ -178,6 +187,7 @@ meta_extr = (;
     n_main,
     n_istp,
     n_pca_modes,
+    fmt_dens,
     px_in_um,
     smwh_roi,
     smwh_core,

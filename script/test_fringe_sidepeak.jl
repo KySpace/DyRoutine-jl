@@ -154,9 +154,11 @@ println()
 log_done("stacked essentials over rep only", t_stage)
 
 t_stage = log_step("fitting stacked modulation tails")
+fit_stack_kwargs = NamedTuple()
+selector_tail_sidepeak = y -> y .> 0.2
 fit_prfl_modl_over_rep_1d = [
     essn_stacked_over_rep[c, t, i] |>
-    e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl.side.normed_px, selector_tail_stack(y_modl); fit_stack_kwargs...)
+    e -> fit_prfl_modl_twinpeak_decay_1d(y_modl, e.prfl_modl.side.normed_px, selector_tail_sidepeak(y_modl); fit_stack_kwargs...)
     for c in axes(essn_2d_fmt, 1), t in axes(essn_2d_fmt, 3), i in axes(essn_2d_fmt, 4)
 ]
 log_done("fit stacked modulation tails", t_stage)
@@ -180,6 +182,7 @@ using GLMakie
 GLMakie.activate!()
 
 crti_samples = [
+    (5, 2,  6, 2, "curve peak")
     (4, 2, 19, 2, "strong fringe")
     (4, 2,  1, 2, "messy envelop")
     (4, 1, 30, 2, "small modulation peak")
@@ -192,7 +195,7 @@ gl = GridLayout(fig[1, 1])
 axs = set_panel_solo_modl_masks!(gl)
 foreach(a -> a isa Axis && empty!(a), values(axs))
 
-c, r, t, i = (3, 2,  3, 2)
+c, r, t, i, desc = crti_samples[1] # (3, 2,  3, 2)
 extr = extr_fmt[c, r, t, i]
 info = info_fmt[c, r, t, i]
 essn = extr.essentials
@@ -239,3 +242,4 @@ draw_solo_modl_mask!(axs, extr, info, mask_fringe, mask_envelop, mask_sidepeak, 
 
 fig |> resize_to_layout!
 fig |> display
+fig |> f -> save(joinpath(path_output, "Demo.Mask.[$desc].png"), f)

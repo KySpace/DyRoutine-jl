@@ -1,5 +1,6 @@
 ## extraction figures from solo or stack
 
+draw_solo_modl_kwargs = @isdefined(draw_solo_modl_kwargs) ? draw_solo_modl_kwargs : NamedTuple()
 fig_full, axs_solo, axs_stacked = set_axis_full(n_dim_vars_per_IB, set_panel_solo_modl!)
 println("Full axes ready: dimensions $(n_dim_vars_per_IB)")
 for c in 1:n_dim_vars[1]
@@ -9,11 +10,11 @@ for c in 1:n_dim_vars[1]
         for r in 1:n_dim_vars[2]
             info = info_fmt[c, r, t, i]
             print("\r\033[2Kplotting for runid $(info["runid"]), rep $r, $(info["t_hold"]) ms, $(info["istp"])")
-            draw_solo_modl!(axs_solo[r, t, i], extr_fmt[c, r, t, i], info)
+            draw_solo_modl!(axs_solo[r, t, i], extr_fmt[c, r, t, i], info; draw_solo_modl_kwargs...)
         end
         info = info_fmt[c, 1, t, i] |> d -> merge(d, Dict("repeat" => "stacked"))
         print("\r\033[2Kplotting for stacked runid $(info["runid"]), $(info["t_hold"]) ms, $(info["istp"])")
-        draw_solo_modl!(axs_stacked[t, i], extr_stacked_over_rep[c, t, i], info)
+        draw_solo_modl!(axs_stacked[t, i], extr_stacked_over_rep[c, t, i], info; draw_solo_modl_kwargs...)
     end
     println("")
     println("Full modulation table drawn.")

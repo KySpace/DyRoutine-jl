@@ -49,7 +49,8 @@ for (c, tag_IB) in enumerate(tag_IBs)
         prfl_evol_stacked[c, :],
         val_vars.t_hold,
         y_modl,
-        val_vars.istp,
+        val_vars.istp;
+        plot_prfl_modl_evol_kwargs...
     )
     fig_prfl_evol |> resize_to_layout!
     for format in ["svg", "png"]

@@ -121,7 +121,8 @@ function gen_clrmap_posneg_nonlin(hue_pos, hue_neg; thres_alpha=0.6, alpha_base=
     ]
 end
 
-function draw_pca_mode_2d_duet!(axs::Dict, mode::ModeWeight, val_istp; step_posi::Real=1, smwh=(0, 0))
+function draw_pca_mode_2d_duet!(axs::Dict, mode::ModeWeight, val_istp; step_posi=1, smwh=(0, 0))
+    step_posi = step_posi isa Real ? (step_posi, step_posi) : step_posi
     step_modl = 1 ./ (2 .* smwh .* step_posi)
     x_vec, y_vec = smwh |> s -> map(u -> (-u:1:u), s)
     x_posi, y_posi = (x_vec, y_vec) .* step_posi
@@ -242,7 +243,7 @@ function plot_pca_evol_spct!(
     return nothing
 end
 
-function plot_mode_evol_spct_duet!(axs::Dict, mode::ModeWeight, spectral::NamedTuple, rcrd_pks, val_istp; step_posi::Real=1, smwh=(0, 0))
+function plot_mode_evol_spct_duet!(axs::Dict, mode::ModeWeight, spectral::NamedTuple, rcrd_pks, val_istp; step_posi=1, smwh=(0, 0))
     axs |> clear_axes!
     draw_pca_mode_2d_duet!(axs, mode, val_istp; step_posi, smwh)
     plot_pca_evol_spct!(axs["evol"], axs["spct"], spectral, rcrd_pks)
@@ -257,7 +258,7 @@ function plot_mode_evol_spct_duet_params!(
     val_istp;
     mode_kind::Symbol=:profile1d,
     y_modl=nothing,
-    step_posi::Real=1,
+    step_posi=1,
     smwh=(0, 0),
 )
     length(spectra_params) == length(val_params) ||

@@ -1,4 +1,5 @@
 using HDF5
+using MAT
 using CairoMakie: Figure, Axis, Colorbar, DataAspect, heatmap!, lines!, scatter!, save, text!, rowgap!, colgap!
 using GLMakie
 using JLD2
@@ -16,125 +17,101 @@ include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
-# commit 89384be35faef4bf140f661b2d87ae56382a9250
-title_anlz = "[06.21].90.Extr.Table.Nvlp.SmallBlur.NoRot"
+title_anlz = "Anlz.12.Simu-01.[2025.06.22].[30-100ms].Dev"
 
-year_test = 2026
-path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
+path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations"
+dir_test = raw"01.[2026.06.01]"
 istp = ["162", "164"]
-# Grouped version for comparing against the one-folder-per-runinfo list above.
-runinfos_grouped = [
+unit_t = 0.1798
+unit_in_um = 0.2613
+
+runinfos = [
     (
-        tag_head="CFNM",
-        bind_id=:IB,
-        date_runid=[
-            ("0325", 95),
-            ("0325", 82),
-            ("0325", 52),
-            ("0325", 80),
-            ("0325", 67),
-            ("0325", 96),
-            ("0325", 68),
-            ("0325", 50),
-            ("0325", 81),
-            ("0325", 51),
-            ("0325", 79),
-            ("0325", 53),
-        ],
+        tag_head="SIMU-NTRC",
+        date="2026.06.01",
+        runid=1,
+        dir=dir_test,
         vars=(
-            IB=[5.311, 5.313, 5.316, 5.318, 5.322, 5.325, 5.326, 5.328, 5.332, 5.333, 5.336, 5.338],
-            rep=1:3,
-            t_hold=6:2:200,
-            istp,
-        ),
-    ),
-    (
-        tag_head="NTRC",
-        bind_id=:IB,
-        date_runid=[
-            ("0322", 29),
-            ("0322", 28),
-            ("0322", 27),
-            ("0322", 26),
-            ("0322", 25),
-            ("0323", 61),
-            ("0323", 62),
-            ("0323", 63),
-            ("0323", 64),
-        ],
-        vars=(
-            IB=[5.314, 5.316, 5.318, 5.322, 5.326, 5.332, 5.336, 5.340, 5.343],
-            rep=1:3,
-            t_hold=6:2:200,
+            IB=[97],
+            rep=1:1,
             istp,
         ),
     ),
 ]
+ids_runinfo = eachindex(runinfos)
 
-runinfos = runinfos_grouped
-# runinfos = runinfos_separated
+sel_vars = (; t_hold=(; index=i -> isodd(i), val=t -> 30 <= t <= 100))
 
-# ids_runinfo = eachindex(runinfos)
-ids_runinfo = 1:2
-# sel_vars = NamedTuple()
-sel_vars = (; t_hold=t -> 0 .<= t .<= 100)
-# sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 20)
-
-
-path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
+path_output = joinpath(path_root, title_anlz)
 isdir(path_output) || mkpath(path_output)
 
-wh_corner = (10, 10)
-smwh_roi = (50, 100)
-smwh_essn = (30, 60)
-smwh_core = (30, 60)
-wh_peak = smwh_roi .* 2 .+ 1
-smw_peak, smh_peak = smwh_roi
-px_in_um = 6.5 / 22.06
+smwh_roi = (127, 76)
+smwh_essn = (127, 76)
+smwh_core = (127, 76)
+xy_peak_px_fixed = (128, 128)
+xy_peak_core_fixed = smwh_roi .+ 1
 len_avg_peak = 10
+
+fmt_probe = format_dens_simulation_runinfo(
+    first(runinfos);
+    path_root,
+    smwh_roi,
+    xy_peak_px=xy_peak_px_fixed,
+    unit_t,
+    unit_in_um,
+    sel_vars,
+)
+px_in_um = fmt_probe.px_in_um
+unit_x = fmt_probe.unit_x
+unit_y = fmt_probe.unit_y
 
 step_posi = px_in_um
 step_modl = 1 ./ (2 .* smwh_core .* px_in_um)
 x_modl, y_modl = smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* step_modl
 x_posi, y_posi = smwh_roi |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* step_posi
 
+format_dens_runinfo_kwargs = (;
+    path_root,
+    smwh_roi,
+    xy_peak_px=xy_peak_px_fixed,
+    unit_t,
+    unit_in_um,
+    sel_vars,
+)
+format_dens_runinfo_fn = format_dens_simulation_runinfo
+
 idx_IB_axis = 1
 idx_rep_axis = 2
 idx_t_hold_axis = 3
 idx_istp_axis = 4
-n_pca_modes = 16
-n_pca_modes_prfl_modl = 8
+n_pca_modes = min(16, max(1, length(fmt_probe.val_vars.t_hold) * length(istp) - 1))
+n_pca_modes_prfl_modl = min(8, max(1, length(fmt_probe.val_vars.t_hold) - 1))
 freq_query = 1:1:140
 freq_query_pca = 1:1:140
 freq_query_pca_modl = 1:1:100
 
 proc_sidepeak = true
 proc_envelope = true
-selector_moment = y -> (y .> 0.10) .& (y .< 0.50)
-selector_sidepeak = y -> (y .> 0.1) .& (y .< 0.5)
+selector_moment = y -> (y .> 0.10) .& (y .< 0.60)
+selector_sidepeak = y -> (y .> 0.1) .& (y .< 0.6)
 selector_t_spectrum = (;
-    number=t -> 0 .< t .< 300,
-    sp_weight=t -> 0 .< t .< 300,
-    sp_height=t -> 0 .< t .< 300,
-    sp_width=t -> 0 .< t .< 300,
-    sp_wavenum=t -> 0 .< t .< 300,
-    nvlp=t -> 0 .< t .< 300,
+    number=t -> 30 .< t .< 100,
+    sp_weight=t -> 30 .< t .< 100,
+    sp_height=t -> 30 .< t .< 100,
+    sp_width=t -> 30 .< t .< 100,
+    sp_wavenum=t -> 30 .< t .< 100,
+    nvlp=t -> 30 .< t .< 100,
 )
-selector_t_pca_dens = t -> 20 .< t .< 80
-selector_t_pca_modl = t -> 30 .< t .< 170
+selector_t_pca_dens = t -> 30 .< t .< 80
+selector_t_pca_modl = t -> 30 .< t .< 100
 selector_tail_sidepeak = y -> y .> 0.2
 filter_core_pca = im -> imfilter(im, Kernel.gaussian(1.5))
 
 mask_modl = (;
-    fringe=(x, y) -> ((x - 0.37) / 0.16)^2 + ((y - 0.32) / 0.1)^2 < 1,
-    center=(x, y) -> begin
-        θ = -20 * π / 180
-        x_r = cos(θ) * x - sin(θ) * y
-        y_r = sin(θ) * x + cos(θ) * y
-        ((x_r / 0.4)^2 + (y_r / 0.15)^2 < 1) || ((x / 0.55)^2 + (y / 0.1)^2 < 1)
-    end,
-    sidepeak=(x, y) -> abs(x) < 0.51,
-    main=(x, y) -> abs(x) < 0.51,
+    fringe=(x, y) -> false,
+    center=(x, y) -> false,
+    sidepeak=(x, y) -> abs(x) < 0.7,
+    main=(x, y) -> abs(x) < 0.7,
 )
 
 fit_stack_kwargs = NamedTuple()
@@ -144,11 +121,12 @@ fit_asymm_kwargs = (;
     θ_hint=(
         max=0.0 / 180 * π,
         min=0.0 / 180 * π,
-        init=0.0 / 180 * π
-    )
+        init=0.0 / 180 * π,
+    ),
 )
 fit_round_kwargs = NamedTuple()
 query_weight_kwargs = NamedTuple()
+plot_prfl_modl_evol_kwargs = (; colorrange=(0, 3.0))
 trend_property_specs = [
     (
         name="number",
@@ -162,16 +140,10 @@ trend_property_specs = [
     (
         name="weight",
         ylabel="side peak \nweight",
-        ylim=(-0.02, 0.17),
+        ylim=(-0.02, 0.32),
         selection_key="t_vec_sel_sp_weight",
         overlay_evol_col=1,
-        fit_evol=(
-            model=:oscillation_decay,
-            kwargs=(
-                C_hint=(max=0.10, min=0.02, init=0.08),
-                A_hint=(max=0.07, min=0.00, init=0.05),
-            ),
-        ),
+        fit_evol=nothing,
         variants=[
             (name="fit-weight", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
             (name="moment-weight", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
@@ -180,16 +152,10 @@ trend_property_specs = [
     (
         name="height",
         ylabel="side peak \nheight",
-        ylim=(-0.1, 1.1),
+        ylim=(-0.1, 3.6),
         selection_key="t_vec_sel_sp_height",
         overlay_evol_col=1,
-        fit_evol=(
-            model=:oscillation_decay,
-            kwargs=(
-                C_hint=(max=0.7, min=0.10, init=0.5),
-                A_hint=(max=0.5, min=0.00, init=0.5),
-            ),
-        ),
+        fit_evol=nothing,
         variants=[
             (name="fit-height", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
             (name="moment-height", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
@@ -201,13 +167,7 @@ trend_property_specs = [
         ylim=(0.02, 0.205),
         selection_key="t_vec_sel_sp_width",
         overlay_evol_col=1,
-        fit_evol=(
-            model=:oscillation_decay,
-            kwargs=(
-                C_hint=(max=0.10, min=0.02, init=0.05),
-                A_hint=(max=0.10, min=0.00, init=0.05),
-            ),
-        ),
+        fit_evol=nothing,
         variants=[
             (name="fit-width", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
             (name="moment-width", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
@@ -219,13 +179,7 @@ trend_property_specs = [
         ylim=(0.22, 0.38),
         selection_key="t_vec_sel_sp_wavenum",
         overlay_evol_col=1,
-        fit_evol=(
-            model=:oscillation_decay,
-            kwargs=(
-                C_hint=(max=0.30, min=0.25, init=0.28),
-                A_hint=(max=0.07, min=0.00, init=0.04),
-            ),
-        ),
+        fit_evol=nothing,
         variants=[
             (name="fit-wavenum", evol_spct=("all", "sel"), color=:fit, label="fit", extra=false),
             (name="moment-wavenum", evol_spct=("all", "sel"), color=:moment, label="moment", extra=true),
@@ -286,10 +240,8 @@ trend_spectrum_IB_kwargs = (width=360, height=180)
 trend_spectrum_IB_plot_kwargs = (colorrange=(0.3, 1.00),)
 plot_corr_figures = true
 plot_extr_figures = false
-draw_solo_modl_kwargs = NamedTuple()
-plot_prfl_modl_evol_kwargs = NamedTuple()
+draw_solo_modl_kwargs = (; dens_max=64.0, peak_height_max=3.0)
 
-##
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 copy_and_include = (name_script) -> begin
     path_script = joinpath(@__DIR__, name_script)
@@ -297,14 +249,12 @@ copy_and_include = (name_script) -> begin
     include(path_script)
 end
 
-
-
 for idx_runinfo_iter in ids_runinfo
     global idx_runinfo = idx_runinfo_iter
     global runinfo = runinfos[idx_runinfo]
-    # global tag = gen_run_tag(runinfo)
-    global tag = tag_head = runinfo.tag_head
+    global tag = runinfo.tag_head
     println("Processing: $tag")
+    println("  [$tag] px_in_um=$(px_in_um), selected t_hold=$(extrema(fmt_probe.val_vars.t_hold)) ms, n_t=$(length(fmt_probe.val_vars.t_hold))")
 
     "anlz_excitation_extr.jl" |> copy_and_include
     "anlz_excitation_corr.jl" |> copy_and_include
