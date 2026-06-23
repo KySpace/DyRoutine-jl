@@ -17,7 +17,7 @@ include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
-title_anlz = "Anlz.14.Simu-03.[2025.06.22].Dev"
+title_anlz = "Anlz.15.Simu-03.[2025.06.22]"
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations"
 dir_test = raw"03.[2026.06.10]"
