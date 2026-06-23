@@ -111,10 +111,10 @@ function validate_bind_id(runinfo, val_vars)
 end
 
 function gen_run_tag(runinfo)
-    runids = if hasproperty(runinfo, :runids)
-        runinfo.runids
-    elseif hasproperty(runinfo, :runid)
+    runids = if hasproperty(runinfo, :runid)
         runinfo.runid
+    elseif hasproperty(runinfo, :runids)
+        runinfo.runids
     elseif hasproperty(runinfo, :date_runid)
         get_runid_from_date_runid.(as_vector(runinfo.date_runid))
     else
@@ -232,7 +232,7 @@ end
 function load_dens_simulation_folder(
     path_input::AbstractString;
     names_istp::AbstractVector{<:AbstractString},
-    pattern_filename_data::Regex=Regex(raw"nxy_t=(?<idx_time>\d+).mat"),
+    pattern_filename_data::Regex=Regex(raw"nxy_t=(?<idx_time>\d+).*\.mat$"),
     names_density::AbstractVector{<:AbstractString}=["n1", "n2"],
 )
     length(names_density) == length(names_istp) ||
@@ -266,6 +266,47 @@ function load_dens_simulation_folder(
     return ids_t[perm_t], dens_raw[perm_t, :, :, :]
 end
 
+function parse_simulation_folder_value(path_folder::AbstractString, pattern_folder_data::Regex)
+    name_folder = basename(path_folder)
+    mtch = match(pattern_folder_data, name_folder)
+    isnothing(mtch) && return nothing
+    key_value = haskey(mtch, "value") ? "value" : first(keys(mtch))
+    return parse(Float64, mtch[key_value])
+end
+
+function find_simulation_value_folders(
+    path_input::AbstractString,
+    vals::AbstractVector;
+    pattern_folder_data::Regex,
+)
+    entries = readdir(path_input; join=true)
+    folders = filter(isdir, entries)
+    folder_by_value = Dict{Float64,String}()
+    for path_folder in folders
+        value = parse_simulation_folder_value(path_folder, pattern_folder_data)
+        isnothing(value) && continue
+        folder_by_value[value] = path_folder
+    end
+
+    return map(vals) do val
+        val_float = Float64(val)
+        vals_folder = collect(keys(folder_by_value))
+        key_match = findfirst(
+            value -> isapprox(value, val_float; rtol=0, atol=eps(max(abs(value), abs(val_float), 1.0))),
+            vals_folder,
+        )
+        isnothing(key_match) && throw(ArgumentError("No simulation subfolder matching value $val found in $path_input. Expected folders matching $pattern_folder_data."))
+        folder_by_value[vals_folder[key_match]]
+    end
+end
+
+function has_simulation_value_folders(path_input::AbstractString, pattern_folder_data::Regex)
+    folders = readdir(path_input; join=true) |> entries -> filter(isdir, entries)
+    return any(folders) do path_folder
+        !isnothing(parse_simulation_folder_value(path_folder, pattern_folder_data))
+    end
+end
+
 function format_dens_simulation_runinfo(
     runinfo;
     path_root::AbstractString,
@@ -274,7 +315,8 @@ function format_dens_simulation_runinfo(
     unit_t::Real,
     unit_in_um::Real,
     filename_xy::AbstractString="XY.mat",
-    pattern_filename_data::Regex=Regex(raw"nxy_t=(?<idx_time>\d+).mat"),
+    pattern_filename_data::Regex=Regex(raw"nxy_t=(?<idx_time>\d+).*\.mat$"),
+    pattern_folder_data::Regex=Regex(raw"^as22=(?<value>[-+]?\d+(?:\.\d+)?)$"),
     names_density::AbstractVector{<:AbstractString}=["n1", "n2"],
     sel_vars=nothing,
 )
@@ -282,7 +324,6 @@ function format_dens_simulation_runinfo(
     hasproperty(val_vars_base, :istp) || throw(ArgumentError("simulation runinfo.vars must include istp."))
     names_istp = String.(val_vars_base.istp)
     path_input = joinpath(path_root, runinfo.dir)
-    ids_t, dens_raw = load_dens_simulation_folder(path_input; names_istp, pattern_filename_data, names_density)
     unit_x, unit_y = read_simulation_grid_units(path_input, filename_xy)
     px_in_um = (unit_x, unit_y) .* unit_in_um
 
@@ -290,6 +331,30 @@ function format_dens_simulation_runinfo(
         hasproperty(val_vars_base, name_required) ||
             throw(ArgumentError("simulation runinfo.vars must include $name_required."))
     end
+    validate_bind_id(runinfo, val_vars_base)
+
+    paths_input_data = if has_simulation_value_folders(path_input, pattern_folder_data)
+        find_simulation_value_folders(path_input, val_vars_base.IB; pattern_folder_data)
+    elseif length(val_vars_base.IB) == 1
+        [path_input]
+    else
+        throw(ArgumentError("Simulation runinfo has $(length(val_vars_base.IB)) IB values but $path_input has no subfolders matching $pattern_folder_data."))
+    end
+
+    ids_t = nothing
+    dens_by_IB = nothing
+    for (idx_IB, path_input_data) in enumerate(paths_input_data)
+        ids_t_loaded, dens_raw = load_dens_simulation_folder(path_input_data; names_istp, pattern_filename_data, names_density)
+        if ids_t === nothing
+            ids_t = ids_t_loaded
+            h_dens, w_dens = size(dens_raw, 3), size(dens_raw, 4)
+            dens_by_IB = Array{Float64}(undef, length(paths_input_data), length(ids_t), length(names_istp), h_dens, w_dens)
+        else
+            ids_t_loaded == ids_t || throw(DimensionMismatch("Simulation folder $path_input_data has time ids $(ids_t_loaded), expected $(ids_t)."))
+        end
+        dens_by_IB[idx_IB, :, :, :, :] .= dens_raw
+    end
+
     val_vars_full = (;
         IB=val_vars_base.IB,
         rep=val_vars_base.rep,
@@ -303,9 +368,9 @@ function format_dens_simulation_runinfo(
     expected == n_loaded ||
         throw(DimensionMismatch("Simulation variables describe $expected shots but loader produced $n_loaded from singleton IB/rep, $(length(ids_t)) times, and $(length(names_istp)) istp values."))
 
-    h_dens, w_dens = size(dens_raw, 3), size(dens_raw, 4)
+    h_dens, w_dens = size(dens_by_IB, 4), size(dens_by_IB, 5)
     dens_full_fmt = [
-        copy(@view dens_raw[t, i, :, :]) |> transpose |> d -> crop_center(d, xy_peak_px, smwh_roi) |> copy
+        copy(@view dens_by_IB[c, t, i, :, :]) |> transpose |> d -> crop_center(d, xy_peak_px, smwh_roi) |> copy
         for c in eachindex(val_vars_full.IB),
             r in eachindex(val_vars_full.rep),
             t in eachindex(val_vars_full.t_hold),

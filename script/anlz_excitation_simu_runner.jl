@@ -17,22 +17,24 @@ include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
-title_anlz = "Anlz.12.Simu-01.[2025.06.22].[30-100ms].Dev"
+title_anlz = "Anlz.14.Simu-03.[2025.06.22].Dev"
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations"
-dir_test = raw"01.[2026.06.01]"
+dir_test = raw"03.[2026.06.10]"
 istp = ["162", "164"]
 unit_t = 0.1798
 unit_in_um = 0.2613
+a22 = [80, 85, 90, 95, 100, 105]
 
 runinfos = [
     (
         tag_head="SIMU-NTRC",
-        date="2026.06.01",
-        runid=1,
+        date="2026.06.10",
+        runids=eachindex(a22),
+        bind_id=:IB,
         dir=dir_test,
         vars=(
-            IB=[97],
+            IB=a22,
             rep=1:1,
             istp,
         ),
@@ -40,7 +42,7 @@ runinfos = [
 ]
 ids_runinfo = eachindex(runinfos)
 
-sel_vars = (; t_hold=(; index=i -> isodd(i), val=t -> 30 <= t <= 100))
+sel_vars = (; t_hold=(; index=i -> isodd(i)))
 
 path_output = joinpath(path_root, title_anlz)
 isdir(path_output) || mkpath(path_output)
@@ -84,7 +86,7 @@ idx_IB_axis = 1
 idx_rep_axis = 2
 idx_t_hold_axis = 3
 idx_istp_axis = 4
-n_pca_modes = min(16, max(1, length(fmt_probe.val_vars.t_hold) * length(istp) - 1))
+n_pca_modes = min(16, max(1, length(fmt_probe.val_vars.rep) * length(fmt_probe.val_vars.t_hold) - 1))
 n_pca_modes_prfl_modl = min(8, max(1, length(fmt_probe.val_vars.t_hold) - 1))
 freq_query = 1:1:140
 freq_query_pca = 1:1:140
