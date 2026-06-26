@@ -1,392 +1,644 @@
 using CairoMakie
-using DelimitedFiles
-using FFTW
 using HDF5
-using ImageFiltering
+using LinearAlgebra
 using LsqFit
 using Printf
 using Statistics
 
+include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
+include(joinpath(@__DIR__, "..", "src", "fitmodels.jl"))
+
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
-title_anlz = "01.Reproduce"
-path_data = joinpath(path_root, "0204_interference", "result", "data.h5")
-path_sidepeak_ref = joinpath(path_root, "0204_interference", "result", "sidepeak_B.csv")
+title_anlz = "02.PrflStacked"
+path_data = joinpath(path_root, "0204_interference", "result", "prfl.h5")
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
 
 tag = "SSNTFR"
-IBfesh = [
-    5.310, 5.312, 5.314, 5.316, 5.317, 5.318, 5.319, 5.320, 5.322,
-    5.324, 5.326, 5.328, 5.330, 5.332, 5.334, 5.338, 5.342,
-]
-# The original notebook labels the raw HDF5 isotope datasets as 62/64, but its
-# plotting convention treats those labels as inverted.
-istp = ["162", "164"]
 
-avg = 100
-nerr = 0.6e4
-smwh_roi = (150, 150)
-center_window = 181:220
-mag = 22.06
-pixsz = 6.5
-pad = 0
-fsz = 20
-fszy = 120
-fit_range_n = (0.10, 0.40)
-fit_range_phi = (0.10, 0.40)
-
-idx_IB_axis = 1
-idx_rep_axis = 2
-idx_t_hold_axis = 3
-idx_istp_axis = 4
-idx_162 = findfirst(==("162"), istp)
-idx_164 = findfirst(==("164"), istp)
-
-function gaussian_center_1d(prfl::AbstractVector{<:Real})
-    x = collect(1.0:length(prfl))
-    y = Float64.(prfl)
-    amp = maximum(y) - minimum(y)
-    p0 = [amp, Float64(argmax(y)), max(length(y) / 10, 2.0), minimum(y)]
-    lower = [0.0, 1.0, 1.0, -Inf]
-    upper = [Inf, length(y), length(y), Inf]
-    model_center(x, p) = @. p[1] * exp(-((x - p[2])^2) / (2p[3]^2)) + p[4]
-    fit = curve_fit(model_center, x, y, p0; lower, upper)
-    return round(Int, coef(fit)[2])
-end
-
-function find_center(img::AbstractMatrix{<:Real}; sigma::Real=10)
-    smoothed = imfilter(Float64.(img), Kernel.gaussian(sigma))
-    cy = gaussian_center_1d(vec(sum(smoothed; dims=2)))
-    cx = gaussian_center_1d(vec(sum(smoothed; dims=1)))
-    return cy, cx
-end
-
-function crop_center_yx(img::AbstractMatrix{<:Real}, cy::Integer, cx::Integer, smwh::Tuple{<:Integer,<:Integer})
-    smx, smy = smwh
-    return @view img[cy-smy:cy+smy, cx-smx:cx+smx]
-end
-
-function format_dens_ssntfr_h5_ib(f::HDF5.File, idx_ib::Integer, val_IB::Real, vals_rep, vals_istp)
-    dens62 = f["im62us"][:, :, :, idx_ib]
-    dens64 = f["im64us"][:, :, :, idx_ib]
-    size(dens62, 3) == length(vals_rep) || throw(DimensionMismatch("rep count mismatch for IB=$val_IB."))
-
-    val_vars = (; IB=[val_IB], rep=collect(vals_rep), t_hold=[0.0], istp=collect(vals_istp))
-    name_dims = propertynames(val_vars)
-    n_dim_vars = Tuple(length(getproperty(val_vars, name)) for name in name_dims)
-    dens_full_fmt = Array{Matrix{Float64}}(undef, n_dim_vars...)
-    for idx_rep in eachindex(vals_rep)
-        dens_full_fmt[1, idx_rep, 1, idx_164] = Float64.(dens62[:, :, idx_rep])
-        dens_full_fmt[1, idx_rep, 1, idx_162] = Float64.(dens64[:, :, idx_rep])
-    end
-    return (; val_vars, dens_full_fmt, name_dims, n_dim_vars, wh_dens=reverse(size(dens62)[1:2]))
-end
-
-function calc_postselection(dens_full_fmt, val_IB::Real)
-    dens62 = @view dens_full_fmt[1, :, 1, idx_164]
-    dens64 = @view dens_full_fmt[1, :, 1, idx_162]
-    n62_all = sum.(dens62)
-    n64_all = sum.(dens64)
-    n62_med = median(n62_all)
-    n64_med = median(n64_all)
-
-    mask_rep = falses(length(dens62))
-    dens_roi_fmt = Array{Union{Missing,Matrix{Float64}}}(missing, 1, length(dens62), 1, length(istp))
-    num_fmt = Array{Float64}(undef, 1, length(dens62), 1, length(istp))
-    center_fmt = Array{Tuple{Int,Int}}(undef, 1, length(dens62), 1, length(istp))
-
-    for idx_rep in eachindex(dens62)
-        img62 = dens62[idx_rep]
-        img64 = dens64[idx_rep]
-        n62 = n62_all[idx_rep]
-        n64 = n64_all[idx_rep]
-        cy62, cx62 = find_center(img62)
-        cy64, cx64 = find_center(img64)
-        keep = abs(n62 - n62_med) <= nerr &&
-               abs(n64 - n64_med) <= nerr &&
-               all(in(center_window), (cy62, cx62, cy64, cx64))
-        num_fmt[1, idx_rep, 1, idx_164] = n62
-        num_fmt[1, idx_rep, 1, idx_162] = n64
-        center_fmt[1, idx_rep, 1, idx_164] = (cx62, cy62)
-        center_fmt[1, idx_rep, 1, idx_162] = (cx64, cy64)
-        if keep
-            mask_rep[idx_rep] = true
-            dens_roi_fmt[1, idx_rep, 1, idx_164] = copy(crop_center_yx(img62, cy62, cx62, smwh_roi))
-            dens_roi_fmt[1, idx_rep, 1, idx_162] = copy(crop_center_yx(img64, cy64, cx64, smwh_roi))
-        end
-    end
-
-    any(mask_rep) || throw(ArgumentError("post-selection kept no shots for IB=$val_IB"))
-    return (; mask_rep, dens_roi_fmt, num_fmt, center_fmt)
-end
-
-function mean_selected_images(dens_roi_fmt, mask_rep::AbstractVector{Bool}, idx_istp::Integer)
-    images = skipmissing(vec(dens_roi_fmt[1, mask_rep, 1, idx_istp])) |> collect
-    isempty(images) && throw(ArgumentError("cannot average an empty selected image list."))
-    return mean(images)
-end
-
-function tukey_window(n::Integer, alpha::Real=0.2)
-    m = n - 1
-    edge = floor(Int, alpha * m / 2)
-    win = ones(Float64, n)
-    edge == 0 && return win
-    for idx in 1:n
-        k = idx - 1
-        if k < edge
-            win[idx] = 0.5 * (1 - cos(2pi * k / (alpha * m)))
-        elseif k > m - edge
-            win[idx] = 0.5 * (1 - cos(2pi * (m - k) / (alpha * m)))
-        end
-    end
-    return win
-end
-
-fftshift1(v::AbstractVector) = circshift(v, -((length(v) + 1) ÷ 2))
-
-function calc_fft_profile(images::AbstractVector{<:AbstractMatrix{<:Real}})
-    ly, lx = size(first(images))
-    szy = (ly + 1) ÷ 2
-    szx = (lx + 1) ÷ 2
-    fftsz = (ly - 1) / 2 + pad
-    fftx = [mag / (fftsz * 2 * pixsz) * n for n in -fftsz:fftsz]
-    rxf = (szx - fsz):(szx + fsz)
-    ryf = (szy + pad - fszy):(szy + pad + fszy)
-    win = tukey_window(ly, 0.2)
-    dk = fftx[2] - fftx[1]
-
-    fft_reps = map(images) do img
-        prfl = vec(sum(imfilter(Float64.(@view img[:, rxf]), Kernel.gaussian(5)); dims=2)) ./ length(rxf)
-        ft = fftshift1(fft(prfl .* win))[ryf]
-        ft ./ (sum(abs.(ft)) * dk / 2)
-    end
-
-    return (;
-        fftx=fftx[ryf],
-        fn=mean(abs.(stack(fft_reps)); dims=2) |> vec,
-        fphi=abs.(mean(stack(fft_reps); dims=2) |> vec),
-        fft_reps,
-    )
-end
-
-function calc_fft_profile_fmt(dens_roi_fmt, mask_rep::AbstractVector{Bool})
-    fft_fmt = Array{NamedTuple}(undef, 1, 1, length(istp))
-    for idx_istp in eachindex(istp)
-        images = skipmissing(vec(dens_roi_fmt[1, mask_rep, 1, idx_istp])) |> collect
-        fft_fmt[1, 1, idx_istp] = calc_fft_profile(images)
-    end
-    return fft_fmt
-end
-
-model_n(x, p) = @. p[5] + p[4] * x + p[1]^2 * exp(-((x - p[2])^2) / (2p[3]^2))
-model_phi(x, p) = @. p[8] + p[7] * x + p[1]^2 * exp(-((x - p[2])^2) / (2p[3]^2)) +
-                     p[4]^2 * exp(-((x - p[6])^2) / (2p[5]^2))
-
-function relative_error_a0(fit)
-    cov = try
-        estimate_covar(fit)
-    catch
-        fill(NaN, length(coef(fit)), length(coef(fit)))
-    end
-    se_a0 = sqrt(abs(cov[1, 1]))
-    a0 = abs(coef(fit)[1])
-    return iszero(a0) ? NaN : se_a0 / a0
-end
-
-function fit_sidepeak(fftx::AbstractVector, prfl::AbstractVector, kind::Symbol)
-    lo, hi = kind == :phi ? fit_range_phi : fit_range_n
-    mask = (lo .<= fftx) .& (fftx .<= hi)
-    x = Float64.(fftx[mask])
-    y = Float64.(prfl[mask])
-    amp_hint = sqrt(max(maximum(y) - median(y), 1e-6))
-    fits = Any[]
-    if kind == :n
-        lower = [1e-8, 0.10, 0.03, -Inf, -Inf]
-        upper = [Inf, 0.27, 0.07, 0.0, Inf]
-        for x0 in (0.16, 0.18, 0.21, 0.24), sigma0 in (0.04, 0.05, 0.06)
-            p0 = [amp_hint, x0, sigma0, -1.0, minimum(y)]
-            try
-                push!(fits, curve_fit(model_n, x, y, p0; lower, upper, maxIter=10_000))
-            catch
-            end
-        end
-    else
-        lower = [1e-8, 0.16, 0.01, 1e-8, 0.01, -Inf, -Inf, -Inf]
-        upper = [Inf, 0.27, 0.07, Inf, 0.20, 0.10, 0.0, Inf]
-        for x0 in (0.18, 0.21, 0.24), sigma0 in (0.02, 0.03, 0.05), x1 in (0.0, 0.05, 0.09)
-            p0 = [amp_hint, x0, sigma0, amp_hint / 2, 0.10, x1, -1.0, minimum(y)]
-            try
-                push!(fits, curve_fit(model_phi, x, y, p0; lower, upper, maxIter=10_000))
-            catch
-            end
-        end
-    end
-    isempty(fits) && throw(ArgumentError("all $kind sidepeak fit attempts failed."))
-    fit = fits[argmin([sum(abs2, residuals(f)) for f in fits])]
-    return (; params=coef(fit), amp=abs(coef(fit)[1]^2), relerr=relative_error_a0(fit), x, y)
-end
-
-function fit_np_from_fft_fmt(fft_fmt)
-    out = Array{NamedTuple}(undef, 1, length(istp), 2)
-    for idx_istp in eachindex(istp)
-        fft = fft_fmt[1, 1, idx_istp]
-        out[1, idx_istp, 1] = fit_sidepeak(fft.fftx, fft.fn, :n)
-        out[1, idx_istp, 2] = fit_sidepeak(fft.fftx, fft.fphi, :phi)
-    end
-    return out
-end
-
-function load_sidepeak_reference_fmt(path_sidepeak::AbstractString)
-    data = readdlm(path_sidepeak, ',', Float64)
-    size(data, 2) >= 10 || throw(DimensionMismatch("Expected at least 10 columns in $path_sidepeak, got $(size(data, 2))."))
-    amp_fmt = Array{Float64}(undef, size(data, 1), length(istp), 2)
-    err_fmt = similar(amp_fmt)
-    amp_fmt[:, idx_162, 1] .= data[:, 3]
-    err_fmt[:, idx_162, 1] .= data[:, 3] .* data[:, 4]
-    amp_fmt[:, idx_164, 1] .= data[:, 5]
-    err_fmt[:, idx_164, 1] .= data[:, 5] .* data[:, 6]
-    amp_fmt[:, idx_162, 2] .= data[:, 7]
-    err_fmt[:, idx_162, 2] .= data[:, 7] .* data[:, 8]
-    amp_fmt[:, idx_164, 2] .= data[:, 9]
-    err_fmt[:, idx_164, 2] .= data[:, 9] .* data[:, 10]
-    return (; IB=data[:, 1], amp_fmt, err_fmt)
-end
-
-function draw_reference_style_plot(path_save::AbstractString, x, amp_fmt, err_fmt, idx_prop::Integer; ylabel::AbstractString, ylim)
-    fig = Figure(size=(810, 510), backgroundcolor=:white, fontsize=24)
-    ax = Axis(
-        fig[1, 1];
-        xlabel="xlabel",
-        ylabel,
-        xlabelsize=32,
-        ylabelsize=32,
-        xticklabelsize=24,
-        yticklabelsize=24,
-        spinewidth=1.2,
-        xgridvisible=false,
-        ygridvisible=false,
-        xticks=5.310:0.005:5.340,
-        xminorticksvisible=true,
-        yminorticksvisible=true,
-        xticksvisible=true,
-        yticksvisible=true,
-        xminorgridvisible=false,
-        yminorgridvisible=false,
-    )
-    xlims!(ax, minimum(x) - 0.0015, maximum(x) + 0.0015)
-    ylims!(ax, ylim)
-    ax.xtickalign = 1
-    ax.ytickalign = 1
-    ax.xminortickalign = 1
-    ax.yminortickalign = 1
-
-    y164 = amp_fmt[:, idx_164, idx_prop]
-    e164 = err_fmt[:, idx_164, idx_prop]
-    y162 = amp_fmt[:, idx_162, idx_prop]
-    e162 = err_fmt[:, idx_162, idx_prop]
-    errorbars!(ax, x, y164, e164; color=:blue, whiskerwidth=0, linewidth=2)
-    ln164 = scatterlines!(ax, x, y164; color=:blue, marker=:circle, markersize=10, linewidth=3, linestyle=:dash)
-    errorbars!(ax, x, y162, e162; color=:red, whiskerwidth=0, linewidth=2)
-    ln162 = scatterlines!(ax, x, y162; color=:red, marker=:rect, markersize=10, linewidth=3, linestyle=:dash)
-    axislegend(ax, [ln164, ln162], ["164Dy", "162Dy"]; position=(0.73, 0.82), framevisible=false, labelsize=24, patchsize=(70, 18))
-    save(path_save, fig)
-    return fig
-end
-
-println("Loading $path_data")
-val_vars = (; IB=IBfesh, rep=collect(1:avg), t_hold=[0.0], istp)
-name_dims = propertynames(val_vars)
-n_dim_vars = Tuple(length(getproperty(val_vars, name)) for name in name_dims)
-post_mask_fmt = falses(length(IBfesh), avg)
-num_stat_fmt = Array{Tuple{Float64,Float64}}(undef, length(IBfesh), length(istp))
-dens_avg_fmt = Array{Matrix{Float64}}(undef, length(IBfesh), 1, length(istp))
-fft_prfl_fmt = Array{NamedTuple}(undef, length(IBfesh), 1, length(istp))
-fit_np_fmt = Array{NamedTuple}(undef, length(IBfesh), length(istp), 2)
-
-h5open(path_data, "r") do f
-    size(f["im62us"], 3) == avg || @warn "Expected $avg reps, got $(size(f["im62us"], 3))."
-    size(f["im62us"], 4) == length(IBfesh) || throw(DimensionMismatch("IB axis mismatch."))
-    println("Formatted axes $name_dims dims $n_dim_vars")
-    for idx_ib in eachindex(IBfesh)
-        println("  [$tag] formatting/post-selecting IB=$(IBfesh[idx_ib]) ($(idx_ib)/$(length(IBfesh)))")
-        fmt = format_dens_ssntfr_h5_ib(f, idx_ib, IBfesh[idx_ib], val_vars.rep, val_vars.istp)
-        post = calc_postselection(fmt.dens_full_fmt, IBfesh[idx_ib])
-        post_mask_fmt[idx_ib, :] .= post.mask_rep
-        for idx_istp in eachindex(istp)
-            nums = vec(post.num_fmt[1, post.mask_rep, 1, idx_istp])
-            num_stat_fmt[idx_ib, idx_istp] = (mean(nums), std(nums))
-            dens_avg_fmt[idx_ib, 1, idx_istp] = mean_selected_images(post.dens_roi_fmt, post.mask_rep, idx_istp)
-        end
-        fft_ib_fmt = calc_fft_profile_fmt(post.dens_roi_fmt, post.mask_rep)
-        fit_ib_fmt = fit_np_from_fft_fmt(fft_ib_fmt)
-        fft_prfl_fmt[idx_ib:idx_ib, :, :] .= fft_ib_fmt
-        fit_np_fmt[idx_ib:idx_ib, :, :] .= fit_ib_fmt
-    end
-end
-
-n_kept = vec(sum(post_mask_fmt; dims=2))
-println("Post-selected shots per IB: ", n_kept)
-
-np_fit_amp_fmt = Array{Float64}(undef, length(IBfesh), length(istp), 2)
-np_fit_err_fmt = similar(np_fit_amp_fmt)
-for idx_ib in eachindex(IBfesh), idx_istp in eachindex(istp), idx_prop in 1:2
-    np_fit_amp_fmt[idx_ib, idx_istp, idx_prop] = fit_np_fmt[idx_ib, idx_istp, idx_prop].amp
-    np_fit_err_fmt[idx_ib, idx_istp, idx_prop] = fit_np_fmt[idx_ib, idx_istp, idx_prop].amp * fit_np_fmt[idx_ib, idx_istp, idx_prop].relerr
-end
-
-draw_reference_style_plot(
-    joinpath(path_output, "ssntfr_np_fit_An.png"),
-    IBfesh,
-    np_fit_amp_fmt,
-    np_fit_err_fmt,
-    1;
-    ylabel="An(a.u.)",
-    ylim=(0, max(2.25, maximum(np_fit_amp_fmt[:, :, 1]) * 1.15)),
-)
-draw_reference_style_plot(
-    joinpath(path_output, "ssntfr_np_fit_Aphi.png"),
-    IBfesh,
-    np_fit_amp_fmt,
-    np_fit_err_fmt,
-    2;
-    ylabel="Aϕ(a.u.)",
-    ylim=(0, max(0.7, maximum(np_fit_amp_fmt[:, :, 2]) * 1.15)),
+val_istp = ["162", "164"]
+label_x_modl = "wavenum (μm⁻¹)"
+range_x_plot = (0.0, 1.2)
+range_x_colorrange = (0.1, 0.6)
+range_x_fit_inco = (0.0, 0.6)
+range_x_fit_cohr_tail = (0.1, 0.6)
+clr_IB_endpoints = (
+    low=(l=0.34, c=0.10, h=255.0),
+    high=(l=0.72, c=0.18, h=25.0),
 )
 
-if isfile(path_sidepeak_ref)
-    ref = load_sidepeak_reference_fmt(path_sidepeak_ref)
-    draw_reference_style_plot(
-        joinpath(path_output, "Ref,An.reproduce.png"),
-        ref.IB,
-        ref.amp_fmt,
-        ref.err_fmt,
-        1;
-        ylabel="An(a.u.)",
-        ylim=(0, 2.25),
-    )
-    draw_reference_style_plot(
-        joinpath(path_output, "Ref.Aphi.reproduce.png"),
-        ref.IB,
-        ref.amp_fmt,
-        ref.err_fmt,
-        2;
-        ylabel="Aϕ(a.u.)",
-        ylim=(0, 0.7),
-    )
+function orient_prfl_axes(
+    prfl::AbstractArray{<:Real,3},
+    x_modl::AbstractVector{<:Real},
+    val_IB::AbstractVector{<:Real},
+    val_istp::AbstractVector{<:AbstractString},
+)
+    n_x = length(x_modl)
+    n_IB = length(val_IB)
+    n_istp = length(val_istp)
+
+    size(prfl) == (n_x, n_istp, n_IB) && return prfl
+    size(prfl) == (n_IB, n_istp, n_x) && return permutedims(prfl, (3, 2, 1))
+
+    throw(DimensionMismatch(
+        "profile size $(size(prfl)) must be either (x_modl, istp, IB) " *
+        "$((n_x, n_istp, n_IB)) or (IB, istp, x_modl) $((n_IB, n_istp, n_x)).",
+    ))
 end
 
-open(joinpath(path_output, "ssntfr_np_fit.csv"), "w") do io
-    println(io, "IB,np64n,err64n,np62n,err62n,np64phi,err64phi,np62phi,err62phi,n_kept")
-    for idx_ib in eachindex(IBfesh)
-        @printf(io, "%.6f,%.10g,%.10g,%.10g,%.10g,%.10g,%.10g,%.10g,%.10g,%d\n",
-            IBfesh[idx_ib],
-            np_fit_amp_fmt[idx_ib, idx_164, 1], np_fit_err_fmt[idx_ib, idx_164, 1],
-            np_fit_amp_fmt[idx_ib, idx_162, 1], np_fit_err_fmt[idx_ib, idx_162, 1],
-            np_fit_amp_fmt[idx_ib, idx_164, 2], np_fit_err_fmt[idx_ib, idx_164, 2],
-            np_fit_amp_fmt[idx_ib, idx_162, 2], np_fit_err_fmt[idx_ib, idx_162, 2],
-            n_kept[idx_ib])
+function calc_prfl_colorrange(
+    prfl::AbstractArray{<:Real,3},
+    x_modl::AbstractVector{<:Real},
+    range_x::Tuple{<:Real,<:Real},
+)
+    xmin, xmax = range_x
+    mask_x = (x_modl .> xmin) .& (x_modl .< xmax)
+    any(mask_x) || throw(ArgumentError("No x_modl values found in colorrange window $range_x."))
+    val_max = maximum(@view prfl[mask_x, :, :])
+    val_max > 0 || throw(ArgumentError("Nonpositive profile maximum $val_max in colorrange window $range_x."))
+    return (0.0, val_max)
+end
+
+function calc_log_ylims(colorrange::Tuple{<:Real,<:Real})
+    _, ymax = colorrange
+    ymax > 0 || throw(ArgumentError("Log-scale y upper limit must be positive, got $ymax."))
+    return (ymax * 1e-4, ymax)
+end
+
+function select_x_range(x_modl::AbstractVector{<:Real}, range_x::Tuple{<:Real,<:Real})
+    xmin, xmax = range_x
+    mask = (x_modl .>= xmin) .& (x_modl .<= xmax)
+    any(mask) || throw(ArgumentError("No x_modl values found in range $range_x."))
+    return mask
+end
+
+function gen_IB_ticks(val_IB::AbstractVector{<:Real}; n_ticks::Integer=9)
+    return round.(range(minimum(val_IB), maximum(val_IB); length=n_ticks); digits=3)
+end
+
+function calc_IB_color(val_IB::Real, val_IB_min::Real, val_IB_max::Real, clr_endpoints::NamedTuple)
+    t = val_IB_max == val_IB_min ? 0.0 : (val_IB - val_IB_min) / (val_IB_max - val_IB_min)
+    l = (1 - t) * clr_endpoints.low.l + t * clr_endpoints.high.l
+    c = (1 - t) * clr_endpoints.low.c + t * clr_endpoints.high.c
+    h = (1 - t) * clr_endpoints.low.h + t * clr_endpoints.high.h
+    return RGBAf(Oklch(l, c, h), 0.88)
+end
+
+function gen_clrmap_IB(clr_endpoints::NamedTuple; n::Integer=256, alpha=1.0)
+    return [
+        begin
+            l = (1 - t) * clr_endpoints.low.l + t * clr_endpoints.high.l
+            c = (1 - t) * clr_endpoints.low.c + t * clr_endpoints.high.c
+            h = (1 - t) * clr_endpoints.low.h + t * clr_endpoints.high.h
+            RGBAf(Oklch(l, c, h), alpha)
+        end
+        for t in range(0, 1; length=n)
+    ]
+end
+
+function calc_inco_tail_fits(
+    x_modl::AbstractVector{<:Real},
+    prfl_inco::AbstractArray{<:Real,3};
+    range_x_fit::Tuple{<:Real,<:Real},
+)
+    mask_fit = select_x_range(x_modl, range_x_fit)
+    k_fit = Float64.(x_modl[mask_fit])
+    n_IB = size(prfl_inco, 3)
+    n_istp = size(prfl_inco, 2)
+    fit_inco = Array{NamedTuple}(undef, n_IB, n_istp)
+    prfl_inco_tailess = similar(prfl_inco, Float64)
+    comp_center = similar(prfl_inco, Float64)
+    comp_tail = similar(prfl_inco, Float64)
+    comp_side = similar(prfl_inco, Float64)
+
+    for idx_IB in 1:n_IB, idx_istp in 1:n_istp
+        y_fit = Float64.(@view prfl_inco[mask_fit, idx_istp, idx_IB])
+        amp_main = max(maximum(y_fit), eps(Float64))
+        idx_side_hint = findmax(y_fit .* (k_fit .> 0.08))[2]
+        p_hint = clamp(k_fit[idx_side_hint], 0.12, 0.30)
+        p_init = [amp_main, 0.045, max(y_fit[idx_side_hint] / 2, 1e-4), 0.05, p_hint, max(y_fit[end], 1e-4), 0.18]
+        p_lower = [0.0, 0.005, 0.0, 0.010, 0.06, 0.0, 0.02]
+        p_upper = [Inf, 0.20, Inf, 0.180, 0.45, Inf, 1.00]
+        fit = curve_fit(fit_prfl_modl_twinpeak_decay_1d_model, k_fit, y_fit, p_init; lower=p_lower, upper=p_upper, maxIter=20_000)
+        params = coef(fit)
+        rss_rel = norm(residuals(fit)) / max(norm(y_fit), eps(Float64))
+
+        center = @. params[1] * exp(-x_modl^2 / (2 * params[2]^2))
+        side = @. params[3] * exp(-(x_modl - params[5])^2 / (2 * params[4]^2))
+        tail = fit_prfl_modl_twinpeak_decay_1d_tail(x_modl, params)
+        comp_center[:, idx_istp, idx_IB] .= center
+        comp_side[:, idx_istp, idx_IB] .= side
+        comp_tail[:, idx_istp, idx_IB] .= tail
+        prfl_inco_tailess[:, idx_istp, idx_IB] .= @view(prfl_inco[:, idx_istp, idx_IB]) .- center .- tail
+        fit_inco[idx_IB, idx_istp] = (; params, rss_rel)
     end
+
+    return (; fit_inco, prfl_inco_tailess, comp_center, comp_side, comp_tail)
 end
 
-cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
-println("Saved SSNTFR reproduction outputs to $path_output")
+function fit_log_prfl_modl_twinpeak_decay_1d_model(k, params)
+    return log.(max.(fit_prfl_modl_twinpeak_decay_1d_model(k, params), eps(Float64)))
+end
+
+function fit_log_prfl_modl_sidepeak_decay_1d_model(k, params)
+    return log.(max.(fit_prfl_modl_sidepeak_decay_1d_model(k, params), eps(Float64)))
+end
+
+function fit_common_cohr_tail(
+    x_modl::AbstractVector{<:Real},
+    prfl_cohr::AbstractArray{<:Real,3};
+    range_x_fit::Tuple{<:Real,<:Real},
+)
+    mask_fit = select_x_range(x_modl, range_x_fit)
+    k_fit = Float64.(x_modl[mask_fit])
+    prfl_total_avg = vec(mean(prfl_cohr; dims=(2, 3)))
+    y_fit = log.(max.(Float64.(prfl_total_avg[mask_fit]), eps(Float64)))
+    mask_side_hint = (k_fit .> 0.16) .& (k_fit .< 0.34)
+    idx_side_hint = findmax(ifelse.(mask_side_hint, y_fit, -Inf))[2]
+    p_hint = clamp(k_fit[idx_side_hint], 0.20, 0.30)
+    y_fit_linear = Float64.(prfl_total_avg[mask_fit])
+    p_init = [max(y_fit_linear[idx_side_hint], 1e-4), 0.05, p_hint, max(y_fit_linear[end], 1e-5), 0.18]
+    p_lower = [0.0, 0.010, 0.16, 0.0, 0.02]
+    p_upper = [Inf, 0.180, 0.36, Inf, 1.00]
+    fit = curve_fit(fit_log_prfl_modl_sidepeak_decay_1d_model, k_fit, y_fit, p_init; lower=p_lower, upper=p_upper, maxIter=20_000)
+    params = coef(fit)
+    tail = fit_prfl_modl_sidepeak_decay_1d_tail(x_modl, params)
+    side = @. params[1] * exp(-(x_modl - params[3])^2 / (2 * params[2]^2))
+    prfl_cohr_tailess = similar(prfl_cohr, Float64)
+    for idx_IB in axes(prfl_cohr, 3), idx_istp in axes(prfl_cohr, 2)
+        prfl_cohr_tailess[:, idx_istp, idx_IB] .= @view(prfl_cohr[:, idx_istp, idx_IB]) .- tail
+    end
+    rss_log_rel = norm(residuals(fit)) / max(norm(y_fit), eps(Float64))
+    return (; params, rss_log_rel, tail, side, prfl_total_avg, prfl_cohr_tailess)
+end
+
+function build_profile_variant_arrays(prfl_inco, prfl_cohr, prfl_inco_tailess, prfl_cohr_tailess)
+    val_variant = [:inco, :cohr]
+    prfl_original_fmt = Array{Vector{Float64}}(undef, size(prfl_inco, 3), size(prfl_inco, 2), length(val_variant))
+    prfl_tailess_fmt = similar(prfl_original_fmt)
+    for idx_IB in axes(prfl_inco, 3), idx_istp in axes(prfl_inco, 2)
+        prfl_original_fmt[idx_IB, idx_istp, 1] = vec(Float64.(@view prfl_inco[:, idx_istp, idx_IB]))
+        prfl_original_fmt[idx_IB, idx_istp, 2] = vec(Float64.(@view prfl_cohr[:, idx_istp, idx_IB]))
+        prfl_tailess_fmt[idx_IB, idx_istp, 1] = vec(Float64.(@view prfl_inco_tailess[:, idx_istp, idx_IB]))
+        prfl_tailess_fmt[idx_IB, idx_istp, 2] = vec(Float64.(@view prfl_cohr_tailess[:, idx_istp, idx_IB]))
+    end
+    return (; val_variant, prfl_original_fmt, prfl_tailess_fmt)
+end
+
+function draw_stacked_profile_heatmaps!(
+    fig::Figure,
+    row::Integer,
+    prfl::AbstractArray{<:Real,3},
+    x_modl::AbstractVector{<:Real},
+    val_IB::AbstractVector{<:Real},
+    val_istp::AbstractVector{<:AbstractString},
+    label_prfl::AbstractString;
+    range_x_plot::Tuple{<:Real,<:Real},
+    colorrange::Tuple{<:Real,<:Real},
+)
+    axs = Vector{Axis}(undef, length(val_istp))
+    hm = nothing
+    ticks_IB = gen_IB_ticks(val_IB)
+
+    Label(fig[row - 2, 1:length(val_istp)]; text=label_prfl, tellwidth=false, tellheight=true, halign=:center, font=:bold)
+    for (idx_istp, istp) in enumerate(val_istp)
+        ax = Axis(
+            fig[row, idx_istp];
+            xlabel=label_x_modl,
+            ylabel="IB (A)",
+            yaxisposition=idx_istp == 1 ? :left : :right,
+            xticks=idx_istp == 1 ? (1.2:-0.2:0.2) : (0.2:0.2:1.2),
+            yticks=ticks_IB,
+        )
+        axs[idx_istp] = ax
+
+        clrmap = gen_clrmap_solo(hue_theme_istp[istp])
+        hm = heatmap!(
+            ax,
+            x_modl,
+            val_IB,
+            @view(prfl[:, idx_istp, :]);
+            colormap=clrmap,
+            colorrange,
+            rasterize=true,
+        )
+        idx_istp == 1 ? xlims!(ax, reverse(range_x_plot)) : xlims!(ax, range_x_plot)
+        Label(fig[row - 1, idx_istp]; text="istp=$istp", tellwidth=false, tellheight=true, halign=:center)
+    end
+
+    Colorbar(fig[row, length(val_istp) + 1], hm; label="profile")
+    return axs
+end
+
+function draw_overlaid_profile_lines!(
+    fig::Figure,
+    row::Integer,
+    prfl::AbstractArray{<:Real,3},
+    x_modl::AbstractVector{<:Real},
+    val_IB::AbstractVector{<:Real},
+    val_istp::AbstractVector{<:AbstractString},
+    label_prfl::AbstractString;
+    range_x_plot::Tuple{<:Real,<:Real},
+    colorrange::Tuple{<:Real,<:Real},
+    clr_endpoints::NamedTuple,
+)
+    axs = Vector{Axis}(undef, length(val_istp))
+    val_IB_min, val_IB_max = extrema(val_IB)
+
+    Label(fig[row - 2, 1:length(val_istp)]; text=label_prfl, tellwidth=false, tellheight=true, halign=:center, font=:bold)
+    for (idx_istp, istp) in enumerate(val_istp)
+        ax = Axis(
+            fig[row, idx_istp];
+            xlabel=label_x_modl,
+            ylabel="profile",
+            yaxisposition=idx_istp == 1 ? :left : :right,
+            yscale=log10,
+            xticks=idx_istp == 1 ? (1.2:-0.2:0.2) : (0.2:0.2:1.2),
+        )
+        axs[idx_istp] = ax
+
+        for (idx_IB, IB) in enumerate(val_IB)
+            clr = calc_IB_color(IB, val_IB_min, val_IB_max, clr_endpoints)
+            lines!(ax, x_modl, @view(prfl[:, idx_istp, idx_IB]); color=clr, linewidth=1.8)
+        end
+
+        idx_istp == 1 ? xlims!(ax, reverse(range_x_plot)) : xlims!(ax, range_x_plot)
+        ylims!(ax, calc_log_ylims(colorrange))
+        Label(fig[row - 1, idx_istp]; text="istp=$istp", tellwidth=false, tellheight=true, halign=:center)
+    end
+
+    Colorbar(
+        fig[row, length(val_istp) + 1];
+        colormap=gen_clrmap_IB(clr_endpoints; alpha=0.8),
+        limits=extrema(val_IB),
+        label="IB (A)",
+    )
+    return axs
+end
+
+function draw_cohr_average_lines!(
+    fig::Figure,
+    row::Integer,
+    prfl_cohr::AbstractArray{<:Real,3},
+    tail_cohr::NamedTuple,
+    x_modl::AbstractVector{<:Real},
+    val_istp::AbstractVector{<:AbstractString};
+    range_x_plot::Tuple{<:Real,<:Real},
+    ylims,
+)
+    axs = Vector{Axis}(undef, length(val_istp))
+    prfl_total_avg = tail_cohr.prfl_total_avg
+
+    for (idx_istp, istp) in enumerate(val_istp)
+        ax = Axis(
+            fig[row, idx_istp];
+            xlabel=label_x_modl,
+            ylabel="profile",
+            yaxisposition=idx_istp == 1 ? :left : :right,
+            yscale=log10,
+            xticks=idx_istp == 1 ? (1.2:-0.2:0.2) : (0.2:0.2:1.2),
+        )
+        axs[idx_istp] = ax
+        prfl_istp_avg = vec(mean(@view(prfl_cohr[:, idx_istp, :]); dims=2))
+        band!(ax, x_modl, tail_cohr.tail, tail_cohr.tail .+ tail_cohr.side; color=(:mediumseagreen, 0.30))
+        lines!(ax, x_modl, tail_cohr.tail; color=(:seagreen4, 0.75), linewidth=2.2)
+        lines!(ax, x_modl, prfl_total_avg; color=(:gray30, 0.45), linewidth=3.0)
+        lines!(ax, x_modl, prfl_istp_avg; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.95), linewidth=2.2)
+        idx_istp == 1 ? xlims!(ax, reverse(range_x_plot)) : xlims!(ax, range_x_plot)
+        ylims!(ax, ylims)
+        Label(fig[row - 1, idx_istp]; text="istp=$istp", tellwidth=false, tellheight=true, halign=:center)
+    end
+
+    return axs, prfl_total_avg
+end
+
+function draw_tail_diagnostic_side!(
+    ax::Axis,
+    x_modl::AbstractVector{<:Real},
+    y_original::AbstractVector{<:Real},
+    y_tailess::AbstractVector{<:Real},
+    idx_istp::Integer;
+    range_x_plot::Tuple{<:Real,<:Real},
+    ylims,
+    color_original,
+    color_tailess,
+)
+    lines!(ax, x_modl, y_original; color=color_original, linewidth=1.6)
+    lines!(ax, x_modl, y_tailess; color=color_tailess, linewidth=1.2)
+    idx_istp == 1 ? xlims!(ax, reverse(range_x_plot)) : xlims!(ax, range_x_plot)
+    ylims!(ax, ylims)
+    return ax
+end
+
+function draw_inco_tail_diagnostic_side!(
+    ax::Axis,
+    x_modl::AbstractVector{<:Real},
+    y_original::AbstractVector{<:Real},
+    center::AbstractVector{<:Real},
+    side::AbstractVector{<:Real},
+    tail::AbstractVector{<:Real},
+    idx_istp::Integer;
+    range_x_plot::Tuple{<:Real,<:Real},
+    ylims,
+    color_original,
+)
+    base = center .+ tail
+    side_only = y_original .- base
+    band!(ax, x_modl, zero.(tail), tail; color=(:gray55, 0.22))
+    band!(ax, x_modl, tail, base; color=(:gray25, 0.25))
+    band!(ax, x_modl, base, base .+ side; color=(:mediumseagreen, 0.28))
+    lines!(ax, x_modl, y_original; color=color_original, linewidth=1.6)
+    lines!(ax, x_modl, side_only; color=(:seagreen4, 0.95), linewidth=1.0)
+    idx_istp == 1 ? xlims!(ax, reverse(range_x_plot)) : xlims!(ax, range_x_plot)
+    ylims!(ax, ylims)
+    return ax
+end
+
+function draw_tail_diagnostic_duet!(
+    fig::Figure,
+    row::Integer,
+    col_start::Integer,
+    x_modl::AbstractVector{<:Real},
+    val_istp::AbstractVector{<:AbstractString},
+    label_kind::AbstractString,
+    idx_IB::Integer,
+    prfl_original::AbstractArray{<:Real,3},
+    prfl_tailess::AbstractArray{<:Real,3};
+    comp_center=nothing,
+    comp_side=nothing,
+    comp_tail=nothing,
+    range_x_plot::Tuple{<:Real,<:Real},
+    ylims,
+    is_bottom_row::Bool=false,
+)
+    axs = Vector{Axis}(undef, length(val_istp))
+    for (idx_istp, istp) in enumerate(val_istp)
+        ax = Axis(
+            fig[row, col_start + idx_istp - 1];
+            xlabel=is_bottom_row ? label_x_modl : "",
+            ylabel=idx_istp == 1 ? label_kind : "",
+            yaxisposition=idx_istp == 1 ? :left : :right,
+            xticks=idx_istp == 1 ? (1.2:-0.4:0.4) : (0.4:0.4:1.2),
+        )
+        axs[idx_istp] = ax
+        color_original = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.35)
+        color_tailess = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.92)
+
+        if isnothing(comp_tail)
+            draw_tail_diagnostic_side!(
+                ax,
+                x_modl,
+                @view(prfl_original[:, idx_istp, idx_IB]),
+                @view(prfl_tailess[:, idx_istp, idx_IB]),
+                idx_istp;
+                range_x_plot,
+                ylims,
+                color_original,
+                color_tailess,
+            )
+        else
+            draw_inco_tail_diagnostic_side!(
+                ax,
+                x_modl,
+                @view(prfl_original[:, idx_istp, idx_IB]),
+                @view(comp_center[:, idx_istp, idx_IB]),
+                @view(comp_side[:, idx_istp, idx_IB]),
+                @view(comp_tail[:, idx_istp, idx_IB]),
+                idx_istp;
+                range_x_plot,
+                ylims,
+                color_original,
+            )
+        end
+        !is_bottom_row && hidexdecorations!(ax; grid=false)
+    end
+    colgap!(fig.layout, col_start, 0)
+    return axs
+end
+
+x_modl, val_IB, prfl_inco, prfl_cohr = h5open(path_data, "r") do file
+    x_modl = read(file["x_modl"])
+    val_IB = read(file["val_IB"])
+    prfl_inco = orient_prfl_axes(read(file["prfl_inco"]), x_modl, val_IB, val_istp)
+    prfl_cohr = orient_prfl_axes(read(file["prfl_cohr"]), x_modl, val_IB, val_istp)
+    return x_modl, val_IB, prfl_inco, prfl_cohr
+end
+
+colorrange_inco = calc_prfl_colorrange(prfl_inco, x_modl, range_x_colorrange)
+colorrange_cohr = calc_prfl_colorrange(prfl_cohr, x_modl, range_x_colorrange)
+
+tail_inco = calc_inco_tail_fits(x_modl, prfl_inco; range_x_fit=range_x_fit_inco)
+tail_cohr = fit_common_cohr_tail(x_modl, prfl_cohr; range_x_fit=range_x_fit_cohr_tail)
+prfl_tail = build_profile_variant_arrays(
+    prfl_inco,
+    prfl_cohr,
+    tail_inco.prfl_inco_tailess,
+    tail_cohr.prfl_cohr_tailess,
+)
+
+fig_prfl = Figure(size=(980, 760))
+Label(
+    fig_prfl[0, 1:3];
+    text=@sprintf(
+        "%s stacked modulation profiles, colorrange from %.1f < x_modl < %.1f",
+        tag,
+        range_x_colorrange...
+    ),
+    tellwidth=false,
+    tellheight=true,
+    halign=:left,
+)
+
+axs_inco = draw_stacked_profile_heatmaps!(
+    fig_prfl,
+    3,
+    prfl_inco,
+    x_modl,
+    val_IB,
+    val_istp,
+    "inco";
+    range_x_plot,
+    colorrange=colorrange_inco,
+)
+axs_cohr = draw_stacked_profile_heatmaps!(
+    fig_prfl,
+    6,
+    prfl_cohr,
+    x_modl,
+    val_IB,
+    val_istp,
+    "cohr";
+    range_x_plot,
+    colorrange=colorrange_cohr,
+)
+
+rowgap!(fig_prfl.layout, 1, 2)
+rowgap!(fig_prfl.layout, 2, 4)
+rowgap!(fig_prfl.layout, 3, 14)
+rowgap!(fig_prfl.layout, 4, 2)
+rowgap!(fig_prfl.layout, 5, 4)
+colgap!(fig_prfl.layout, 1, 0)
+colgap!(fig_prfl.layout, 2, 10)
+
+path_plot_prfl = joinpath(path_output, "$(tag)_prfl_stacked.png")
+save(path_plot_prfl, fig_prfl; backend=CairoMakie)
+println("saved $path_plot_prfl")
+
+fig_prfl_lines = Figure(size=(980, 760))
+Label(
+    fig_prfl_lines[0, 1:3];
+    text=@sprintf(
+        "%s overlaid modulation profiles, IB OKLCH low=(%.2f, %.2f, %.1f), high=(%.2f, %.2f, %.1f)",
+        tag,
+        clr_IB_endpoints.low.l,
+        clr_IB_endpoints.low.c,
+        clr_IB_endpoints.low.h,
+        clr_IB_endpoints.high.l,
+        clr_IB_endpoints.high.c,
+        clr_IB_endpoints.high.h,
+    ),
+    tellwidth=false,
+    tellheight=true,
+    halign=:left,
+)
+
+axs_inco_lines = draw_overlaid_profile_lines!(
+    fig_prfl_lines,
+    3,
+    prfl_inco,
+    x_modl,
+    val_IB,
+    val_istp,
+    "inco";
+    range_x_plot,
+    colorrange=colorrange_inco,
+    clr_endpoints=clr_IB_endpoints,
+)
+axs_cohr_lines = draw_overlaid_profile_lines!(
+    fig_prfl_lines,
+    6,
+    prfl_cohr,
+    x_modl,
+    val_IB,
+    val_istp,
+    "cohr";
+    range_x_plot,
+    colorrange=colorrange_cohr,
+    clr_endpoints=clr_IB_endpoints,
+)
+
+rowgap!(fig_prfl_lines.layout, 1, 2)
+rowgap!(fig_prfl_lines.layout, 2, 4)
+rowgap!(fig_prfl_lines.layout, 3, 14)
+rowgap!(fig_prfl_lines.layout, 4, 2)
+rowgap!(fig_prfl_lines.layout, 5, 4)
+colgap!(fig_prfl_lines.layout, 1, 0)
+colgap!(fig_prfl_lines.layout, 2, 10)
+
+path_plot_prfl_lines = joinpath(path_output, "$(tag)_prfl_lines.png")
+save(path_plot_prfl_lines, fig_prfl_lines; backend=CairoMakie)
+println("saved $path_plot_prfl_lines")
+
+mask_x_tail_plot = select_x_range(x_modl, range_x_plot)
+ylim_inco_tail = (-0.5, 2.5)
+ylim_cohr_tail = (-0.2, 0.8)
+
+fig_tail = Figure(size=(1500, 2250), fontsize=14)
+Label(
+    fig_tail[0, 1:4];
+    text=@sprintf(
+        "%s profile tail removal, inco fit range %.1f-%.1f, cohr common tail range %.1f-%.1f",
+        tag,
+        range_x_fit_inco...,
+        range_x_fit_cohr_tail...
+    ),
+    tellwidth=false,
+    tellheight=true,
+    halign=:left,
+)
+Label(fig_tail[1, 1:2]; text="inco", tellwidth=false, tellheight=true, halign=:center, font=:bold)
+Label(fig_tail[1, 3:4]; text="cohr", tellwidth=false, tellheight=true, halign=:center, font=:bold)
+for (idx_istp, istp) in enumerate(val_istp)
+    Label(fig_tail[2, idx_istp]; text="istp=$istp", tellwidth=false, tellheight=true, halign=:center)
+    Label(fig_tail[2, 2 + idx_istp]; text="istp=$istp", tellwidth=false, tellheight=true, halign=:center)
+end
+
+for (idx_IB, IB) in enumerate(val_IB)
+    row = idx_IB + 2
+    Label(fig_tail[row, 0]; text=@sprintf("%.3f", IB), tellwidth=true, tellheight=false, halign=:right)
+    draw_tail_diagnostic_duet!(
+        fig_tail,
+        row,
+        1,
+        x_modl,
+        val_istp,
+        "profile",
+        idx_IB,
+        prfl_inco,
+        tail_inco.prfl_inco_tailess;
+        comp_center=tail_inco.comp_center,
+        comp_side=tail_inco.comp_side,
+        comp_tail=tail_inco.comp_tail,
+        range_x_plot,
+        ylims=ylim_inco_tail,
+        is_bottom_row=idx_IB == length(val_IB),
+    )
+    draw_tail_diagnostic_duet!(
+        fig_tail,
+        row,
+        3,
+        x_modl,
+        val_istp,
+        "profile",
+        idx_IB,
+        prfl_cohr,
+        tail_cohr.prfl_cohr_tailess;
+        range_x_plot,
+        ylims=ylim_cohr_tail,
+        is_bottom_row=idx_IB == length(val_IB),
+    )
+    rowsize!(fig_tail.layout, row, Fixed(90))
+end
+colgap!(fig_tail.layout, 1, 0)
+colgap!(fig_tail.layout, 2, 18)
+colgap!(fig_tail.layout, 3, 0)
+rowgap!(fig_tail.layout, 1, 4)
+rowgap!(fig_tail.layout, 2, 4)
+
+path_plot_tail = joinpath(path_output, "$(tag)_prfl_tail_diagnostic.png")
+save(path_plot_tail, fig_tail; backend=CairoMakie)
+println("saved $path_plot_tail")
+
+fig_cohr_avg = Figure(size=(980, 420))
+Label(
+    fig_cohr_avg[0, 1:2];
+    text="$(tag) cohr average profiles",
+    tellwidth=false,
+    tellheight=true,
+    halign=:left,
+)
+Label(
+    fig_cohr_avg[1, 1:2];
+    text="per-istp mean over IB, gray: total mean, green: fitted tail + sidepeak",
+    tellwidth=false,
+    tellheight=true,
+    halign=:center,
+    font=:bold,
+)
+axs_cohr_avg, prfl_cohr_total_avg = draw_cohr_average_lines!(
+    fig_cohr_avg,
+    3,
+    prfl_cohr,
+    tail_cohr,
+    x_modl,
+    val_istp;
+    range_x_plot,
+    ylims=calc_log_ylims(colorrange_cohr),
+)
+rowgap!(fig_cohr_avg.layout, 1, 4)
+rowgap!(fig_cohr_avg.layout, 2, 4)
+colgap!(fig_cohr_avg.layout, 1, 0)
+
+path_plot_cohr_avg = joinpath(path_output, "$(tag)_prfl_cohr_average.png")
+save(path_plot_cohr_avg, fig_cohr_avg; backend=CairoMakie)
+println("saved $path_plot_cohr_avg")
