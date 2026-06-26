@@ -19,7 +19,9 @@ IBfesh = [
     5.310, 5.312, 5.314, 5.316, 5.317, 5.318, 5.319, 5.320, 5.322,
     5.324, 5.326, 5.328, 5.330, 5.332, 5.334, 5.338, 5.342,
 ]
-istp = ["62", "64"]
+# The original notebook labels the raw HDF5 isotope datasets as 62/64, but its
+# plotting convention treats those labels as inverted.
+istp = ["162", "164"]
 
 avg = 100
 nerr = 0.6e4
@@ -37,8 +39,8 @@ idx_IB_axis = 1
 idx_rep_axis = 2
 idx_t_hold_axis = 3
 idx_istp_axis = 4
-idx_istp_62 = findfirst(==("62"), istp)
-idx_istp_64 = findfirst(==("64"), istp)
+idx_162 = findfirst(==("162"), istp)
+idx_164 = findfirst(==("164"), istp)
 
 function gaussian_center_1d(prfl::AbstractVector{<:Real})
     x = collect(1.0:length(prfl))
@@ -74,15 +76,15 @@ function format_dens_ssntfr_h5_ib(f::HDF5.File, idx_ib::Integer, val_IB::Real, v
     n_dim_vars = Tuple(length(getproperty(val_vars, name)) for name in name_dims)
     dens_full_fmt = Array{Matrix{Float64}}(undef, n_dim_vars...)
     for idx_rep in eachindex(vals_rep)
-        dens_full_fmt[1, idx_rep, 1, idx_istp_62] = Float64.(dens62[:, :, idx_rep])
-        dens_full_fmt[1, idx_rep, 1, idx_istp_64] = Float64.(dens64[:, :, idx_rep])
+        dens_full_fmt[1, idx_rep, 1, idx_164] = Float64.(dens62[:, :, idx_rep])
+        dens_full_fmt[1, idx_rep, 1, idx_162] = Float64.(dens64[:, :, idx_rep])
     end
     return (; val_vars, dens_full_fmt, name_dims, n_dim_vars, wh_dens=reverse(size(dens62)[1:2]))
 end
 
 function calc_postselection(dens_full_fmt, val_IB::Real)
-    dens62 = @view dens_full_fmt[1, :, 1, idx_istp_62]
-    dens64 = @view dens_full_fmt[1, :, 1, idx_istp_64]
+    dens62 = @view dens_full_fmt[1, :, 1, idx_164]
+    dens64 = @view dens_full_fmt[1, :, 1, idx_162]
     n62_all = sum.(dens62)
     n64_all = sum.(dens64)
     n62_med = median(n62_all)
@@ -103,14 +105,14 @@ function calc_postselection(dens_full_fmt, val_IB::Real)
         keep = abs(n62 - n62_med) <= nerr &&
                abs(n64 - n64_med) <= nerr &&
                all(in(center_window), (cy62, cx62, cy64, cx64))
-        num_fmt[1, idx_rep, 1, idx_istp_62] = n62
-        num_fmt[1, idx_rep, 1, idx_istp_64] = n64
-        center_fmt[1, idx_rep, 1, idx_istp_62] = (cx62, cy62)
-        center_fmt[1, idx_rep, 1, idx_istp_64] = (cx64, cy64)
+        num_fmt[1, idx_rep, 1, idx_164] = n62
+        num_fmt[1, idx_rep, 1, idx_162] = n64
+        center_fmt[1, idx_rep, 1, idx_164] = (cx62, cy62)
+        center_fmt[1, idx_rep, 1, idx_162] = (cx64, cy64)
         if keep
             mask_rep[idx_rep] = true
-            dens_roi_fmt[1, idx_rep, 1, idx_istp_62] = copy(crop_center_yx(img62, cy62, cx62, smwh_roi))
-            dens_roi_fmt[1, idx_rep, 1, idx_istp_64] = copy(crop_center_yx(img64, cy64, cx64, smwh_roi))
+            dens_roi_fmt[1, idx_rep, 1, idx_164] = copy(crop_center_yx(img62, cy62, cx62, smwh_roi))
+            dens_roi_fmt[1, idx_rep, 1, idx_162] = copy(crop_center_yx(img64, cy64, cx64, smwh_roi))
         end
     end
 
@@ -140,7 +142,7 @@ function tukey_window(n::Integer, alpha::Real=0.2)
     return win
 end
 
-fftshift1(v::AbstractVector) = circshift(v, -(length(v) ÷ 2))
+fftshift1(v::AbstractVector) = circshift(v, -((length(v) + 1) ÷ 2))
 
 function calc_fft_profile(images::AbstractVector{<:AbstractMatrix{<:Real}})
     ly, lx = size(first(images))
@@ -239,19 +241,16 @@ function load_sidepeak_reference_fmt(path_sidepeak::AbstractString)
     size(data, 2) >= 10 || throw(DimensionMismatch("Expected at least 10 columns in $path_sidepeak, got $(size(data, 2))."))
     amp_fmt = Array{Float64}(undef, size(data, 1), length(istp), 2)
     err_fmt = similar(amp_fmt)
-    amp_fmt[:, idx_istp_162(), 1] .= data[:, 3]
-    err_fmt[:, idx_istp_162(), 1] .= data[:, 3] .* data[:, 4]
-    amp_fmt[:, idx_istp_164(), 1] .= data[:, 5]
-    err_fmt[:, idx_istp_164(), 1] .= data[:, 5] .* data[:, 6]
-    amp_fmt[:, idx_istp_162(), 2] .= data[:, 7]
-    err_fmt[:, idx_istp_162(), 2] .= data[:, 7] .* data[:, 8]
-    amp_fmt[:, idx_istp_164(), 2] .= data[:, 9]
-    err_fmt[:, idx_istp_164(), 2] .= data[:, 9] .* data[:, 10]
+    amp_fmt[:, idx_162, 1] .= data[:, 3]
+    err_fmt[:, idx_162, 1] .= data[:, 3] .* data[:, 4]
+    amp_fmt[:, idx_164, 1] .= data[:, 5]
+    err_fmt[:, idx_164, 1] .= data[:, 5] .* data[:, 6]
+    amp_fmt[:, idx_162, 2] .= data[:, 7]
+    err_fmt[:, idx_162, 2] .= data[:, 7] .* data[:, 8]
+    amp_fmt[:, idx_164, 2] .= data[:, 9]
+    err_fmt[:, idx_164, 2] .= data[:, 9] .* data[:, 10]
     return (; IB=data[:, 1], amp_fmt, err_fmt)
 end
-
-idx_istp_162() = idx_istp_62
-idx_istp_164() = idx_istp_64
 
 function draw_reference_style_plot(path_save::AbstractString, x, amp_fmt, err_fmt, idx_prop::Integer; ylabel::AbstractString, ylim)
     fig = Figure(size=(810, 510), backgroundcolor=:white, fontsize=24)
@@ -281,10 +280,10 @@ function draw_reference_style_plot(path_save::AbstractString, x, amp_fmt, err_fm
     ax.xminortickalign = 1
     ax.yminortickalign = 1
 
-    y164 = amp_fmt[:, idx_istp_164(), idx_prop]
-    e164 = err_fmt[:, idx_istp_164(), idx_prop]
-    y162 = amp_fmt[:, idx_istp_162(), idx_prop]
-    e162 = err_fmt[:, idx_istp_162(), idx_prop]
+    y164 = amp_fmt[:, idx_164, idx_prop]
+    e164 = err_fmt[:, idx_164, idx_prop]
+    y162 = amp_fmt[:, idx_162, idx_prop]
+    e162 = err_fmt[:, idx_162, idx_prop]
     errorbars!(ax, x, y164, e164; color=:blue, whiskerwidth=0, linewidth=2)
     ln164 = scatterlines!(ax, x, y164; color=:blue, marker=:circle, markersize=10, linewidth=3, linestyle=:dash)
     errorbars!(ax, x, y162, e162; color=:red, whiskerwidth=0, linewidth=2)
@@ -381,10 +380,10 @@ open(joinpath(path_output, "ssntfr_np_fit.csv"), "w") do io
     for idx_ib in eachindex(IBfesh)
         @printf(io, "%.6f,%.10g,%.10g,%.10g,%.10g,%.10g,%.10g,%.10g,%.10g,%d\n",
             IBfesh[idx_ib],
-            np_fit_amp_fmt[idx_ib, idx_istp_164(), 1], np_fit_err_fmt[idx_ib, idx_istp_164(), 1],
-            np_fit_amp_fmt[idx_ib, idx_istp_162(), 1], np_fit_err_fmt[idx_ib, idx_istp_162(), 1],
-            np_fit_amp_fmt[idx_ib, idx_istp_164(), 2], np_fit_err_fmt[idx_ib, idx_istp_164(), 2],
-            np_fit_amp_fmt[idx_ib, idx_istp_162(), 2], np_fit_err_fmt[idx_ib, idx_istp_162(), 2],
+            np_fit_amp_fmt[idx_ib, idx_164, 1], np_fit_err_fmt[idx_ib, idx_164, 1],
+            np_fit_amp_fmt[idx_ib, idx_162, 1], np_fit_err_fmt[idx_ib, idx_162, 1],
+            np_fit_amp_fmt[idx_ib, idx_164, 2], np_fit_err_fmt[idx_ib, idx_164, 2],
+            np_fit_amp_fmt[idx_ib, idx_162, 2], np_fit_err_fmt[idx_ib, idx_162, 2],
             n_kept[idx_ib])
     end
 end
