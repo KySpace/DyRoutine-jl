@@ -8,7 +8,7 @@ using Statistics
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
-title_anlz = "03.Ntfr2D"
+title_anlz = "09.Ntfr2D.Abrr.LinearWeight"
 path_data = joinpath(path_root, "0204_interference", "result", "prfl.h5")
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
@@ -17,6 +17,13 @@ tag = "SSNTFR"
 val_istp = ["162", "164"]
 label_x_dens = "position (μm)"
 r_tail_min_profile = 20.0
+range_r_tail_fit = (17.0, 37.0)
+fit_center_bound = 12.0
+fit_stride_2d = 3
+fit_maxiter_2d = 10_000
+fit_threshold_log_2d = 1.5e-1
+fit_sigma_wide_min = 15.0
+model_center = :gaussian
 
 function orient_ntfr2d_axes(
     ntfr2d::AbstractArray{<:Real,4},
@@ -37,70 +44,356 @@ function orient_ntfr2d_axes(
     ))
 end
 
-function calc_center_profile(dens2d::AbstractMatrix{<:Real})
-    idx_center = cld(size(dens2d, 2), 2)
-    return vec(@view dens2d[:, idx_center])
-end
-
-function calc_center_row_profile(dens2d::AbstractMatrix{<:Real})
+function calc_grid_center_profile(dens2d::AbstractMatrix{<:Real})
     idx_center = cld(size(dens2d, 1), 2)
     return vec(@view dens2d[idx_center, :])
 end
 
-function calc_symmetric_profile(
+function calc_symmetric_grid_column_profile(
     x_dens::AbstractVector{<:Real},
-    dens2d::AbstractMatrix{<:Real};
-    axis::Symbol,
+    dens2d::AbstractMatrix{<:Real},
 )
-    profile =
-        axis == :column ? calc_center_profile(dens2d) :
-        axis == :row ? calc_center_row_profile(dens2d) :
-        throw(ArgumentError("axis must be :column or :row, got $axis."))
+    profile = calc_grid_center_profile(dens2d)
     idx_center = cld(length(x_dens), 2)
     x_half = abs.(x_dens[idx_center:end])
     profile_half = (profile[idx_center:end] .+ reverse(profile[1:idx_center])) ./ 2
     return x_half, profile_half
 end
 
-function fit_gaussian_tail_profile(r, params)
-    A_gauss, σ_gauss = params
-    return @. A_gauss * exp(-r^2 / (2 * σ_gauss^2))
+function gaussian_tail_1d_model(r, params)
+    A_wide, σ_wide = params[1:2]
+    return @. A_wide * exp(-r^2 / (2 * σ_wide^2))
 end
 
-function fit_symmetric_profile_tails(
+function gaussian_narrow_1d_model(r, params)
+    A_narrow, σ_narrow = params
+    return @. A_narrow * exp(-r^2 / (2 * σ_narrow^2))
+end
+
+function lorentzian_narrow_1d_model(r, params)
+    A_narrow, γ_narrow = params
+    return @. A_narrow / (1 + (r / γ_narrow)^2)
+end
+
+function get_narrow_1d_model(model_center::Symbol)
+    model_center == :gaussian && return gaussian_narrow_1d_model
+    model_center == :lorentzian && return lorentzian_narrow_1d_model
+    throw(ArgumentError("model_center must be :gaussian or :lorentzian, got $model_center."))
+end
+
+function fit_two_gaussian_1d_guess(
     x_dens::AbstractVector{<:Real},
-    ntfr2d::AbstractArray{<:Real,4},
+    dens2d::AbstractMatrix{<:Real},
     r_tail_min::Real,
-    axis::Symbol,
+    model_center::Symbol=:gaussian,
 )
-    r_profile, _ = calc_symmetric_profile(x_dens, @view(ntfr2d[:, :, 1, 1]); axis)
+    r_profile, profile = calc_symmetric_grid_column_profile(x_dens, dens2d)
     mask_tail = r_profile .> r_tail_min
     any(mask_tail) || throw(ArgumentError("No profile coordinates found above r_tail_min=$r_tail_min."))
-
-    fit_tail = Array{NamedTuple}(undef, size(ntfr2d, 4), size(ntfr2d, 3))
-    profile_symm = Array{Vector{Float64}}(undef, size(ntfr2d, 4), size(ntfr2d, 3))
-    profile_tailess = similar(profile_symm)
-    profile_tail = similar(profile_symm)
     max_r = maximum(r_profile)
     step_r = minimum(diff(r_profile))
 
+    y_tail = Float64.(profile[mask_tail])
+    p_init_tail = [max(maximum(y_tail), eps(Float64)), max_r / 2]
+    p_lower_tail = [0.0, step_r]
+    p_upper_tail = [Inf, max_r * 3]
+    fit_tail = curve_fit(
+        gaussian_tail_1d_model,
+        r_profile[mask_tail],
+        y_tail,
+        p_init_tail;
+        lower=p_lower_tail,
+        upper=p_upper_tail,
+        maxIter=20_000,
+    )
+    params_tail = coef(fit_tail)
+    wide = gaussian_tail_1d_model(r_profile, params_tail)
+
+    y_narrow = max.(Float64.(profile) .- wide, 0.0)
+    mask_narrow = r_profile .<= r_tail_min
+    p_init_narrow = [max(maximum(y_narrow[mask_narrow]), eps(Float64)), max(r_tail_min / 4, step_r)]
+    p_lower_narrow = [0.0, step_r]
+    p_upper_narrow = [Inf, r_tail_min]
+    fit_narrow = curve_fit(
+        get_narrow_1d_model(model_center),
+        r_profile[mask_narrow],
+        y_narrow[mask_narrow],
+        p_init_narrow;
+        lower=p_lower_narrow,
+        upper=p_upper_narrow,
+        maxIter=20_000,
+    )
+    params_narrow = coef(fit_narrow)
+
+    return (;
+        A_narrow=params_narrow[1],
+        σ_narrow=params_narrow[2],
+        A_wide=params_tail[1],
+        σ_wide=params_tail[2],
+        B=0.0,
+        r_profile,
+        profile,
+        wide,
+        model_center,
+    )
+end
+
+function two_gaussian_2d_model(coords, params)
+    x0, y0, A_narrow, σ_narrow, A_wide, σ_wide = params[1:6]
+    x = @view coords[1, :]
+    y = @view coords[2, :]
+    r2 = @. (x - x0)^2 + (y - y0)^2
+    return @. A_narrow * exp(-r2 / (2 * σ_narrow^2)) +
+              A_wide * exp(-r2 / (2 * σ_wide^2))
+end
+
+function lorentzian_gaussian_2d_model(coords, params)
+    x0, y0, A_narrow, γ_narrow, A_wide, σ_wide = params[1:6]
+    x = @view coords[1, :]
+    y = @view coords[2, :]
+    r2 = @. (x - x0)^2 + (y - y0)^2
+    return @. A_narrow / (1 + r2 / γ_narrow^2) +
+              A_wide * exp(-r2 / (2 * σ_wide^2))
+end
+
+function get_density_2d_model(model_center::Symbol)
+    model_center == :gaussian && return two_gaussian_2d_model
+    model_center == :lorentzian && return lorentzian_gaussian_2d_model
+    throw(ArgumentError("model_center must be :gaussian or :lorentzian, got $model_center."))
+end
+
+function double_gaussian_disk_2d_model(coords, params)
+    x0, y0, A_narrow, σx_narrow, σy_narrow, A_wide, σ_wide = params
+    x = @view coords[1, :]
+    y = @view coords[2, :]
+    dx2 = @. (x - x0)^2
+    dy2 = @. (y - y0)^2
+    r2 = @. dx2 + dy2
+    return @. A_narrow * exp(-dx2 / (2 * σx_narrow^2) - dy2 / (2 * σy_narrow^2)) +
+              A_wide * exp(-r2 / (2 * σ_wide^2))
+end
+
+function double_gaussian_disk_2d_model_abrr(coords, params)
+    x0, y0, A_narrow, σx_narrow, σy_narrow, A_wide, σ_wide, β = params
+    x = @view coords[1, :]
+    y = @view coords[2, :]
+    dx2 = @. (x - x0)^2
+    dy2 = @. (y - y0)^2
+    r2 = @. dx2 + dy2
+    narrow = @. A_narrow * exp(-dx2 / (2 * σx_narrow^2) - dy2 / (2 * σy_narrow^2))
+    tail = @. A_wide * exp(-r2 / (2 * σ_wide^2))
+    return @. tail + narrow + β * narrow^2
+end
+
+function log_double_gaussian_disk_2d_model(coords, params)
+    return log.(max.(double_gaussian_disk_2d_model(coords, params), eps(Float64)))
+end
+
+function log_double_gaussian_disk_2d_model_abrr(coords, params)
+    return log.(max.(double_gaussian_disk_2d_model_abrr(coords, params), eps(Float64)))
+end
+
+function calc_fit_coords_2d(x_dens::AbstractVector{<:Real}, stride::Integer)
+    idx = 1:stride:length(x_dens)
+    x_fit = Float64.(x_dens[idx])
+    coords = Matrix{Float64}(undef, 2, length(x_fit)^2)
+    coords[1, :] .= repeat(x_fit; outer=length(x_fit))
+    coords[2, :] .= repeat(x_fit; inner=length(x_fit))
+    return idx, coords
+end
+
+function log_gaussian_rim_model(r2, params)
+    log_A, σ = params
+    return @. log_A - r2 / (2 * σ^2)
+end
+
+function fit_log_gaussian_rim_tail(
+    x_dens::AbstractVector{<:Real},
+    dens2d::AbstractMatrix{<:Real},
+    center::Tuple{<:Real,<:Real},
+    range_r_tail::Tuple{<:Real,<:Real},
+)
+    r_tail_lo, r_tail_hi = range_r_tail
+    r_tail_lo < r_tail_hi || throw(ArgumentError("range_r_tail lower bound $r_tail_lo must be less than upper bound $r_tail_hi."))
+    x0, y0 = center
+    x_grid = Float64.(x_dens)
+    r2 = [
+        (x - x0)^2 + (y - y0)^2
+        for y in x_grid
+        for x in x_grid
+    ]
+    z = vec(Float64.(dens2d))
+    r = sqrt.(r2)
+    mask = @. (r_tail_lo <= r <= r_tail_hi) & isfinite(z) & (z > 0)
+    any(mask) || throw(ArgumentError("No positive rim density points found in range_r_tail=$range_r_tail."))
+
+    r2_fit = r2[mask]
+    log_z_fit = log.(z[mask])
+    step_x = minimum(diff(x_dens))
+    max_x = maximum(abs, x_dens)
+    p_init = [maximum(log_z_fit), max(max_x / 2, step_x)]
+    p_lower = [-100.0, step_x]
+    p_upper = [100.0, max_x * 3]
+    fit = curve_fit(log_gaussian_rim_model, r2_fit, log_z_fit, p_init; lower=p_lower, upper=p_upper, maxIter=20_000)
+    params = coef(fit)
+    rss_log_rel = norm(residuals(fit)) / max(norm(log_z_fit), eps(Float64))
+    return (; A_wide=exp(params[1]), σ_wide=params[2], params, rss_log_rel)
+end
+
+function fit_two_gaussian_2d(
+    x_dens::AbstractVector{<:Real},
+    dens2d::AbstractMatrix{<:Real},
+    guess_1d;
+    center_bound::Real,
+    stride::Integer,
+    maxiter::Integer=30_000,
+    model_center::Symbol=:gaussian,
+)
+    idx_fit, coords = calc_fit_coords_2d(x_dens, stride)
+    z_fit = vec(Float64.(@view dens2d[idx_fit, idx_fit]))
+    mask_fit = @. isfinite(z_fit) & (z_fit > fit_threshold_log_2d)
+    any(mask_fit) || throw(ArgumentError("No 2D density points above fit_threshold_log_2d=$fit_threshold_log_2d."))
+    coords_fit = @view coords[:, mask_fit]
+    z_fit_sel = z_fit[mask_fit]
+    step_x = minimum(diff(x_dens))
+    max_x = maximum(abs, x_dens)
+    p_init = [
+        0.0,
+        0.0,
+        max(guess_1d.A_narrow, eps(Float64)),
+        max(guess_1d.σ_narrow, step_x),
+        max(guess_1d.σ_narrow, step_x),
+        max(guess_1d.A_wide, eps(Float64)),
+        max(guess_1d.σ_wide, fit_sigma_wide_min),
+        0.01,
+    ]
+    p_lower = [-center_bound, -center_bound, eps(Float64), step_x, step_x, eps(Float64), fit_sigma_wide_min, 0.0]
+    p_upper = [center_bound, center_bound, Inf, r_tail_min_profile, r_tail_min_profile, Inf, max_x * 3, 2.0]
+    fit = curve_fit(
+        double_gaussian_disk_2d_model_abrr,
+        coords_fit,
+        z_fit_sel,
+        p_init;
+        lower=p_lower,
+        upper=p_upper,
+        maxIter=maxiter,
+    )
+    params = coef(fit)
+    rss_rel = norm(residuals(fit)) / max(norm(z_fit_sel), eps(Float64))
+    return (; params, rss_rel, guess_1d, model_center, threshold=fit_threshold_log_2d)
+end
+
+function interp1_linear(x::AbstractVector{<:Real}, y::AbstractVector{<:Real}, xq::Real)
+    (xq < first(x) || xq > last(x)) && return NaN
+    idx_hi = searchsortedfirst(x, xq)
+    idx_hi == 1 && return Float64(y[1])
+    idx_hi > length(x) && return Float64(y[end])
+    idx_lo = idx_hi - 1
+    t = (xq - x[idx_lo]) / (x[idx_hi] - x[idx_lo])
+    return (1 - t) * y[idx_lo] + t * y[idx_hi]
+end
+
+function interp2_bilinear(
+    x_dens::AbstractVector{<:Real},
+    dens2d::AbstractMatrix{<:Real},
+    xq::Real,
+    yq::Real,
+)
+    (xq < first(x_dens) || xq > last(x_dens) || yq < first(x_dens) || yq > last(x_dens)) && return NaN
+    idx_x_hi = searchsortedfirst(x_dens, xq)
+    idx_y_hi = searchsortedfirst(x_dens, yq)
+    idx_x_hi == 1 && (idx_x_hi = 2)
+    idx_y_hi == 1 && (idx_y_hi = 2)
+    idx_x_hi > length(x_dens) && (idx_x_hi = length(x_dens))
+    idx_y_hi > length(x_dens) && (idx_y_hi = length(x_dens))
+    idx_x_lo = idx_x_hi - 1
+    idx_y_lo = idx_y_hi - 1
+    tx = (xq - x_dens[idx_x_lo]) / (x_dens[idx_x_hi] - x_dens[idx_x_lo])
+    ty = (yq - x_dens[idx_y_lo]) / (x_dens[idx_y_hi] - x_dens[idx_y_lo])
+    z00 = dens2d[idx_x_lo, idx_y_lo]
+    z10 = dens2d[idx_x_hi, idx_y_lo]
+    z01 = dens2d[idx_x_lo, idx_y_hi]
+    z11 = dens2d[idx_x_hi, idx_y_hi]
+    return (1 - tx) * (1 - ty) * z00 + tx * (1 - ty) * z10 + (1 - tx) * ty * z01 + tx * ty * z11
+end
+
+function calc_centered_cross_profile(
+    x_dens::AbstractVector{<:Real},
+    dens2d::AbstractMatrix{<:Real},
+    fit_density;
+    axis::Symbol,
+)
+    x0, y0, A_narrow, σx_narrow, σy_narrow, A_wide, σ_wide = fit_density.params[1:7]
+    β = length(fit_density.params) >= 8 ? fit_density.params[8] : 0.0
+    s_profile = Float64.(x_dens)
+    profile =
+        axis == :column ? [interp2_bilinear(x_dens, dens2d, x0, y0 + s) for s in s_profile] :
+        axis == :row ? [interp2_bilinear(x_dens, dens2d, x0 + s, y0) for s in s_profile] :
+        throw(ArgumentError("axis must be :column or :row, got $axis."))
+    σ_narrow = axis == :column ? σy_narrow : σx_narrow
+    tail_raw = @. A_wide * exp(-s_profile^2 / (2 * σ_wide^2))
+    narrow_raw = @. A_narrow * exp(-s_profile^2 / (2 * σ_narrow^2))
+    tail = tail_raw
+    narrow = @. narrow_raw + β * narrow_raw^2
+    narrow_abrr = narrow
+    tailess = profile .- tail
+    return (; axis, s_profile, profile, tail, narrow, narrow_abrr, tailess, tail_raw, narrow_raw, β, fit_density)
+end
+
+function fit_centered_density_profiles(
+    x_dens::AbstractVector{<:Real},
+    ntfr2d::AbstractArray{<:Real,4},
+    r_tail_min::Real;
+    center_bound::Real,
+    stride::Integer,
+    maxiter::Integer=30_000,
+    model_center::Symbol=:gaussian,
+)
+    get_narrow_1d_model(model_center)
+    get_density_2d_model(model_center)
+    fit_density = Array{NamedTuple}(undef, size(ntfr2d, 4), size(ntfr2d, 3))
+    profile_column = Array{NamedTuple}(undef, size(ntfr2d, 4), size(ntfr2d, 3))
+    profile_row = similar(profile_column)
+
     for idx_IB in axes(ntfr2d, 4), idx_istp in axes(ntfr2d, 3)
-        r, y = calc_symmetric_profile(x_dens, @view(ntfr2d[:, :, idx_istp, idx_IB]); axis)
-        profile_symm[idx_IB, idx_istp] = Float64.(y)
-        y_tail = Float64.(y[mask_tail])
-        p_init = [max(maximum(y_tail), eps(Float64)), max_r / 2]
-        p_lower = [0.0, step_r]
-        p_upper = [Inf, max_r * 2]
-        fit = curve_fit(fit_gaussian_tail_profile, r[mask_tail], y_tail, p_init; lower=p_lower, upper=p_upper, maxIter=20_000)
-        params = coef(fit)
-        tail = fit_gaussian_tail_profile(r, params)
-        rss_rel = norm(residuals(fit)) / max(norm(y_tail), eps(Float64))
-        fit_tail[idx_IB, idx_istp] = (; params, rss_rel)
-        profile_tail[idx_IB, idx_istp] = tail
-        profile_tailess[idx_IB, idx_istp] = Float64.(y) .- tail
+        dens2d = @view ntfr2d[:, :, idx_istp, idx_IB]
+        guess_1d = fit_two_gaussian_1d_guess(x_dens, dens2d, r_tail_min, model_center)
+        fit_2d = fit_two_gaussian_2d(x_dens, dens2d, guess_1d; center_bound, stride, maxiter, model_center)
+        fit_density[idx_IB, idx_istp] = fit_2d
+        profile_column[idx_IB, idx_istp] = calc_centered_cross_profile(x_dens, dens2d, fit_2d; axis=:column)
+        profile_row[idx_IB, idx_istp] = calc_centered_cross_profile(x_dens, dens2d, fit_2d; axis=:row)
     end
 
-    return (; axis, r_profile, r_tail_min, profile_symm, profile_tail, profile_tailess, fit_tail)
+    return (; fit_density, profile_fits=(profile_column, profile_row))
+end
+
+function draw_folded_branch!(
+    ax::Axis,
+    s::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
+    side::Symbol;
+    color,
+    linewidth::Real,
+    linestyle=:solid,
+)
+    mask_side =
+        side == :pos ? s .>= 0 :
+        side == :neg ? s .<= 0 :
+        throw(ArgumentError("side must be :pos or :neg, got $side."))
+    x_branch = abs.(Float64.(s[mask_side]))
+    y_branch = Float64.(y[mask_side])
+    mask_valid = isfinite.(x_branch) .& isfinite.(y_branch) .& (y_branch .> 0)
+    count(mask_valid) >= 2 || return nothing
+    order = sortperm(x_branch[mask_valid])
+    lines!(
+        ax,
+        x_branch[mask_valid][order],
+        y_branch[mask_valid][order];
+        color,
+        linewidth,
+        linestyle,
+    )
+    return nothing
 end
 
 function draw_density_row!(
@@ -113,13 +406,18 @@ function draw_density_row!(
     IB::Real;
     colorrange,
     ylims_profile,
-    profile_tail_fits,
+    profile_fits,
+    fit_density,
+    xlims_profile,
+    xlims_folded,
+    ylims_diag,
     is_bottom_row::Bool=false,
 )
     Label(fig[row, 0]; text=@sprintf("%.3f", IB), tellwidth=true, tellheight=false, halign=:right)
 
     axs_dens = Vector{Axis}(undef, length(val_istp))
-    axs_profile = Array{Axis}(undef, length(profile_tail_fits), length(val_istp))
+    axs_profile = Array{Axis}(undef, length(profile_fits), length(val_istp))
+    axs_diag = Vector{Axis}(undef, length(val_istp))
 
     for (idx_istp, istp) in enumerate(val_istp)
         ax = Axis(
@@ -132,39 +430,88 @@ function draw_density_row!(
         dens2d = @view ntfr2d[:, :, idx_istp, idx_IB]
         clrmap = gen_clrmap_solo(hue_theme_istp[istp])
         heatmap!(ax, x_dens, x_dens, dens2d; colormap=clrmap, colorrange, rasterize=true)
-        pos_center = x_dens[cld(length(x_dens), 2)]
-        vlines!(ax, pos_center; color=(:black, 0.14), linewidth=0.6)
-        hlines!(ax, pos_center; color=(:black, 0.14), linewidth=0.6)
-        hidedecorations!(ax; label=is_bottom_row || idx_istp == 1 ? false : true, ticklabels=!is_bottom_row, ticks=!is_bottom_row, grid=false)
+        x0, y0 = fit_density[idx_IB, idx_istp].params[1:2]
+        vlines!(ax, x0; color=(:black, 0.16), linewidth=0.7)
+        hlines!(ax, y0; color=(:black, 0.16), linewidth=0.7)
+        hidexdecorations!(ax; label=is_bottom_row ? false : true, ticklabels=is_bottom_row ? false : true, ticks=is_bottom_row ? false : true, grid=false)
+        hideydecorations!(ax; label=idx_istp == 1 ? false : true, ticklabels=false, ticks=false, grid=false)
 
-        for (idx_fit, profile_tail_fit) in enumerate(profile_tail_fits)
+        for (idx_fit, profile_fit) in enumerate(profile_fits)
             idx_col = length(val_istp) + (idx_fit - 1) * length(val_istp) + idx_istp
             ax_profile = Axis(
                 fig[row, idx_col];
                 xlabel=is_bottom_row ? label_x_dens : "",
-                ylabel=idx_istp == 1 ? "symm. $(profile_tail_fit.axis)" : "",
+                ylabel=idx_istp == 1 ? "$(profile_fit[idx_IB, idx_istp].axis)" : "",
                 yaxisposition=idx_istp == 1 ? :left : :right,
-                xticks=idx_istp == 1 ? (40:-20:20) : (20:20:40),
+                xticks=-40:20:40,
             )
             axs_profile[idx_fit, idx_istp] = ax_profile
-            r = profile_tail_fit.r_profile
-            profile = profile_tail_fit.profile_symm[idx_IB, idx_istp]
-            tail = profile_tail_fit.profile_tail[idx_IB, idx_istp]
-            tailess = profile_tail_fit.profile_tailess[idx_IB, idx_istp]
+            profile_data = profile_fit[idx_IB, idx_istp]
+            s = profile_data.s_profile
+            profile = profile_data.profile
+            tail = profile_data.tail
+            narrow_raw = profile_data.narrow_raw
+            narrow = profile_data.narrow
+            tailess = profile_data.tailess
             clr_strong = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.95)
             clr_faint = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.32)
-            band!(ax_profile, r, zero.(tail), tail; color=(:gray45, 0.25))
-            lines!(ax_profile, r, profile; color=clr_faint, linewidth=1.1)
-            lines!(ax_profile, r, tailess; color=clr_strong, linewidth=1.8)
-            lines!(ax_profile, r, tail; color=(:gray20, 0.55), linewidth=1.0)
-            vlines!(ax_profile, profile_tail_fit.r_tail_min; color=(:gray20, 0.35), linewidth=0.8)
-            idx_istp == 1 ? xlims!(ax_profile, maximum(r), 0) : xlims!(ax_profile, 0, maximum(r))
+            clr_center = Oklch(0.62, 0.16, 145)
+            band!(ax_profile, s, zero.(narrow_raw), narrow_raw; color=(clr_center, 0.30))
+            lines!(ax_profile, s, profile; color=clr_faint, linewidth=1.0)
+            lines!(ax_profile, s, tail; color=(:gray20, 0.55), linewidth=1.0)
+            lines!(ax_profile, s, tailess; color=clr_strong, linewidth=1.8)
+            band!(ax_profile, s, zero.(narrow), narrow; color=(clr_center, 0.14))
+            vlines!(ax_profile, [-r_tail_min_profile, r_tail_min_profile]; color=(:gray20, 0.28), linewidth=0.7)
+            xlims!(ax_profile, xlims_profile)
             ylims!(ax_profile, ylims_profile)
+            text!(
+                ax_profile,
+                xlims_profile[1] + 0.04 * (xlims_profile[2] - xlims_profile[1]),
+                ylims_profile[2] - 0.08 * (ylims_profile[2] - ylims_profile[1]);
+                text=@sprintf("β=%.3f", profile_data.β),
+                color=(clr_center, 0.9),
+                fontsize=8,
+                align=(:left, :top),
+            )
             !is_bottom_row && hidexdecorations!(ax_profile; grid=false)
         end
+
+        idx_col_diag = length(val_istp) + length(profile_fits) * length(val_istp) + idx_istp
+        ax_diag = Axis(
+            fig[row, idx_col_diag];
+            xlabel=is_bottom_row ? label_x_dens : "",
+            ylabel=idx_istp == 1 ? "folded log" : "",
+            yscale=log10,
+            yaxisposition=idx_istp == 1 ? :left : :right,
+            xticks=0:20:40,
+        )
+        axs_diag[idx_istp] = ax_diag
+        clr_column = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.38)
+        clr_row = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.72)
+        clr_tail_fit = RGBAf(Oklch(0.58, 0.17, 145), 0.88)
+        profile_column = profile_fits[1][idx_IB, idx_istp]
+        profile_row = profile_fits[2][idx_IB, idx_istp]
+        draw_folded_branch!(ax_diag, profile_column.s_profile, profile_column.profile, :pos; color=clr_column, linewidth=1.0)
+        draw_folded_branch!(ax_diag, profile_column.s_profile, profile_column.profile, :neg; color=clr_column, linewidth=1.0)
+        draw_folded_branch!(ax_diag, profile_row.s_profile, profile_row.profile, :pos; color=clr_row, linewidth=1.35)
+        draw_folded_branch!(ax_diag, profile_row.s_profile, profile_row.profile, :neg; color=clr_row, linewidth=1.35)
+        draw_folded_branch!(ax_diag, profile_row.s_profile, profile_row.tail, :pos; color=clr_tail_fit, linewidth=1.5)
+        hlines!(ax_diag, fit_threshold_log_2d; color=(:gray20, 0.45), linewidth=0.8)
+        xlims!(ax_diag, xlims_folded)
+        ylims!(ax_diag, ylims_diag)
+        text!(
+            ax_diag,
+            xlims_folded[1] + 0.04 * (xlims_folded[2] - xlims_folded[1]),
+            ylims_diag[1] * 1.25;
+            text=@sprintf("σ=%.1f μm", profile_row.fit_density.params[7]),
+            color=clr_tail_fit,
+            fontsize=8,
+            align=(:left, :bottom),
+        )
+        !is_bottom_row && hidexdecorations!(ax_diag; grid=false)
     end
 
-    return axs_dens, axs_profile
+    return axs_dens, axs_profile, axs_diag
 end
 
 x_dens, val_IB, ntfr2d_mean = h5open(path_data, "r") do file
@@ -176,32 +523,56 @@ end
 
 colorrange_ntfr = (0.0, maximum(ntfr2d_mean))
 max_profile = maximum([
-    maximum(calc_center_profile(@view ntfr2d_mean[:, :, idx_istp, idx_IB]))
+    maximum(calc_grid_center_profile(@view ntfr2d_mean[:, :, idx_istp, idx_IB]))
     for idx_istp in axes(ntfr2d_mean, 3), idx_IB in axes(ntfr2d_mean, 4)
 ])
 ylims_profile = (0.0, max_profile * 1.05)
-profile_tail_fit_column = fit_symmetric_profile_tails(x_dens, ntfr2d_mean, r_tail_min_profile, :column)
-profile_tail_fit_row = fit_symmetric_profile_tails(x_dens, ntfr2d_mean, r_tail_min_profile, :row)
-profile_tail_fits = (profile_tail_fit_column, profile_tail_fit_row)
+fit_centered = fit_centered_density_profiles(
+    x_dens,
+    ntfr2d_mean,
+    r_tail_min_profile;
+    center_bound=fit_center_bound,
+    stride=fit_stride_2d,
+    maxiter=fit_maxiter_2d,
+    model_center,
+)
+fit_density = fit_centered.fit_density
+profile_fits = fit_centered.profile_fits
 min_tailess_profile = minimum(
-    minimum(profile)
-    for fit in profile_tail_fits
-    for profile in vec(fit.profile_tailess)
+    minimum(skipmissing(replace(profile_data.tailess, NaN => missing)))
+    for fit in profile_fits
+    for profile_data in vec(fit)
 )
 max_original_profile = maximum(
-    maximum(profile)
-    for fit in profile_tail_fits
-    for profile in vec(fit.profile_symm)
+    maximum(skipmissing(replace(profile_data.profile, NaN => missing)))
+    for fit in profile_fits
+    for profile_data in vec(fit)
 )
-ylims_profile_symm = (
+xlims_profile = (minimum(x_dens), maximum(x_dens))
+val_profile_positive = [
+    v
+    for fit in profile_fits
+    for profile_data in vec(fit)
+    for v in profile_data.profile
+    if isfinite(v) && v > 0
+]
+ylims_diag = (1e-2, maximum(val_profile_positive) * 1.1)
+xlims_folded = (0.0, maximum(abs, x_dens))
+ylims_profile_centered = (
     min(0.0, min_tailess_profile * 1.05),
     max_original_profile * 1.05,
 )
 
-fig_ntfr = Figure(size=(1580, 2200), fontsize=14)
+fig_ntfr = Figure(fontsize=14)
 Label(
-    fig_ntfr[0, 1:6];
-    text=@sprintf("%s 2D NTFR mean densities, common max %.3g", tag, colorrange_ntfr[2]),
+    fig_ntfr[0, 1:8];
+    text=@sprintf(
+        "%s 2D NTFR mean densities, linear double-Gaussian + βN² fit, mask > %.1g, σ_wide ≥ %.0f μm, common max %.3g",
+        tag,
+        fit_threshold_log_2d,
+        fit_sigma_wide_min,
+        colorrange_ntfr[2],
+    ),
     tellwidth=false,
     tellheight=true,
     halign=:left,
@@ -209,18 +580,30 @@ Label(
 for (idx_istp, istp) in enumerate(val_istp)
     Label(fig_ntfr[1, idx_istp]; text="istp=$istp", tellwidth=false, tellheight=true, halign=:center, font=:bold)
 end
-for (idx_fit, profile_tail_fit) in enumerate(profile_tail_fits)
+for (idx_fit, profile_fit) in enumerate(profile_fits)
+    axis_name = profile_fit[1, 1].axis
     for (idx_istp, istp) in enumerate(val_istp)
         idx_col = 2 + (idx_fit - 1) * length(val_istp) + idx_istp
         Label(
             fig_ntfr[1, idx_col];
-            text="$(profile_tail_fit.axis) tailess $istp",
+            text="$(axis_name) tailess $istp",
             tellwidth=false,
             tellheight=true,
             halign=:center,
             font=:bold,
         )
     end
+end
+for (idx_istp, istp) in enumerate(val_istp)
+    idx_col = length(val_istp) + length(profile_fits) * length(val_istp) + idx_istp
+    Label(
+        fig_ntfr[1, idx_col];
+        text="folded log $istp",
+        tellwidth=false,
+        tellheight=true,
+        halign=:center,
+        font=:bold,
+    )
 end
 
 for (idx_IB, IB) in enumerate(val_IB)
@@ -234,8 +617,12 @@ for (idx_IB, IB) in enumerate(val_IB)
         idx_IB,
         IB;
         colorrange=colorrange_ntfr,
-        ylims_profile=ylims_profile_symm,
-        profile_tail_fits,
+        ylims_profile=ylims_profile_centered,
+        profile_fits,
+        fit_density,
+        xlims_profile,
+        xlims_folded,
+        ylims_diag,
         is_bottom_row=idx_IB == length(val_IB),
     )
     rowsize!(fig_ntfr.layout, row, Fixed(105))
@@ -247,13 +634,19 @@ colsize!(fig_ntfr.layout, 3, Fixed(170))
 colsize!(fig_ntfr.layout, 4, Fixed(170))
 colsize!(fig_ntfr.layout, 5, Fixed(170))
 colsize!(fig_ntfr.layout, 6, Fixed(170))
+colsize!(fig_ntfr.layout, 7, Fixed(170))
+colsize!(fig_ntfr.layout, 8, Fixed(170))
 colgap!(fig_ntfr.layout, 1, 8)
 colgap!(fig_ntfr.layout, 2, 16)
 colgap!(fig_ntfr.layout, 3, 0)
 colgap!(fig_ntfr.layout, 4, 14)
 colgap!(fig_ntfr.layout, 5, 0)
+colgap!(fig_ntfr.layout, 6, 14)
+colgap!(fig_ntfr.layout, 7, 0)
 rowgap!(fig_ntfr.layout, 1, 4)
 
-path_plot_ntfr = joinpath(path_output, "$(tag)_ntfr2d_table.png")
-save(path_plot_ntfr, fig_ntfr; backend=CairoMakie)
+resize_to_layout!(fig_ntfr)
+save(joinpath(path_output, "$(tag)_ntfr2d_table.png"), fig_ntfr; backend=CairoMakie)
+save(joinpath(path_output, "$(tag)_ntfr2d_table.pdf"), fig_ntfr; backend=CairoMakie)
+cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 println("saved $path_plot_ntfr")
