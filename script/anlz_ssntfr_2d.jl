@@ -1,5 +1,7 @@
 using CairoMakie
+using FFTW
 using HDF5
+using ImageFiltering
 using LinearAlgebra
 using LsqFit
 using Printf
@@ -8,7 +10,7 @@ using Statistics
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
-title_anlz = "09.Ntfr2D.Abrr.LinearWeight"
+title_anlz = "10.Ntfr2D.Abrr.LinearWeight.ComparePrflModl"
 path_data = joinpath(path_root, "0204_interference", "result", "prfl.h5")
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
@@ -16,6 +18,7 @@ isdir(path_output) || mkpath(path_output)
 tag = "SSNTFR"
 val_istp = ["162", "164"]
 label_x_dens = "position (μm)"
+label_x_modl = "wavenum (μm⁻¹)"
 r_tail_min_profile = 20.0
 range_r_tail_fit = (17.0, 37.0)
 fit_center_bound = 12.0
@@ -24,6 +27,9 @@ fit_maxiter_2d = 10_000
 fit_threshold_log_2d = 1.5e-1
 fit_sigma_wide_min = 15.0
 model_center = :gaussian
+smwh_reconstruct = (150, 150)
+xlims_prfl_reconstruct = (0.0, 0.6)
+ylims_prfl_reconstruct = (-0.1, 0.6)
 
 function orient_ntfr2d_axes(
     ntfr2d::AbstractArray{<:Real,4},
@@ -41,6 +47,25 @@ function orient_ntfr2d_axes(
     throw(DimensionMismatch(
         "ntfr2d_mean size $(size(ntfr2d)) must be either (x, y, istp, IB) " *
         "$((n_x, n_x, n_istp, n_IB)) or (IB, istp, x, y) $((n_IB, n_istp, n_x, n_x)).",
+    ))
+end
+
+function orient_prfl_axes(
+    prfl::AbstractArray{<:Real,3},
+    x_modl::AbstractVector{<:Real},
+    val_IB::AbstractVector{<:Real},
+    val_istp::AbstractVector{<:AbstractString},
+)
+    n_x = length(x_modl)
+    n_IB = length(val_IB)
+    n_istp = length(val_istp)
+
+    size(prfl) == (n_x, n_istp, n_IB) && return prfl
+    size(prfl) == (n_IB, n_istp, n_x) && return permutedims(prfl, (3, 2, 1))
+
+    throw(DimensionMismatch(
+        "profile size $(size(prfl)) must be either (x_modl, istp, IB) " *
+        "$((n_x, n_istp, n_IB)) or (IB, istp, x_modl) $((n_IB, n_istp, n_x)).",
     ))
 end
 
@@ -400,6 +425,7 @@ function draw_density_row!(
     fig::Figure,
     row::Integer,
     x_dens::AbstractVector{<:Real},
+    x_modl::AbstractVector{<:Real},
     val_istp::AbstractVector{<:AbstractString},
     ntfr2d::AbstractArray{<:Real,4},
     idx_IB::Integer,
@@ -411,6 +437,11 @@ function draw_density_row!(
     xlims_profile,
     xlims_folded,
     ylims_diag,
+    prfl_modl_fit,
+    prfl_inco,
+    prfl_cohr,
+    xlims_prfl,
+    ylims_prfl,
     is_bottom_row::Bool=false,
 )
     Label(fig[row, 0]; text=@sprintf("%.3f", IB), tellwidth=true, tellheight=false, halign=:right)
@@ -418,6 +449,7 @@ function draw_density_row!(
     axs_dens = Vector{Axis}(undef, length(val_istp))
     axs_profile = Array{Axis}(undef, length(profile_fits), length(val_istp))
     axs_diag = Vector{Axis}(undef, length(val_istp))
+    axs_prfl = Vector{Axis}(undef, length(val_istp))
 
     for (idx_istp, istp) in enumerate(val_istp)
         ax = Axis(
@@ -509,17 +541,98 @@ function draw_density_row!(
             align=(:left, :bottom),
         )
         !is_bottom_row && hidexdecorations!(ax_diag; grid=false)
+
+        idx_col_prfl = length(val_istp) + length(profile_fits) * length(val_istp) + length(val_istp) + idx_istp
+        ax_prfl = Axis(
+            fig[row, idx_col_prfl];
+            xlabel=is_bottom_row ? label_x_modl : "",
+            ylabel=idx_istp == 1 ? "FT profile" : "",
+            yaxisposition=idx_istp == 1 ? :left : :right,
+            xticks=0:0.2:0.6,
+        )
+        axs_prfl[idx_istp] = ax_prfl
+        clr_theme = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.92)
+        clr_theme_faint = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.60)
+        clr_fit = RGBAf(Oklch(0.60, 0.17, 145), 0.95)
+        lines!(ax_prfl, x_modl, @view(prfl_modl_fit[:, idx_istp, idx_IB]); color=clr_fit, linewidth=1.8)
+        lines!(ax_prfl, x_modl, @view(prfl_inco[:, idx_istp, idx_IB]); color=clr_theme_faint, linewidth=1.3, linestyle=:dash)
+        lines!(ax_prfl, x_modl, @view(prfl_cohr[:, idx_istp, idx_IB]); color=clr_theme, linewidth=1.5)
+        xlims!(ax_prfl, xlims_prfl)
+        ylims!(ax_prfl, ylims_prfl)
+        !is_bottom_row && hidexdecorations!(ax_prfl; grid=false)
     end
 
-    return axs_dens, axs_profile, axs_diag
+    return axs_dens, axs_profile, axs_diag, axs_prfl
 end
 
-x_dens, val_IB, ntfr2d_mean = h5open(path_data, "r") do file
+function tucky1d(sml; alpha=0.2)
+    edge = floor(alpha * sml)
+    [abs(x) |> x -> x < edge ? 1.0 : (1 - cos(π * x / sml)) / 2
+     for x in -sml:sml]
+end
+
+function calc_prfl_modl_1d(dens, smwh; step_modl=1)
+    smwh .* 2 .+ 1 == size(dens) || error("expect matching smwh and density")
+    smw, smh = smwh
+    smw_dens_strip = 20
+    smh_modl = 120
+    tucky = tucky1d(smh; alpha=0.2)
+    idx_strip = (smw_dens_strip |> s -> (-s:1:s) .+ smw .+ 1)
+    idx_modl = (smh_modl |> s -> (-s:1:s) .+ smh .+ 1)
+    dens_strip = @view dens[:, idx_strip]
+    dens_mean = imfilter(dens_strip, Kernel.gaussian(2.5)) |> ds -> vec(mean(ds; dims=2))
+    modl_full = abs.(fftshift(fft(dens_mean .* tucky)))
+    modl = modl_full[idx_modl]
+    return modl / (sum(modl) * step_modl / 2)
+end
+
+function reconstruct_density_2d(
+    x_dens::AbstractVector{<:Real},
+    fit_density::AbstractArray,
+)
+    coords = Matrix{Float64}(undef, 2, length(x_dens)^2)
+    x_grid = Float64.(x_dens)
+    coords[1, :] .= repeat(x_grid; outer=length(x_grid))
+    coords[2, :] .= repeat(x_grid; inner=length(x_grid))
+
+    dens_fit = Array{Float64}(undef, length(x_dens), length(x_dens), size(fit_density, 2), size(fit_density, 1))
+    for idx_IB in axes(fit_density, 1), idx_istp in axes(fit_density, 2)
+        dens_fit[:, :, idx_istp, idx_IB] .= reshape(
+            double_gaussian_disk_2d_model_abrr(coords, fit_density[idx_IB, idx_istp].params),
+            length(x_dens),
+            length(x_dens),
+        )
+    end
+    return dens_fit
+end
+
+function calc_reconstructed_prfl_modl(
+    dens_fit::AbstractArray{<:Real,4},
+    smwh::Tuple{<:Integer,<:Integer};
+    step_modl::Real,
+)
+    n_modl = length(calc_prfl_modl_1d(@view(dens_fit[:, :, 1, 1]), smwh; step_modl))
+    prfl_modl = Array{Float64}(undef, n_modl, size(dens_fit, 3), size(dens_fit, 4))
+    for idx_IB in axes(dens_fit, 4), idx_istp in axes(dens_fit, 3)
+        prfl_modl[:, idx_istp, idx_IB] .= calc_prfl_modl_1d(
+            @view(dens_fit[:, :, idx_istp, idx_IB]),
+            smwh;
+            step_modl,
+        )
+    end
+    return prfl_modl
+end
+
+x_dens, x_modl, val_IB, ntfr2d_mean, prfl_inco, prfl_cohr = h5open(path_data, "r") do file
     x_dens = read(file["x_dens"])
+    x_modl = read(file["x_modl"])
     val_IB = read(file["val_IB"])
     ntfr2d_mean = orient_ntfr2d_axes(read(file["ntfr2d_mean"]), x_dens, val_IB, val_istp)
-    return x_dens, val_IB, ntfr2d_mean
+    prfl_inco = orient_prfl_axes(read(file["prfl_inco"]), x_modl, val_IB, val_istp)
+    prfl_cohr = orient_prfl_axes(read(file["prfl_cohr"]), x_modl, val_IB, val_istp)
+    return x_dens, x_modl, val_IB, ntfr2d_mean, prfl_inco, prfl_cohr
 end
+step_modl = median(diff(x_modl))
 
 colorrange_ntfr = (0.0, maximum(ntfr2d_mean))
 max_profile = maximum([
@@ -538,6 +651,11 @@ fit_centered = fit_centered_density_profiles(
 )
 fit_density = fit_centered.fit_density
 profile_fits = fit_centered.profile_fits
+ntfr2d_fit = reconstruct_density_2d(x_dens, fit_density)
+prfl_modl_fit = calc_reconstructed_prfl_modl(ntfr2d_fit, smwh_reconstruct; step_modl)
+length(x_modl) == size(prfl_modl_fit, 1) || throw(DimensionMismatch(
+    "x_modl length $(length(x_modl)) must match reconstructed profile length $(size(prfl_modl_fit, 1)).",
+))
 min_tailess_profile = minimum(
     minimum(skipmissing(replace(profile_data.tailess, NaN => missing)))
     for fit in profile_fits
@@ -565,13 +683,14 @@ ylims_profile_centered = (
 
 fig_ntfr = Figure(fontsize=14)
 Label(
-    fig_ntfr[0, 1:8];
+    fig_ntfr[0, 1:10];
     text=@sprintf(
-        "%s 2D NTFR mean densities, linear double-Gaussian + βN² fit, mask > %.1g, σ_wide ≥ %.0f μm, common max %.3g",
+        "%s 2D NTFR mean densities, cocenter Gaussian tail + Gaussian peak |> (_ + β_²) fit, mask > %.1g, σ_wide ≥ %.0f μm, common max %.3g, Δk=%.5f",
         tag,
         fit_threshold_log_2d,
         fit_sigma_wide_min,
         colorrange_ntfr[2],
+        step_modl,
     ),
     tellwidth=false,
     tellheight=true,
@@ -605,6 +724,17 @@ for (idx_istp, istp) in enumerate(val_istp)
         font=:bold,
     )
 end
+for (idx_istp, istp) in enumerate(val_istp)
+    idx_col = length(val_istp) + length(profile_fits) * length(val_istp) + length(val_istp) + idx_istp
+    Label(
+        fig_ntfr[1, idx_col];
+        text="FT prfl $istp",
+        tellwidth=false,
+        tellheight=true,
+        halign=:center,
+        font=:bold,
+    )
+end
 
 for (idx_IB, IB) in enumerate(val_IB)
     row = idx_IB + 1
@@ -612,6 +742,7 @@ for (idx_IB, IB) in enumerate(val_IB)
         fig_ntfr,
         row,
         x_dens,
+        x_modl,
         val_istp,
         ntfr2d_mean,
         idx_IB,
@@ -623,6 +754,11 @@ for (idx_IB, IB) in enumerate(val_IB)
         xlims_profile,
         xlims_folded,
         ylims_diag,
+        prfl_modl_fit,
+        prfl_inco,
+        prfl_cohr,
+        xlims_prfl=xlims_prfl_reconstruct,
+        ylims_prfl=ylims_prfl_reconstruct,
         is_bottom_row=idx_IB == length(val_IB),
     )
     rowsize!(fig_ntfr.layout, row, Fixed(105))
@@ -636,6 +772,8 @@ colsize!(fig_ntfr.layout, 5, Fixed(170))
 colsize!(fig_ntfr.layout, 6, Fixed(170))
 colsize!(fig_ntfr.layout, 7, Fixed(170))
 colsize!(fig_ntfr.layout, 8, Fixed(170))
+colsize!(fig_ntfr.layout, 9, Fixed(170))
+colsize!(fig_ntfr.layout, 10, Fixed(170))
 colgap!(fig_ntfr.layout, 1, 8)
 colgap!(fig_ntfr.layout, 2, 16)
 colgap!(fig_ntfr.layout, 3, 0)
@@ -643,10 +781,14 @@ colgap!(fig_ntfr.layout, 4, 14)
 colgap!(fig_ntfr.layout, 5, 0)
 colgap!(fig_ntfr.layout, 6, 14)
 colgap!(fig_ntfr.layout, 7, 0)
+colgap!(fig_ntfr.layout, 8, 14)
+colgap!(fig_ntfr.layout, 9, 0)
 rowgap!(fig_ntfr.layout, 1, 4)
 
 resize_to_layout!(fig_ntfr)
-save(joinpath(path_output, "$(tag)_ntfr2d_table.png"), fig_ntfr; backend=CairoMakie)
-save(joinpath(path_output, "$(tag)_ntfr2d_table.pdf"), fig_ntfr; backend=CairoMakie)
+filename_plot_ntfr = "$(tag)_ntfr2d_table"
+for ext in ("png", "pdf")
+    save(joinpath(path_output, "$filename_plot_ntfr.$ext"), fig_ntfr; backend=CairoMakie)
+end
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
-println("saved $path_plot_ntfr")
+println("saved $(joinpath(path_output, "$filename_plot_ntfr.png"))")

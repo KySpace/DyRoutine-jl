@@ -4,10 +4,10 @@ GLMakie.activate!()
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
 path_demo = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Demo"
-path_output = joinpath(path_demo, "14.DualSS")
+path_output = joinpath(path_demo, "15.DualSS")
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
-step_grid = 0.3 / 50;
+step_grid = 0.25 / 50;
 smwh_roi = (20, 80) .* 50
 
 x_vec, y_vec = smwh_roi |> s -> map(u -> (-u:1:u), s)
@@ -46,10 +46,10 @@ function plot_duet!(axs, dens; max_dens=10)
 end
 fig_duet, axs_duet = set_axis_dual!()
 for (desc, dens) in [
-    ("[uniform bec     ]", gen_dens(; λ_crys=3, σx=3, σy=12, σx_tf=2.4, σy_tf=12, A_tf=1.2, A_halo=4, x0=0, y0=0, φ=0π, η=0.0, γ=1.0, soft=0.3)),
-    ("[roton instable  ]", gen_dens(; λ_crys=3, σx=3, σy=12, σx_tf=2.4, σy_tf=12, A_tf=1.2, A_halo=4, x0=0, y0=0, φ=0π, η=0.3, γ=1.0, soft=0.3)),
-    ("[supersolid      ]", gen_dens(; λ_crys=3, σx=3, σy=12, σx_tf=2.4, σy_tf=12, A_tf=1.2, A_halo=4, x0=0, y0=0, φ=0π, η=1.0, γ=1.2, soft=0.3)),
-    ("[isolated droplet]", gen_dens(; λ_crys=3, σx=3, σy=12, σx_tf=2.4, σy_tf=12, A_tf=1.2, A_halo=4, x0=0, y0=0, φ=0π, η=1.0, γ=2.5, soft=0.3)),
+    ("[uniform bec     ]", gen_dens(; λ_crys=2.5, σx=2.5, σy=10, σx_tf=2.5, σy_tf=10, A_tf=1, A_halo=4, x0=0, y0=0, φ=0π, η=0.0, γ=1.0, soft=0.3)),
+    ("[supersolid      ]", gen_dens(; λ_crys=2.5, σx=2.5, σy=10, σx_tf=2.5, σy_tf=10, A_tf=1, A_halo=4, x0=0, y0=0, φ=0π, η=1.0, γ=1.5, soft=0.3)),
+    ("[isolated droplet]", gen_dens(; λ_crys=2.5, σx=2.5, σy=10, σx_tf=2.5, σy_tf=10, A_tf=1, A_halo=4, x0=0, y0=0, φ=0π, η=1.0, γ=2.5, soft=0.3)),
+    ("[roton instable  ]", gen_dens(; λ_crys=2.5, σx=2.5, σy=10, σx_tf=2.5, σy_tf=10, A_tf=0.3, A_halo=5, x0=0, y0=0, φ=0π, η=1.0, γ=1.2, soft=0.5)),
 ]
     axs_duet |> clear_axes!
     plot_duet!(axs_duet, dens; max_dens=8)
