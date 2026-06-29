@@ -11,12 +11,14 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
-title_anlz = "16.Ntfr2D.Abrr.Skewed"
+title_anlz = "19.Ntfr2D.Abrr.Rotated.SkewedY"
 path_data = joinpath(path_root, "0204_interference", "result", "prfl.h5")
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
 
 tag = "SSNTFR"
+log_step(msg) = (println("  [$tag] $msg"); flush(stdout); time())
+log_done(msg, t_start) = (println("  [$tag] $msg ($(round(time() - t_start; digits=1)) s)"); flush(stdout))
 val_istp = ["162", "164"]
 label_x_dens = "position (μm)"
 label_x_modl = "wavenum (μm⁻¹)"
@@ -61,6 +63,56 @@ function draw_folded_branch!(
     return nothing
 end
 
+function calc_rotated_ellipse(
+    x0::Real,
+    y0::Real,
+    sigma_x::Real,
+    sigma_y::Real,
+    θ::Real;
+    n::Integer=160,
+    scale::Real=1.0,
+)
+    ϕ = range(0, 2π; length=n + 1)
+    cosθ = cos(θ)
+    sinθ = sin(θ)
+    x_axis = @. scale * sigma_x * cos(ϕ)
+    y_axis = @. scale * sigma_y * sin(ϕ)
+    x = @. x0 + cosθ * x_axis - sinθ * y_axis
+    y = @. y0 + sinθ * x_axis + cosθ * y_axis
+    return x, y
+end
+
+function calc_rotated_y_axis(
+    x0::Real,
+    y0::Real,
+    sigma_y::Real,
+    θ::Real;
+    scale_inner::Real=1.08,
+    scale_outer::Real=1.55,
+)
+    cosθ = cos(θ)
+    sinθ = sin(θ)
+    dx = -sinθ
+    dy = cosθ
+    r_inner = scale_inner * sigma_y
+    r_outer = scale_outer * sigma_y
+    x = [
+        x0 + dx * r_inner,
+        x0 + dx * r_outer,
+        NaN,
+        x0 - dx * r_inner,
+        x0 - dx * r_outer,
+    ]
+    y = [
+        y0 + dy * r_inner,
+        y0 + dy * r_outer,
+        NaN,
+        y0 - dy * r_inner,
+        y0 - dy * r_outer,
+    ]
+    return x, y
+end
+
 function draw_density_row!(
     fig::Figure,
     row::Integer,
@@ -96,6 +148,9 @@ function draw_density_row!(
     clrmap_diff = gen_clrmap_posneg_nonlin(0.57 * 360, 0.96 * 360)
 
     for (idx_istp, istp) in enumerate(val_istp)
+        clr_strong = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.95)
+        clr_faint = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.32)
+        clr_center = Oklch(0.62, 0.16, 145)
         ax = Axis(
             fig[row, idx_istp];
             xlabel=is_bottom_row ? label_x_dens : "",
@@ -106,11 +161,31 @@ function draw_density_row!(
         dens2d = ntfr2d_fmt[idx_IB, idx_istp]
         clrmap = gen_clrmap_solo(hue_theme_istp[istp])
         heatmap!(ax, x_dens, x_dens, dens2d; colormap=clrmap, colorrange, rasterize=true)
-        x0, y0 = fit_density[idx_IB, idx_istp].params[1:2]
+        params_density = fit_density[idx_IB, idx_istp].params
+        x0, y0 = params_density[1:2]
+        x_ellipse, y_ellipse = calc_rotated_ellipse(
+            x0,
+            y0,
+            params_density[4],
+            params_density[5],
+            params_density[11],
+        )
+        x_axis_y, y_axis_y = calc_rotated_y_axis(x0, y0, params_density[5], params_density[11])
         vlines!(ax, x0; color=(:black, 0.16), linewidth=0.7)
         hlines!(ax, y0; color=(:black, 0.16), linewidth=0.7)
+        lines!(ax, x_ellipse, y_ellipse; color=(:white, 0.95), linewidth=0.7)
+        lines!(ax, x_axis_y, y_axis_y; color=(:white, 0.95), linewidth=0.7)
         hidexdecorations!(ax; label=is_bottom_row ? false : true, ticklabels=is_bottom_row ? false : true, ticks=is_bottom_row ? false : true, grid=false)
         hideydecorations!(ax; label=idx_istp == 1 ? false : true, ticklabels=false, ticks=false, grid=false)
+        text!(
+            ax,
+            0.05, 0.95;
+            text=@sprintf("x_0=%.3f\ny_0=%.2f", x0, y0),
+            space=:relative,
+            color=(clr_center, 0.9),
+            fontsize=8,
+            align=(:left, :top),
+        )
 
         idx_col_diff = length(val_istp) + idx_istp
         ax_diff = Axis(
@@ -151,9 +226,7 @@ function draw_density_row!(
             narrow_raw = profile_data.narrow_raw
             narrow = profile_data.narrow
             tailess = profile_data.tailess
-            clr_strong = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.95)
-            clr_faint = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.32)
-            clr_center = Oklch(0.62, 0.16, 145)
+            params_fit = profile_data.fit_density.params
             band!(ax_profile, s, zero.(narrow_raw), narrow_raw; color=(clr_center, 0.30))
             lines!(ax_profile, s, profile; color=clr_faint, linewidth=1.0)
             lines!(ax_profile, s, tail; color=(:gray20, 0.55), linewidth=1.0)
@@ -166,7 +239,7 @@ function draw_density_row!(
                 ax_profile,
                 xlims_profile[1] + 0.04 * (xlims_profile[2] - xlims_profile[1]),
                 ylims_profile[2] - 0.08 * (ylims_profile[2] - ylims_profile[1]);
-                text=@sprintf("β=%.3f", profile_data.beta),
+                text=@sprintf("β=%.3f\nα_x=%.2f α_y=%.2f\nθ=%.2f", profile_data.beta, params_fit[9], params_fit[10], params_fit[11]),
                 color=(clr_center, 0.9),
                 fontsize=8,
                 align=(:left, :top),
@@ -242,12 +315,16 @@ x_dens, x_modl, val_IB, ntfr2d_mean, prfl_inco, prfl_cohr = h5open(path_data, "r
 end
 step_modl = median(diff(x_modl))
 
+t_stage = log_step("preparing density/profile ranges")
 colorrange_ntfr = (0.0, maximum(maximum, ntfr2d_mean))
 max_profile = maximum([
     maximum(calc_grid_center_profile(dens2d))
     for dens2d in ntfr2d_mean
 ])
 ylims_profile = (0.0, max_profile * 1.05)
+log_done("prepared density/profile ranges", t_stage)
+
+t_stage = log_step("fitting centered 2D NTFR densities")
 fit_centered = fit_centered_density_profiles(
     x_dens,
     ntfr2d_mean,
@@ -258,9 +335,15 @@ fit_centered = fit_centered_density_profiles(
     sigma_wide_min=fit_sigma_wide_min,
     maxiter=fit_maxiter_2d,
     model_center,
+    log_tag=tag,
+    val_IB,
+    val_istp,
 )
+log_done("fit centered 2D NTFR densities", t_stage)
 fit_density = fit_centered.fit_density
 profile_fits = fit_centered.profile_fits
+
+t_stage = log_step("reconstructing fitted densities and modulation profiles")
 ntfr2d_fit = calc_reconstructed_ntfr2d(x_dens, fit_density)
 ntfr2d_diff = map(-, ntfr2d_mean, ntfr2d_fit)
 max_abs_diff = maximum(maximum(abs, diff2d) for diff2d in ntfr2d_diff)
@@ -272,6 +355,9 @@ prfl_modl_fit = calc_reconstructed_prfl_modl(ntfr2d_fit, smwh_reconstruct; step_
 length(x_modl) == length(prfl_modl_fit[1]) || throw(DimensionMismatch(
     "x_modl length $(length(x_modl)) must match reconstructed profile length $(length(prfl_modl_fit[1])).",
 ))
+log_done("reconstructed fitted densities and modulation profiles", t_stage)
+
+t_stage = log_step("building plot ranges")
 min_tailess_profile = minimum(
     minimum(skipmissing(replace(profile_data.tailess, NaN => missing)))
     for fit in profile_fits
@@ -296,12 +382,14 @@ ylims_profile_centered = (
     min(0.0, min_tailess_profile * 1.05),
     max_original_profile * 1.05,
 )
+log_done("built plot ranges", t_stage)
 
+t_stage = log_step("building figure axes and labels")
 fig_ntfr = Figure(fontsize=14)
 Label(
     fig_ntfr[0, 1:12];
     text=@sprintf(
-        "%s 2D NTFR mean densities, fit residuals with per-panel scale, cocenter Gaussian tail + Gaussian peak |> (_ + β_²) fit, mask > %.1g, σ_wide ≥ %.0f μm, common max %.3g, max residual ±%.3g, Δk=%.5f",
+        "%s 2D NTFR mean densities, fit residuals with per-panel scale, cocenter Gaussian tail + rotated narrow peak |> (_ + βN²) fit, mask > %.1g, σ_wide ≥ %.0f μm, common max %.3g, max residual ±%.3g, Δk=%.5f",
         tag,
         fit_threshold_log_2d,
         fit_sigma_wide_min,
@@ -356,8 +444,12 @@ for (idx_istp, istp) in enumerate(val_istp)
         font=:bold,
     )
 end
+log_done("built figure axes and labels", t_stage)
 
+t_stage = log_step("plotting density rows")
 for (idx_IB, IB) in enumerate(val_IB)
+    println("  [$tag] plotting IB_idx=$idx_IB IB=$IB")
+    flush(stdout)
     row = idx_IB + 1
     draw_density_row!(
         fig_ntfr,
@@ -386,6 +478,7 @@ for (idx_IB, IB) in enumerate(val_IB)
     )
     rowsize!(fig_ntfr.layout, row, Fixed(105))
 end
+log_done("plotted density rows", t_stage)
 
 colsize!(fig_ntfr.layout, 1, Fixed(105))
 colsize!(fig_ntfr.layout, 2, Fixed(105))
@@ -414,8 +507,11 @@ rowgap!(fig_ntfr.layout, 1, 4)
 
 resize_to_layout!(fig_ntfr)
 filename_plot_ntfr = "$(tag)_ntfr2d_table"
+t_stage = log_step("saving figure outputs")
 for ext in ("png", "pdf")
     save(joinpath(path_output, "$filename_plot_ntfr.$ext"), fig_ntfr; backend=CairoMakie)
 end
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
+cp(joinpath(@__DIR__, "..", "src", "modlntfr.jl"), joinpath(path_output, "modlntfr.jl"); force=true)
+log_done("saved figure outputs", t_stage)
 println("saved $(joinpath(path_output, "$filename_plot_ntfr.png"))")
