@@ -210,7 +210,9 @@ function double_gaussian_disk_2d_model_abrr(coords, params)
     narrow_x = gauss_skew_com_unit(x_rot, (sigma_x_narrow, skew_x))
     narrow_y = gauss_skew_com_unit(y_rot, (sigma_y_narrow, skew_y))
     narrow = @. A_narrow * narrow_x * narrow_y
-    tail = @. A_wide * exp(-r2 / (2 * sigma_wide^2))
+    tail_x = gauss_skew_com_unit(x_rot, (sigma_wide, skew_x))
+    tail_y = gauss_skew_com_unit(y_rot, (sigma_wide, skew_y))
+    tail = @. A_wide * tail_x * tail_y
     return @. tail + narrow + beta * narrow^2
 end
 
@@ -349,7 +351,9 @@ function calc_centered_cross_profile(
     else
         throw(ArgumentError("axis must be :column or :row, got $axis."))
     end
-    tail_raw = @. A_wide * exp(-s_profile^2 / (2 * sigma_wide^2))
+    tail_x = gauss_skew_com_unit(x_rot, (sigma_wide, skew_x))
+    tail_y = gauss_skew_com_unit(y_rot, (sigma_wide, skew_y))
+    tail_raw = @. A_wide * tail_x * tail_y
     narrow_x = gauss_skew_com_unit(x_rot, (sigma_x_narrow, skew_x))
     narrow_y = gauss_skew_com_unit(y_rot, (sigma_y_narrow, skew_y))
     narrow_raw = @. A_narrow * narrow_x * narrow_y

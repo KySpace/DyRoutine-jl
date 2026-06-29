@@ -11,7 +11,7 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
-title_anlz = "19.Ntfr2D.Abrr.Rotated.SkewedY"
+title_anlz = "20.Ntfr2D.Abrr.Rotated.SkewedYWithTail"
 path_data = joinpath(path_root, "0204_interference", "result", "prfl.h5")
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
@@ -227,6 +227,10 @@ function draw_density_row!(
             narrow = profile_data.narrow
             tailess = profile_data.tailess
             params_fit = profile_data.fit_density.params
+            text_fit =
+                profile_data.axis == :column ?
+                @sprintf("β=%.3f\nσ_y=%.2f α_y=%.2f\nθ=%.2f", profile_data.beta, params_fit[5], params_fit[10], params_fit[11]) :
+                @sprintf("β=%.3f\nσ_x=%.2f α_x=%.2f\nθ=%.2f", profile_data.beta, params_fit[4], params_fit[9], params_fit[11])
             band!(ax_profile, s, zero.(narrow_raw), narrow_raw; color=(clr_center, 0.30))
             lines!(ax_profile, s, profile; color=clr_faint, linewidth=1.0)
             lines!(ax_profile, s, tail; color=(:gray20, 0.55), linewidth=1.0)
@@ -239,7 +243,7 @@ function draw_density_row!(
                 ax_profile,
                 xlims_profile[1] + 0.04 * (xlims_profile[2] - xlims_profile[1]),
                 ylims_profile[2] - 0.08 * (ylims_profile[2] - ylims_profile[1]);
-                text=@sprintf("β=%.3f\nα_x=%.2f α_y=%.2f\nθ=%.2f", profile_data.beta, params_fit[9], params_fit[10], params_fit[11]),
+                text=text_fit,
                 color=(clr_center, 0.9),
                 fontsize=8,
                 align=(:left, :top),
