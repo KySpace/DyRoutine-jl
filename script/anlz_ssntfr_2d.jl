@@ -566,9 +566,8 @@ function draw_density_row!(
 end
 
 function tucky1d(sml; alpha=0.2)
-    edge = floor(alpha * sml)
-    [abs(x) |> x -> x < edge ? 1.0 : (1 - cos(π * x / sml)) / 2
-     for x in -sml:sml]
+    [abs(x) - 1 + alpha |> x -> x < 0 ? 1.0 : (1 + cos(π * x / alpha)) / 2
+     for x in (-sml:sml)./sml]
 end
 
 function calc_prfl_modl_1d(dens, smwh; step_modl=1)
