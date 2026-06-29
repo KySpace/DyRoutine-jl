@@ -2,6 +2,7 @@ using CairoMakie
 using FFTW
 using HDF5
 using ImageFiltering
+using JLD2
 using LinearAlgebra
 using LsqFit
 using Printf
@@ -11,7 +12,7 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
-title_anlz = "20.Ntfr2D.Abrr.Rotated.SkewedYWithTail"
+title_anlz = "22.Ntfr2D.Abrr.Rotated.SeprSkewedYWithTail.LargeIter"
 path_data = joinpath(path_root, "0204_interference", "result", "prfl.h5")
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
@@ -26,7 +27,7 @@ r_tail_min_profile = 20.0
 range_r_tail_fit = (17.0, 37.0)
 fit_center_bound = 12.0
 fit_stride_2d = 3
-fit_maxiter_2d = 10_000
+fit_maxiter_2d = parse(Int, get(ENV, "SSNTFR_2D_MAXITER", "400000"))
 fit_threshold_log_2d = 1.5e-1
 fit_sigma_wide_min = 15.0
 model_center = :gaussian
@@ -61,6 +62,155 @@ function draw_folded_branch!(
         linestyle,
     )
     return nothing
+end
+
+function pack_ntfr2d_fit(
+    ntfr2d_fit::AbstractMatrix{<:AbstractMatrix},
+    val_IB::AbstractVector,
+    val_istp::AbstractVector,
+)
+    size(ntfr2d_fit) == (length(val_IB), length(val_istp)) || throw(DimensionMismatch(
+        "ntfr2d_fit size $(size(ntfr2d_fit)) must match (IB, istp) $((length(val_IB), length(val_istp))).",
+    ))
+    wh = size(ntfr2d_fit[1, 1])
+    ntfr2d_fit_packed = Array{Float64}(undef, wh..., length(val_istp), length(val_IB))
+    for idx_IB in eachindex(val_IB), idx_istp in eachindex(val_istp)
+        size(ntfr2d_fit[idx_IB, idx_istp]) == wh || throw(DimensionMismatch(
+            "ntfr2d_fit[$idx_IB, $idx_istp] size $(size(ntfr2d_fit[idx_IB, idx_istp])) must match $wh.",
+        ))
+        ntfr2d_fit_packed[:, :, idx_istp, idx_IB] .= ntfr2d_fit[idx_IB, idx_istp]
+    end
+    return ntfr2d_fit_packed
+end
+
+function pack_fit_density_results(fit_density::AbstractMatrix, val_IB::AbstractVector, val_istp::AbstractVector)
+    size(fit_density) == (length(val_IB), length(val_istp)) || throw(DimensionMismatch(
+        "fit_density size $(size(fit_density)) must match (IB, istp) $((length(val_IB), length(val_istp))).",
+    ))
+    n_params = length(fit_density[1, 1].params)
+    params = Array{Float64}(undef, n_params, length(val_istp), length(val_IB))
+    rss_rel = Matrix{Float64}(undef, length(val_istp), length(val_IB))
+    maxiter_reached = Matrix{Bool}(undef, length(val_istp), length(val_IB))
+    for idx_IB in eachindex(val_IB), idx_istp in eachindex(val_istp)
+        fit = fit_density[idx_IB, idx_istp]
+        length(fit.params) == n_params || throw(DimensionMismatch(
+            "fit_density[$idx_IB, $idx_istp] has $(length(fit.params)) params, expected $n_params.",
+        ))
+        params[:, idx_istp, idx_IB] .= fit.params
+        rss_rel[idx_istp, idx_IB] = fit.rss_rel
+        maxiter_reached[idx_istp, idx_IB] = fit.maxiter_reached
+    end
+    return (; params, rss_rel, maxiter_reached)
+end
+
+function build_model_results_payload(;
+    x_dens,
+    x_modl,
+    val_IB,
+    val_istp,
+    fit_density,
+    ntfr2d_fit,
+    ntfr2d_diff,
+    prfl_modl_fit,
+    fit_maxiter_2d,
+    fit_threshold_log_2d,
+    fit_sigma_wide_min,
+    fit_stride_2d,
+    fit_center_bound,
+    smwh_reconstruct,
+    step_modl,
+)
+    fit_results = pack_fit_density_results(fit_density, val_IB, val_istp)
+    ntfr2d_fit_packed = pack_ntfr2d_fit(ntfr2d_fit, val_IB, val_istp)
+    ntfr2d_diff_packed = pack_ntfr2d_fit(ntfr2d_diff, val_IB, val_istp)
+    prfl_modl_fit_packed = pack_prfl_modl_fit(prfl_modl_fit, x_modl, val_IB, val_istp)
+    meta = (;
+        fit_param_names=[
+            "x0",
+            "y0",
+            "A_narrow",
+            "sigma_x_narrow",
+            "sigma_y_narrow",
+            "A_wide",
+            "sigma_wide",
+            "beta",
+            "skew_x",
+            "skew_y_narrow",
+            "skew_y_tail",
+            "theta",
+        ],
+        dim_fit_params="param,istp,IB",
+        dim_fit_rss_rel="istp,IB",
+        dim_ntfr2d_fit="x_dens,y_dens,istp,IB",
+        dim_ntfr2d_diff="x_dens,y_dens,istp,IB",
+        dim_prfl_modl_fit="x_modl,istp,IB",
+        fit_maxiter_2d,
+        fit_threshold_log_2d,
+        fit_sigma_wide_min,
+        fit_stride_2d,
+        fit_center_bound,
+        smwh_reconstruct,
+        step_modl,
+    )
+    return (;
+        x_dens,
+        x_modl,
+        val_IB,
+        val_istp=String.(val_istp),
+        fit_params=fit_results.params,
+        fit_rss_rel=fit_results.rss_rel,
+        fit_maxiter_reached=fit_results.maxiter_reached,
+        ntfr2d_fit=ntfr2d_fit_packed,
+        ntfr2d_diff=ntfr2d_diff_packed,
+        prfl_modl_fit=prfl_modl_fit_packed,
+        meta,
+    )
+end
+
+function save_model_results_h5(path_results::AbstractString, payload)
+    h5open(path_results, "w") do file
+        write(file, "x_dens", payload.x_dens)
+        write(file, "x_modl", payload.x_modl)
+        write(file, "val_IB", payload.val_IB)
+        write(file, "val_istp", payload.val_istp)
+        write(file, "fit_params", payload.fit_params)
+        write(file, "fit_rss_rel", payload.fit_rss_rel)
+        write(file, "fit_maxiter_reached", payload.fit_maxiter_reached)
+        write(file, "ntfr2d_fit", payload.ntfr2d_fit)
+        write(file, "ntfr2d_diff", payload.ntfr2d_diff)
+        write(file, "prfl_modl_fit", payload.prfl_modl_fit)
+        attrs(file)["fit_param_names"] = join(payload.meta.fit_param_names, ",")
+        attrs(file)["dim_fit_params"] = payload.meta.dim_fit_params
+        attrs(file)["dim_fit_rss_rel"] = payload.meta.dim_fit_rss_rel
+        attrs(file)["dim_ntfr2d_fit"] = payload.meta.dim_ntfr2d_fit
+        attrs(file)["dim_ntfr2d_diff"] = payload.meta.dim_ntfr2d_diff
+        attrs(file)["dim_prfl_modl_fit"] = payload.meta.dim_prfl_modl_fit
+        attrs(file)["fit_maxiter_2d"] = payload.meta.fit_maxiter_2d
+        attrs(file)["fit_threshold_log_2d"] = payload.meta.fit_threshold_log_2d
+        attrs(file)["fit_sigma_wide_min"] = payload.meta.fit_sigma_wide_min
+        attrs(file)["fit_stride_2d"] = payload.meta.fit_stride_2d
+        attrs(file)["fit_center_bound"] = payload.meta.fit_center_bound
+        attrs(file)["smwh_reconstruct"] = collect(payload.meta.smwh_reconstruct)
+        attrs(file)["step_modl"] = payload.meta.step_modl
+    end
+    return path_results
+end
+
+function save_model_results_jld2(path_results::AbstractString, payload)
+    JLD2.jldopen(path_results, "w") do file
+        file["x_dens"] = payload.x_dens
+        file["x_modl"] = payload.x_modl
+        file["val_IB"] = payload.val_IB
+        file["val_istp"] = payload.val_istp
+        file["fit_params"] = payload.fit_params
+        file["fit_rss_rel"] = payload.fit_rss_rel
+        file["fit_maxiter_reached"] = payload.fit_maxiter_reached
+        file["ntfr2d_fit"] = payload.ntfr2d_fit
+        file["ntfr2d_diff"] = payload.ntfr2d_diff
+        file["prfl_modl_fit"] = payload.prfl_modl_fit
+        file["meta"] = payload.meta
+    end
+    return path_results
 end
 
 function calc_rotated_ellipse(
@@ -170,9 +320,9 @@ function draw_density_row!(
             y0,
             params_density[4],
             params_density[5],
-            params_density[11],
+            params_density[12],
         )
-        x_axis_y, y_axis_y = calc_rotated_y_axis(x0, y0, params_density[5], params_density[11])
+        x_axis_y, y_axis_y = calc_rotated_y_axis(x0, y0, params_density[5], params_density[12])
         vlines!(ax, x0; color=(:black, 0.16), linewidth=0.7)
         hlines!(ax, y0; color=(:black, 0.16), linewidth=0.7)
         lines!(ax, x_ellipse, y_ellipse; color=(:white, 0.95), linewidth=0.7)
@@ -231,8 +381,8 @@ function draw_density_row!(
             params_fit = profile_data.fit_density.params
             text_fit =
                 profile_data.axis == :column ?
-                @sprintf("β=%.3f\nσ_y=%.2f α_y=%.2f\nθ=%.2f", profile_data.beta, params_fit[5], params_fit[10], params_fit[11]) :
-                @sprintf("β=%.3f\nσ_x=%.2f α_x=%.2f\nθ=%.2f", profile_data.beta, params_fit[4], params_fit[9], params_fit[11])
+                @sprintf("β=%.3f\nσ_y=%.2f α_y,N=%.2f\nα_y,T=%.2f θ=%.2f", profile_data.beta, params_fit[5], params_fit[10], params_fit[11], params_fit[12]) :
+                @sprintf("β=%.3f\nσ_x=%.2f α_x=%.2f\nθ=%.2f", profile_data.beta, params_fit[4], params_fit[9], params_fit[12])
             band!(ax_profile, s, zero.(narrow_raw), narrow_raw; color=(clr_center, 0.30))
             lines!(ax_profile, s, profile; color=clr_faint, linewidth=1.0)
             lines!(ax_profile, s, tail; color=(:gray20, 0.55), linewidth=1.0)
@@ -544,3 +694,31 @@ cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 cp(joinpath(@__DIR__, "..", "src", "modlntfr.jl"), joinpath(path_output, "modlntfr.jl"); force=true)
 log_done("saved figure outputs", t_stage)
 println("saved $(joinpath(path_output, "$filename_plot_ntfr.png"))")
+
+filename_model_results = "$(tag)_ntfr2d_model_results.h5"
+filename_model_results_jld2 = "$(tag)_ntfr2d_model_results.jld2"
+path_model_results = joinpath(path_output, filename_model_results)
+path_model_results_jld2 = joinpath(path_output, filename_model_results_jld2)
+t_stage = log_step("saving model outputs")
+payload_model_results = build_model_results_payload(;
+    x_dens,
+    x_modl,
+    val_IB,
+    val_istp,
+    fit_density,
+    ntfr2d_fit,
+    ntfr2d_diff,
+    prfl_modl_fit,
+    fit_maxiter_2d,
+    fit_threshold_log_2d,
+    fit_sigma_wide_min,
+    fit_stride_2d,
+    fit_center_bound,
+    smwh_reconstruct,
+    step_modl,
+)
+save_model_results_h5(path_model_results, payload_model_results)
+save_model_results_jld2(path_model_results_jld2, payload_model_results)
+log_done("saved model outputs", t_stage)
+println("saved $path_model_results")
+println("saved $path_model_results_jld2")
