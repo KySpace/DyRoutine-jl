@@ -1,15 +1,16 @@
 using CairoMakie
+using FFTW
 using HDF5
+using ImageFiltering
 using LinearAlgebra
-using LsqFit
 using Printf
 using Statistics
 
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
-include(joinpath(@__DIR__, "..", "src", "fitmodels.jl"))
+include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
-title_anlz = "02.PrflStacked"
+title_anlz = "14.IncoCohrModlNtfrTail"
 path_data = joinpath(path_root, "0204_interference", "result", "prfl.h5")
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
@@ -20,31 +21,18 @@ val_istp = ["162", "164"]
 label_x_modl = "wavenum (μm⁻¹)"
 range_x_plot = (0.0, 1.2)
 range_x_colorrange = (0.1, 0.6)
-range_x_fit_inco = (0.0, 0.6)
-range_x_fit_cohr_tail = (0.1, 0.6)
+r_tail_min_profile = 20.0
+fit_center_bound = 12.0
+fit_stride_2d = 3
+fit_maxiter_2d = 10_000
+fit_threshold_log_2d = 1.5e-1
+fit_sigma_wide_min = 15.0
+model_center = :gaussian
+smwh_reconstruct = (150, 150)
 clr_IB_endpoints = (
     low=(l=0.34, c=0.10, h=255.0),
     high=(l=0.72, c=0.18, h=25.0),
 )
-
-function orient_prfl_axes(
-    prfl::AbstractArray{<:Real,3},
-    x_modl::AbstractVector{<:Real},
-    val_IB::AbstractVector{<:Real},
-    val_istp::AbstractVector{<:AbstractString},
-)
-    n_x = length(x_modl)
-    n_IB = length(val_IB)
-    n_istp = length(val_istp)
-
-    size(prfl) == (n_x, n_istp, n_IB) && return prfl
-    size(prfl) == (n_IB, n_istp, n_x) && return permutedims(prfl, (3, 2, 1))
-
-    throw(DimensionMismatch(
-        "profile size $(size(prfl)) must be either (x_modl, istp, IB) " *
-        "$((n_x, n_istp, n_IB)) or (IB, istp, x_modl) $((n_IB, n_istp, n_x)).",
-    ))
-end
 
 function calc_prfl_colorrange(
     prfl::AbstractArray{<:Real,3},
@@ -96,80 +84,22 @@ function gen_clrmap_IB(clr_endpoints::NamedTuple; n::Integer=256, alpha=1.0)
     ]
 end
 
-function calc_inco_tail_fits(
-    x_modl::AbstractVector{<:Real},
-    prfl_inco::AbstractArray{<:Real,3};
-    range_x_fit::Tuple{<:Real,<:Real},
+function calc_modl_tail(
+    prfl::AbstractArray{<:Real,3},
+    prfl_modl_fit::AbstractArray{<:Real,3},
 )
-    mask_fit = select_x_range(x_modl, range_x_fit)
-    k_fit = Float64.(x_modl[mask_fit])
-    n_IB = size(prfl_inco, 3)
-    n_istp = size(prfl_inco, 2)
-    fit_inco = Array{NamedTuple}(undef, n_IB, n_istp)
-    prfl_inco_tailess = similar(prfl_inco, Float64)
-    comp_center = similar(prfl_inco, Float64)
-    comp_tail = similar(prfl_inco, Float64)
-    comp_side = similar(prfl_inco, Float64)
-
-    for idx_IB in 1:n_IB, idx_istp in 1:n_istp
-        y_fit = Float64.(@view prfl_inco[mask_fit, idx_istp, idx_IB])
-        amp_main = max(maximum(y_fit), eps(Float64))
-        idx_side_hint = findmax(y_fit .* (k_fit .> 0.08))[2]
-        p_hint = clamp(k_fit[idx_side_hint], 0.12, 0.30)
-        p_init = [amp_main, 0.045, max(y_fit[idx_side_hint] / 2, 1e-4), 0.05, p_hint, max(y_fit[end], 1e-4), 0.18]
-        p_lower = [0.0, 0.005, 0.0, 0.010, 0.06, 0.0, 0.02]
-        p_upper = [Inf, 0.20, Inf, 0.180, 0.45, Inf, 1.00]
-        fit = curve_fit(fit_prfl_modl_twinpeak_decay_1d_model, k_fit, y_fit, p_init; lower=p_lower, upper=p_upper, maxIter=20_000)
-        params = coef(fit)
-        rss_rel = norm(residuals(fit)) / max(norm(y_fit), eps(Float64))
-
-        center = @. params[1] * exp(-x_modl^2 / (2 * params[2]^2))
-        side = @. params[3] * exp(-(x_modl - params[5])^2 / (2 * params[4]^2))
-        tail = fit_prfl_modl_twinpeak_decay_1d_tail(x_modl, params)
-        comp_center[:, idx_istp, idx_IB] .= center
-        comp_side[:, idx_istp, idx_IB] .= side
-        comp_tail[:, idx_istp, idx_IB] .= tail
-        prfl_inco_tailess[:, idx_istp, idx_IB] .= @view(prfl_inco[:, idx_istp, idx_IB]) .- center .- tail
-        fit_inco[idx_IB, idx_istp] = (; params, rss_rel)
+    size(prfl) == size(prfl_modl_fit) || throw(DimensionMismatch(
+        "profile size $(size(prfl)) must match prfl_modl_fit size $(size(prfl_modl_fit)).",
+    ))
+    prfl_tailess = similar(prfl, Float64)
+    for idx_IB in axes(prfl, 3), idx_istp in axes(prfl, 2)
+        prfl_tailess[:, idx_istp, idx_IB] .=
+            @view(prfl[:, idx_istp, idx_IB]) .- @view(prfl_modl_fit[:, idx_istp, idx_IB])
     end
-
-    return (; fit_inco, prfl_inco_tailess, comp_center, comp_side, comp_tail)
-end
-
-function fit_log_prfl_modl_twinpeak_decay_1d_model(k, params)
-    return log.(max.(fit_prfl_modl_twinpeak_decay_1d_model(k, params), eps(Float64)))
-end
-
-function fit_log_prfl_modl_sidepeak_decay_1d_model(k, params)
-    return log.(max.(fit_prfl_modl_sidepeak_decay_1d_model(k, params), eps(Float64)))
-end
-
-function fit_common_cohr_tail(
-    x_modl::AbstractVector{<:Real},
-    prfl_cohr::AbstractArray{<:Real,3};
-    range_x_fit::Tuple{<:Real,<:Real},
-)
-    mask_fit = select_x_range(x_modl, range_x_fit)
-    k_fit = Float64.(x_modl[mask_fit])
-    prfl_total_avg = vec(mean(prfl_cohr; dims=(2, 3)))
-    y_fit = log.(max.(Float64.(prfl_total_avg[mask_fit]), eps(Float64)))
-    mask_side_hint = (k_fit .> 0.16) .& (k_fit .< 0.34)
-    idx_side_hint = findmax(ifelse.(mask_side_hint, y_fit, -Inf))[2]
-    p_hint = clamp(k_fit[idx_side_hint], 0.20, 0.30)
-    y_fit_linear = Float64.(prfl_total_avg[mask_fit])
-    p_init = [max(y_fit_linear[idx_side_hint], 1e-4), 0.05, p_hint, max(y_fit_linear[end], 1e-5), 0.18]
-    p_lower = [0.0, 0.010, 0.16, 0.0, 0.02]
-    p_upper = [Inf, 0.180, 0.36, Inf, 1.00]
-    fit = curve_fit(fit_log_prfl_modl_sidepeak_decay_1d_model, k_fit, y_fit, p_init; lower=p_lower, upper=p_upper, maxIter=20_000)
-    params = coef(fit)
-    tail = fit_prfl_modl_sidepeak_decay_1d_tail(x_modl, params)
-    side = @. params[1] * exp(-(x_modl - params[3])^2 / (2 * params[2]^2))
-    prfl_cohr_tailess = similar(prfl_cohr, Float64)
-    for idx_IB in axes(prfl_cohr, 3), idx_istp in axes(prfl_cohr, 2)
-        prfl_cohr_tailess[:, idx_istp, idx_IB] .= @view(prfl_cohr[:, idx_istp, idx_IB]) .- tail
-    end
-    rss_log_rel = norm(residuals(fit)) / max(norm(y_fit), eps(Float64))
-    return (; params, rss_log_rel, tail, side, prfl_total_avg, prfl_cohr_tailess)
+    prfl_total_avg = vec(mean(prfl; dims=(2, 3)))
+    tail = vec(mean(prfl_modl_fit; dims=(2, 3)))
+    tail_istp_avg = dropdims(mean(prfl_modl_fit; dims=3); dims=3)
+    return (; prfl_modl_fit, tail, tail_istp_avg, prfl_total_avg, prfl_tailess)
 end
 
 function build_profile_variant_arrays(prfl_inco, prfl_cohr, prfl_inco_tailess, prfl_cohr_tailess)
@@ -300,8 +230,7 @@ function draw_cohr_average_lines!(
         )
         axs[idx_istp] = ax
         prfl_istp_avg = vec(mean(@view(prfl_cohr[:, idx_istp, :]); dims=2))
-        band!(ax, x_modl, tail_cohr.tail, tail_cohr.tail .+ tail_cohr.side; color=(:mediumseagreen, 0.30))
-        lines!(ax, x_modl, tail_cohr.tail; color=(:seagreen4, 0.75), linewidth=2.2)
+        lines!(ax, x_modl, @view(tail_cohr.tail_istp_avg[:, idx_istp]); color=(:seagreen4, 0.80), linewidth=2.2)
         lines!(ax, x_modl, prfl_total_avg; color=(:gray30, 0.45), linewidth=3.0)
         lines!(ax, x_modl, prfl_istp_avg; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.95), linewidth=2.2)
         idx_istp == 1 ? xlims!(ax, reverse(range_x_plot)) : xlims!(ax, range_x_plot)
@@ -330,30 +259,6 @@ function draw_tail_diagnostic_side!(
     return ax
 end
 
-function draw_inco_tail_diagnostic_side!(
-    ax::Axis,
-    x_modl::AbstractVector{<:Real},
-    y_original::AbstractVector{<:Real},
-    center::AbstractVector{<:Real},
-    side::AbstractVector{<:Real},
-    tail::AbstractVector{<:Real},
-    idx_istp::Integer;
-    range_x_plot::Tuple{<:Real,<:Real},
-    ylims,
-    color_original,
-)
-    base = center .+ tail
-    side_only = y_original .- base
-    band!(ax, x_modl, zero.(tail), tail; color=(:gray55, 0.22))
-    band!(ax, x_modl, tail, base; color=(:gray25, 0.25))
-    band!(ax, x_modl, base, base .+ side; color=(:mediumseagreen, 0.28))
-    lines!(ax, x_modl, y_original; color=color_original, linewidth=1.6)
-    lines!(ax, x_modl, side_only; color=(:seagreen4, 0.95), linewidth=1.0)
-    idx_istp == 1 ? xlims!(ax, reverse(range_x_plot)) : xlims!(ax, range_x_plot)
-    ylims!(ax, ylims)
-    return ax
-end
-
 function draw_tail_diagnostic_duet!(
     fig::Figure,
     row::Integer,
@@ -364,9 +269,6 @@ function draw_tail_diagnostic_duet!(
     idx_IB::Integer,
     prfl_original::AbstractArray{<:Real,3},
     prfl_tailess::AbstractArray{<:Real,3};
-    comp_center=nothing,
-    comp_side=nothing,
-    comp_tail=nothing,
     range_x_plot::Tuple{<:Real,<:Real},
     ylims,
     is_bottom_row::Bool=false,
@@ -384,56 +286,58 @@ function draw_tail_diagnostic_duet!(
         color_original = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.35)
         color_tailess = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.92)
 
-        if isnothing(comp_tail)
-            draw_tail_diagnostic_side!(
-                ax,
-                x_modl,
-                @view(prfl_original[:, idx_istp, idx_IB]),
-                @view(prfl_tailess[:, idx_istp, idx_IB]),
-                idx_istp;
-                range_x_plot,
-                ylims,
-                color_original,
-                color_tailess,
-            )
-        else
-            draw_inco_tail_diagnostic_side!(
-                ax,
-                x_modl,
-                @view(prfl_original[:, idx_istp, idx_IB]),
-                @view(comp_center[:, idx_istp, idx_IB]),
-                @view(comp_side[:, idx_istp, idx_IB]),
-                @view(comp_tail[:, idx_istp, idx_IB]),
-                idx_istp;
-                range_x_plot,
-                ylims,
-                color_original,
-            )
-        end
+        draw_tail_diagnostic_side!(
+            ax,
+            x_modl,
+            @view(prfl_original[:, idx_istp, idx_IB]),
+            @view(prfl_tailess[:, idx_istp, idx_IB]),
+            idx_istp;
+            range_x_plot,
+            ylims,
+            color_original,
+            color_tailess,
+        )
         !is_bottom_row && hidexdecorations!(ax; grid=false)
     end
     colgap!(fig.layout, col_start, 0)
     return axs
 end
 
-x_modl, val_IB, prfl_inco, prfl_cohr = h5open(path_data, "r") do file
+x_dens, x_modl, val_IB, ntfr2d_mean, prfl_inco, prfl_cohr = h5open(path_data, "r") do file
+    x_dens = read(file["x_dens"])
     x_modl = read(file["x_modl"])
     val_IB = read(file["val_IB"])
+    ntfr2d_mean = orient_ntfr2d_axes(read(file["ntfr2d_mean"]), x_dens, val_IB, val_istp)
     prfl_inco = orient_prfl_axes(read(file["prfl_inco"]), x_modl, val_IB, val_istp)
     prfl_cohr = orient_prfl_axes(read(file["prfl_cohr"]), x_modl, val_IB, val_istp)
-    return x_modl, val_IB, prfl_inco, prfl_cohr
+    return x_dens, x_modl, val_IB, ntfr2d_mean, prfl_inco, prfl_cohr
 end
+step_modl = median(diff(x_modl))
 
 colorrange_inco = calc_prfl_colorrange(prfl_inco, x_modl, range_x_colorrange)
 colorrange_cohr = calc_prfl_colorrange(prfl_cohr, x_modl, range_x_colorrange)
 
-tail_inco = calc_inco_tail_fits(x_modl, prfl_inco; range_x_fit=range_x_fit_inco)
-tail_cohr = fit_common_cohr_tail(x_modl, prfl_cohr; range_x_fit=range_x_fit_cohr_tail)
+fit_modl_ntfr = fit_reconstructed_prfl_modl(
+    x_dens,
+    ntfr2d_mean,
+    smwh_reconstruct;
+    step_modl,
+    r_tail_min=r_tail_min_profile,
+    center_bound=fit_center_bound,
+    stride=fit_stride_2d,
+    threshold=fit_threshold_log_2d,
+    sigma_wide_min=fit_sigma_wide_min,
+    maxiter=fit_maxiter_2d,
+    model_center,
+)
+prfl_modl_fit = pack_prfl_modl_fit(fit_modl_ntfr.prfl_modl_fit, x_modl, val_IB, val_istp)
+tail_inco = calc_modl_tail(prfl_inco, prfl_modl_fit)
+tail_cohr = calc_modl_tail(prfl_cohr, prfl_modl_fit)
 prfl_tail = build_profile_variant_arrays(
     prfl_inco,
     prfl_cohr,
-    tail_inco.prfl_inco_tailess,
-    tail_cohr.prfl_cohr_tailess,
+    tail_inco.prfl_tailess,
+    tail_cohr.prfl_tailess,
 )
 
 fig_prfl = Figure(size=(980, 760))
@@ -547,10 +451,9 @@ fig_tail = Figure(size=(1500, 2250), fontsize=14)
 Label(
     fig_tail[0, 1:4];
     text=@sprintf(
-        "%s profile tail removal, inco fit range %.1f-%.1f, cohr common tail range %.1f-%.1f",
+        "%s profile tail removal, inco/cohr tails from reconstructed 2D NTFR model, Δk=%.5f",
         tag,
-        range_x_fit_inco...,
-        range_x_fit_cohr_tail...
+        step_modl,
     ),
     tellwidth=false,
     tellheight=true,
@@ -575,10 +478,7 @@ for (idx_IB, IB) in enumerate(val_IB)
         "profile",
         idx_IB,
         prfl_inco,
-        tail_inco.prfl_inco_tailess;
-        comp_center=tail_inco.comp_center,
-        comp_side=tail_inco.comp_side,
-        comp_tail=tail_inco.comp_tail,
+        tail_inco.prfl_tailess;
         range_x_plot,
         ylims=ylim_inco_tail,
         is_bottom_row=idx_IB == length(val_IB),
@@ -592,7 +492,7 @@ for (idx_IB, IB) in enumerate(val_IB)
         "profile",
         idx_IB,
         prfl_cohr,
-        tail_cohr.prfl_cohr_tailess;
+        tail_cohr.prfl_tailess;
         range_x_plot,
         ylims=ylim_cohr_tail,
         is_bottom_row=idx_IB == length(val_IB),
@@ -619,7 +519,7 @@ Label(
 )
 Label(
     fig_cohr_avg[1, 1:2];
-    text="per-istp mean over IB, gray: total mean, green: fitted tail + sidepeak",
+    text="per-istp mean over IB, gray: total mean, green: reconstructed 2D NTFR model profile",
     tellwidth=false,
     tellheight=true,
     halign=:center,

@@ -111,16 +111,6 @@ function set_pca_mode_axes_profile_duet!(gl::GridLayout)
     return Dict("mode" => [ax_mode_l, ax_mode_r])
 end
 
-function gen_clrmap_posneg_nonlin(hue_pos, hue_neg; thres_alpha=0.6, alpha_base=0.2)
-    return [
-        begin
-            alpha = abs(t) > thres_alpha ? 1.0 : (abs(t) / thres_alpha * (1 - alpha_base) + alpha_base)
-            Oklch(1 - 0.6 * abs(t), 0.4 * abs2(t), t > 0 ? hue_pos : hue_neg) |> c -> RGBAf(c, alpha)
-        end
-        for t in range(-1, 1; length=256)
-    ]
-end
-
 function draw_pca_mode_2d_duet!(axs::Dict, mode::ModeWeight, val_istp; step_posi=1, smwh=(0, 0))
     step_posi = step_posi isa Real ? (step_posi, step_posi) : step_posi
     step_modl = 1 ./ (2 .* smwh .* step_posi)
