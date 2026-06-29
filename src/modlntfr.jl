@@ -301,7 +301,8 @@ function fit_two_gaussian_2d(
     )
     params = expand_fit_params_abrr(coef(fit))
     rss_rel = norm(residuals(fit)) / max(norm(z_fit_sel), eps(Float64))
-    return (; params, rss_rel, guess_1d, model_center, threshold)
+    maxiter_reached = !fit.converged
+    return (; params, rss_rel, maxiter_reached, guess_1d, model_center, threshold)
 end
 
 function interp2_bilinear(
@@ -410,6 +411,7 @@ function fit_centered_density_profiles(
             println(
                 "  [$log_tag] fit done IB_idx=$idx_IB istp_idx=$idx_istp " *
                 "rss=$(round(fit_2d.rss_rel; digits=4)) " *
+                (fit_2d.maxiter_reached ? "maxiter=true " : "") *
                 "β=$(round(params[8]; digits=4)) α_x=$(round(params[9]; digits=3)) " *
                 "α_y=$(round(params[10]; digits=3)) θ=$(round(params[11]; digits=3))",
             )

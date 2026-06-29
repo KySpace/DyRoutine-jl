@@ -136,9 +136,11 @@ function draw_density_row!(
     prfl_cohr,
     xlims_prfl,
     ylims_prfl,
+    idx_col_IB_right::Integer,
     is_bottom_row::Bool=false,
 )
     Label(fig[row, 0]; text=@sprintf("%.3f", IB), tellwidth=true, tellheight=false, halign=:right)
+    Label(fig[row, idx_col_IB_right]; text=@sprintf("%.3f", IB), tellwidth=true, tellheight=false, halign=:left)
 
     axs_dens = Vector{Axis}(undef, length(val_istp))
     axs_diff = Vector{Axis}(undef, length(val_istp))
@@ -241,9 +243,9 @@ function draw_density_row!(
             ylims!(ax_profile, ylims_profile)
             text!(
                 ax_profile,
-                xlims_profile[1] + 0.04 * (xlims_profile[2] - xlims_profile[1]),
-                ylims_profile[2] - 0.08 * (ylims_profile[2] - ylims_profile[1]);
+                0.05, 0.95;
                 text=text_fit,
+                space=:relative,
                 color=(clr_center, 0.9),
                 fontsize=8,
                 align=(:left, :top),
@@ -276,9 +278,9 @@ function draw_density_row!(
         ylims!(ax_diag, ylims_diag)
         text!(
             ax_diag,
-            xlims_folded[1] + 0.04 * (xlims_folded[2] - xlims_folded[1]),
-            ylims_diag[1] * 1.25;
+            0.05, 0.05;
             text=@sprintf("σ=%.1f μm", profile_row.fit_density.params[7]),
+            space=:relative,
             color=clr_tail_fit,
             fontsize=8,
             align=(:left, :bottom),
@@ -297,11 +299,22 @@ function draw_density_row!(
         clr_theme = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.92)
         clr_theme_faint = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.60)
         clr_fit = RGBAf(Oklch(0.60, 0.17, 145), 0.95)
+        fit_info = fit_density[idx_IB, idx_istp]
+        clr_rss = fit_info.maxiter_reached ? RGBAf(Oklch(0.50, 0.12, 65), 0.95) : clr_fit
         lines!(ax_prfl, x_modl, prfl_modl_fit[idx_IB, idx_istp]; color=clr_fit, linewidth=1.8)
         lines!(ax_prfl, x_modl, @view(prfl_inco[:, idx_istp, idx_IB]); color=clr_theme_faint, linewidth=1.3, linestyle=:dash)
         lines!(ax_prfl, x_modl, @view(prfl_cohr[:, idx_istp, idx_IB]); color=clr_theme, linewidth=1.5)
         xlims!(ax_prfl, xlims_prfl)
         ylims!(ax_prfl, ylims_prfl)
+        text!(
+            ax_prfl,
+            0.95, 0.95;
+            text=@sprintf("rss_rel=%.3f", fit_info.rss_rel),
+            space=:relative,
+            color=clr_rss,
+            fontsize=8,
+            align=(:right, :top),
+        )
         !is_bottom_row && hidexdecorations!(ax_prfl; grid=false)
     end
 
@@ -390,8 +403,9 @@ log_done("built plot ranges", t_stage)
 
 t_stage = log_step("building figure axes and labels")
 fig_ntfr = Figure(fontsize=14)
+idx_col_IB_right = 2 * length(val_istp) + length(profile_fits) * length(val_istp) + 2 * length(val_istp) + 1
 Label(
-    fig_ntfr[0, 1:12];
+    fig_ntfr[0, 1:idx_col_IB_right];
     text=@sprintf(
         "%s 2D NTFR mean densities, fit residuals with per-panel scale, cocenter Gaussian tail + rotated narrow peak |> (_ + βN²) fit, mask > %.1g, σ_wide ≥ %.0f μm, common max %.3g, max residual ±%.3g, Δk=%.5f",
         tag,
@@ -448,6 +462,14 @@ for (idx_istp, istp) in enumerate(val_istp)
         font=:bold,
     )
 end
+Label(
+    fig_ntfr[1, idx_col_IB_right];
+    text="IB",
+    tellwidth=true,
+    tellheight=true,
+    halign=:left,
+    font=:bold,
+)
 log_done("built figure axes and labels", t_stage)
 
 t_stage = log_step("plotting density rows")
@@ -478,6 +500,7 @@ for (idx_IB, IB) in enumerate(val_IB)
         prfl_cohr,
         xlims_prfl=xlims_prfl_reconstruct,
         ylims_prfl=ylims_prfl_reconstruct,
+        idx_col_IB_right,
         is_bottom_row=idx_IB == length(val_IB),
     )
     rowsize!(fig_ntfr.layout, row, Fixed(105))
@@ -496,6 +519,7 @@ colsize!(fig_ntfr.layout, 9, Fixed(170))
 colsize!(fig_ntfr.layout, 10, Fixed(170))
 colsize!(fig_ntfr.layout, 11, Fixed(170))
 colsize!(fig_ntfr.layout, 12, Fixed(170))
+colsize!(fig_ntfr.layout, idx_col_IB_right, Fixed(55))
 colgap!(fig_ntfr.layout, 1, 8)
 colgap!(fig_ntfr.layout, 2, 16)
 colgap!(fig_ntfr.layout, 3, 0)
@@ -507,6 +531,7 @@ colgap!(fig_ntfr.layout, 8, 14)
 colgap!(fig_ntfr.layout, 9, 0)
 colgap!(fig_ntfr.layout, 10, 14)
 colgap!(fig_ntfr.layout, 11, 0)
+colgap!(fig_ntfr.layout, 12, 8)
 rowgap!(fig_ntfr.layout, 1, 4)
 
 resize_to_layout!(fig_ntfr)
