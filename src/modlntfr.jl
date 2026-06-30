@@ -3,6 +3,7 @@ using ImageFiltering
 using LinearAlgebra
 using LsqFit
 using Statistics
+using Pipe: @pipe
 
 function orient_ntfr2d_axes(
     ntfr2d::AbstractArray{<:Real,4},
@@ -381,19 +382,26 @@ function tucky1d(sml; alpha=0.2)
      for x in (-sml:sml) ./ sml]
 end
 
-function calc_prfl_modl_1d(dens::AbstractMatrix{<:Real}, smwh::Tuple{<:Integer,<:Integer}; step_modl::Real=1)
+function calc_prfl_modl_cmpx_1d(dens::AbstractMatrix{<:Real}, radius_blur, idx_strip, idx_modl, tucky_prfl, step_modl::Real)
+    dens_strip = @view dens[:, idx_strip]
+    prfl_dens = imfilter(dens_strip, Kernel.gaussian(radius_blur) |> ds -> vec(mean(ds; dims=2))
+    modl_cmpx = fftshift(fft(prfl_dens .* tucky_prfl))[idx_modl]
+    return modl_cmpx ./ (sum(abs.(modl_cmpx)) * step_modl / 2)
+end
+
+function calc_prfl_modl_1d(dens::AbstractVector{AbstractMatrix{<:Real}}, smwh::Tuple{<:Integer,<:Integer}; step_modl::Real=1)
     smwh .* 2 .+ 1 == size(dens) || throw(DimensionMismatch("smwh $smwh expects density size $(smwh .* 2 .+ 1), got $(size(dens))."))
     smw, smh = smwh
     smw_dens_strip = 20
     smh_modl = 120
-    tucky = tucky1d(smh; alpha=0.2)
+    radius_blur = 2.5
+    tucky_prfl = tucky1d(smh; alpha=0.2)
     idx_strip = (smw_dens_strip |> s -> (-s:1:s) .+ smw .+ 1)
     idx_modl = (smh_modl |> s -> (-s:1:s) .+ smh .+ 1)
-    dens_strip = @view dens[:, idx_strip]
-    dens_mean = imfilter(dens_strip, Kernel.gaussian(2.5)) |> ds -> vec(mean(ds; dims=2))
-    modl_full = abs.(fftshift(fft(dens_mean .* tucky)))
-    modl = modl_full[idx_modl]
-    return modl / (sum(modl) * step_modl / 2)
+    modl_cmpx = dens |> ds -> map(d -> calc_prfl_modl_cmpx_1d(d, radius_blur, idx_strip, idx_modl, tucky_prfl, step_modl), ds)
+    prfl_inco = modl_cmpx |> abs.(_) |> mean
+    prfl_cohr = modl_cmpx |> mean |> abs.(_)
+    return (; prfl_cohr, prfl_inco)
 end
 
 function calc_reconstructed_ntfr2d(
