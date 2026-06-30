@@ -4,6 +4,7 @@ GLMakie.activate!()
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
 path_demo = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Demo"
+# commit #c018bbf9368558cbb09a629dcdd8a39cda93bbeb
 path_output = joinpath(path_demo, "15.DualSS")
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
