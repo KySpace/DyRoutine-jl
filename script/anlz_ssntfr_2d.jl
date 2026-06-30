@@ -12,7 +12,7 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
-title_anlz = "23.Ntfr2D.Abrr.Rotated.SkewedYWithTail.LargeIter"
+title_anlz = "24.Ntfr2D.Abrr.LinearWeight.WithDiff.[redo.15]"
 path_data = joinpath(path_root, "0204_interference", "result", "prfl.h5")
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
@@ -27,7 +27,7 @@ r_tail_min_profile = 20.0
 range_r_tail_fit = (17.0, 37.0)
 fit_center_bound = 12.0
 fit_stride_2d = 3
-fit_maxiter_2d = parse(Int, get(ENV, "SSNTFR_2D_MAXITER", "40000"))
+fit_maxiter_2d = parse(Int, get(ENV, "SSNTFR_2D_MAXITER", "10000"))
 fit_threshold_log_2d = 1.5e-1
 fit_sigma_wide_min = 15.0
 model_center = :gaussian
@@ -134,9 +134,6 @@ function build_model_results_payload(;
             "A_wide",
             "sigma_wide",
             "beta",
-            "skew_y_narrow",
-            "skew_y_tail",
-            "theta",
         ],
         dim_fit_params="param,istp,IB",
         dim_fit_rss_rel="istp,IB",
@@ -212,53 +209,17 @@ function save_model_results_jld2(path_results::AbstractString, payload)
     return path_results
 end
 
-function calc_rotated_ellipse(
+function calc_axis_aligned_ellipse(
     x0::Real,
     y0::Real,
     sigma_x::Real,
     sigma_y::Real,
-    θ::Real;
     n::Integer=160,
     scale::Real=1.0,
 )
     ϕ = range(0, 2π; length=n + 1)
-    cosθ = cos(θ)
-    sinθ = sin(θ)
-    x_axis = @. scale * sigma_x * cos(ϕ)
-    y_axis = @. scale * sigma_y * sin(ϕ)
-    x = @. x0 + cosθ * x_axis - sinθ * y_axis
-    y = @. y0 + sinθ * x_axis + cosθ * y_axis
-    return x, y
-end
-
-function calc_rotated_y_axis(
-    x0::Real,
-    y0::Real,
-    sigma_y::Real,
-    θ::Real;
-    scale_inner::Real=1.08,
-    scale_outer::Real=1.55,
-)
-    cosθ = cos(θ)
-    sinθ = sin(θ)
-    dx = -sinθ
-    dy = cosθ
-    r_inner = scale_inner * sigma_y
-    r_outer = scale_outer * sigma_y
-    x = [
-        x0 + dx * r_inner,
-        x0 + dx * r_outer,
-        NaN,
-        x0 - dx * r_inner,
-        x0 - dx * r_outer,
-    ]
-    y = [
-        y0 + dy * r_inner,
-        y0 + dy * r_outer,
-        NaN,
-        y0 - dy * r_inner,
-        y0 - dy * r_outer,
-    ]
+    x = @. x0 + scale * sigma_x * cos(ϕ)
+    y = @. y0 + scale * sigma_y * sin(ϕ)
     return x, y
 end
 
@@ -314,18 +275,15 @@ function draw_density_row!(
         heatmap!(ax, x_dens, x_dens, dens2d; colormap=clrmap, colorrange, rasterize=true)
         params_density = fit_density[idx_IB, idx_istp].params
         x0, y0 = params_density[1:2]
-        x_ellipse, y_ellipse = calc_rotated_ellipse(
+        x_ellipse, y_ellipse = calc_axis_aligned_ellipse(
             x0,
             y0,
             params_density[4],
             params_density[5],
-            params_density[11],
         )
-        x_axis_y, y_axis_y = calc_rotated_y_axis(x0, y0, params_density[5], params_density[11])
         vlines!(ax, x0; color=(:black, 0.16), linewidth=0.7)
         hlines!(ax, y0; color=(:black, 0.16), linewidth=0.7)
         lines!(ax, x_ellipse, y_ellipse; color=(:white, 0.95), linewidth=0.7)
-        lines!(ax, x_axis_y, y_axis_y; color=(:white, 0.95), linewidth=0.7)
         hidexdecorations!(ax; label=is_bottom_row ? false : true, ticklabels=is_bottom_row ? false : true, ticks=is_bottom_row ? false : true, grid=false)
         hideydecorations!(ax; label=idx_istp == 1 ? false : true, ticklabels=false, ticks=false, grid=false)
         text!(
@@ -380,8 +338,8 @@ function draw_density_row!(
             params_fit = profile_data.fit_density.params
             text_fit =
                 profile_data.axis == :column ?
-                @sprintf("β=%.3f\nσ_y=%.2f α_y,N=%.2f\nα_y,T=%.2f θ=%.2f", profile_data.beta, params_fit[5], params_fit[9], params_fit[10], params_fit[11]) :
-                @sprintf("β=%.3f\nσ_x=%.2f\nθ=%.2f", profile_data.beta, params_fit[4], params_fit[11])
+                @sprintf("β=%.3f\nσ_y=%.2f", profile_data.beta, params_fit[5]) :
+                @sprintf("β=%.3f\nσ_x=%.2f", profile_data.beta, params_fit[4])
             band!(ax_profile, s, zero.(narrow_raw), narrow_raw; color=(clr_center, 0.30))
             lines!(ax_profile, s, profile; color=clr_faint, linewidth=1.0)
             lines!(ax_profile, s, tail; color=(:gray20, 0.55), linewidth=1.0)
@@ -556,7 +514,7 @@ idx_col_IB_right = 2 * length(val_istp) + length(profile_fits) * length(val_istp
 Label(
     fig_ntfr[0, 1:idx_col_IB_right];
     text=@sprintf(
-        "%s 2D NTFR mean densities, fit residuals with per-panel scale, cocenter Gaussian tail + rotated narrow peak |> (_ + βN²) fit, mask > %.1g, σ_wide ≥ %.0f μm, common max %.3g, max residual ±%.3g, Δk=%.5f",
+        "%s 2D NTFR mean densities, fit residuals with per-panel scale, cocenter Gaussian tail + Gaussian peak |> (_ + βN²) fit, mask > %.1g, σ_wide ≥ %.0f μm, common max %.3g, max residual ±%.3g, Δk=%.5f",
         tag,
         fit_threshold_log_2d,
         fit_sigma_wide_min,

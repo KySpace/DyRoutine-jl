@@ -2,6 +2,7 @@ using CairoMakie
 using FFTW
 using HDF5
 using ImageFiltering
+using JLD2
 using LinearAlgebra
 using Printf
 using Statistics
@@ -10,8 +11,14 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
-title_anlz = "14.IncoCohrModlNtfrTail"
+title_anlz = "27.IncoCohrModlNtfr.[reconstr.22]"
 path_data = joinpath(path_root, "0204_interference", "result", "prfl.h5")
+path_model_results_24 = joinpath(
+    path_root,
+    "AnlzRoutine",
+    "22.Ntfr2D.Abrr.Rotated.SeprSkewedYWithTail.LargeIter",
+    "SSNTFR_ntfr2d_model_results.jld2",
+)
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
 
@@ -100,6 +107,41 @@ function calc_modl_tail(
     tail = vec(mean(prfl_modl_fit; dims=(2, 3)))
     tail_istp_avg = dropdims(mean(prfl_modl_fit; dims=3); dims=3)
     return (; prfl_modl_fit, tail, tail_istp_avg, prfl_total_avg, prfl_tailess)
+end
+
+function load_prfl_modl_fit_jld2(
+    path_results::AbstractString,
+    x_modl::AbstractVector{<:Real},
+    val_IB::AbstractVector{<:Real},
+    val_istp::AbstractVector{<:AbstractString},
+)
+    isfile(path_results) || throw(ArgumentError("Missing reconstructed model results file: $path_results"))
+    payload = JLD2.jldopen(path_results, "r") do file
+        (;
+            x_modl=file["x_modl"],
+            val_IB=file["val_IB"],
+            val_istp=String.(file["val_istp"]),
+            prfl_modl_fit=file["prfl_modl_fit"],
+        )
+    end
+
+    length(payload.x_modl) == length(x_modl) || throw(DimensionMismatch(
+        "24 reconstructed x_modl length $(length(payload.x_modl)) must match current x_modl length $(length(x_modl)).",
+    ))
+    all(isapprox.(payload.x_modl, x_modl; rtol=0.0, atol=1e-12)) || throw(DimensionMismatch(
+        "24 reconstructed x_modl values do not match current x_modl.",
+    ))
+    payload.val_IB == val_IB || throw(DimensionMismatch(
+        "24 reconstructed val_IB $(payload.val_IB) must match current val_IB $val_IB.",
+    ))
+    payload.val_istp == String.(val_istp) || throw(DimensionMismatch(
+        "24 reconstructed val_istp $(payload.val_istp) must match current val_istp $(String.(val_istp)).",
+    ))
+    size(payload.prfl_modl_fit) == (length(x_modl), length(val_istp), length(val_IB)) || throw(DimensionMismatch(
+        "24 reconstructed prfl_modl_fit size $(size(payload.prfl_modl_fit)) must match " *
+        "(x_modl, istp, IB) $((length(x_modl), length(val_istp), length(val_IB))).",
+    ))
+    return Float64.(payload.prfl_modl_fit)
 end
 
 function build_profile_variant_arrays(prfl_inco, prfl_cohr, prfl_inco_tailess, prfl_cohr_tailess)
@@ -317,20 +359,7 @@ step_modl = median(diff(x_modl))
 colorrange_inco = calc_prfl_colorrange(prfl_inco, x_modl, range_x_colorrange)
 colorrange_cohr = calc_prfl_colorrange(prfl_cohr, x_modl, range_x_colorrange)
 
-fit_modl_ntfr = fit_reconstructed_prfl_modl(
-    x_dens,
-    ntfr2d_mean,
-    smwh_reconstruct;
-    step_modl,
-    r_tail_min=r_tail_min_profile,
-    center_bound=fit_center_bound,
-    stride=fit_stride_2d,
-    threshold=fit_threshold_log_2d,
-    sigma_wide_min=fit_sigma_wide_min,
-    maxiter=fit_maxiter_2d,
-    model_center,
-)
-prfl_modl_fit = pack_prfl_modl_fit(fit_modl_ntfr.prfl_modl_fit, x_modl, val_IB, val_istp)
+prfl_modl_fit = load_prfl_modl_fit_jld2(path_model_results_24, x_modl, val_IB, val_istp)
 tail_inco = calc_modl_tail(prfl_inco, prfl_modl_fit)
 tail_cohr = calc_modl_tail(prfl_cohr, prfl_modl_fit)
 prfl_tail = build_profile_variant_arrays(
@@ -533,7 +562,8 @@ axs_cohr_avg, prfl_cohr_total_avg = draw_cohr_average_lines!(
     x_modl,
     val_istp;
     range_x_plot,
-    ylims=calc_log_ylims(colorrange_cohr),
+    ylims=(1e-4,1e2)
+    # ylims=calc_log_ylims(colorrange_cohr),
 )
 rowgap!(fig_cohr_avg.layout, 1, 4)
 rowgap!(fig_cohr_avg.layout, 2, 4)
