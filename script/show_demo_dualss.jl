@@ -25,9 +25,9 @@ function gen_dens(; λ_crys=3, σx=3, σy=8, σx_tf=3, σy_tf=8, A_tf=6, A_halo=
 end
 
 function set_axis_dual!()
-    fig = Figure()
-    ax_1 = Axis(fig[1, 1]; width=400, height=100)
-    ax_2 = Axis(fig[2, 1]; width=400, height=100)
+    fig = Figure(; backgroundcolor = :transparent)
+    ax_1 = Axis(fig[1, 1]; width=400, height=100, backgroundcolor = :transparent)
+    ax_2 = Axis(fig[2, 1]; width=400, height=100, backgroundcolor = :transparent)
     axs = [ax_1, ax_2]
     rowgap!(fig.layout, 0)
     fig, axs
@@ -37,7 +37,7 @@ function plot_duet!(axs, dens; max_dens=10)
     dens_grid = [dens(x, y) for x in x_posi, y in y_posi]
 
     for i in 1:2
-        clrmap_dens = gen_clrmap_solo(hue_theme_istp[i == 1 ? "162" : "164"])
+        clrmap_dens = gen_clrmap_solo(hue_theme_istp[i == 1 ? "162" : "164"]; thres_alpha=0.1, alpha_base=-0.1)
         heatmap!(axs[i], y_posi, x_posi, dens_grid'; colorrange=(0, max_dens), colormap=clrmap_dens, rasterize=true)
         axs[i] |> hidedecorations!
         axs[i].aspect = DataAspect()
@@ -55,6 +55,7 @@ for (desc, dens) in [
     plot_duet!(axs_duet, dens; max_dens=8)
     fig_duet |> resize_to_layout!
     fig_duet |> display
-    save(joinpath(path_output, "dualss_demo_$desc.png"), fig_duet)
+    save(joinpath(path_output, "dualss_demo_$desc.png"), fig_duet; px_per_unit = 1, backend=CairoMakie)
+    save(joinpath(path_output, "dualss_demo_$desc.svg"), fig_duet; backend=CairoMakie)
     println("$desc displayed and saved")
 end

@@ -11,7 +11,7 @@ function gen_clrmap_solo(hue; thres_alpha=0.0, alpha_base=1.0)
         begin
             alpha = thres_alpha <= 0 || abs(t) > thres_alpha ?
                     1.0 :
-                    (abs(t) / thres_alpha * (1 - alpha_base) + alpha_base)
+                    clamp(abs(t) / thres_alpha * (1 - alpha_base) + alpha_base, 0, 1)
             Oklch(1 - 0.8 * t, 0.24 * t, hue) |> c -> RGBAf(c, alpha)
         end
         for t in range(0, 1; length=256)]
