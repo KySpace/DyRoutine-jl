@@ -193,11 +193,11 @@ function gauss_skew_com_unit(pos, params)
 end
 
 function double_gaussian_disk_2d_model_abrr(coords, params)
-    length(params) == 12 || throw(ArgumentError(
-        "double_gaussian_disk_2d_model_abrr expects 12 params " *
-        "(x0, y0, A_narrow, sigma_x_narrow, sigma_y_narrow, A_wide, sigma_wide, beta, skew_x, skew_y_narrow, skew_y_tail, θ), got $(length(params)).",
+    length(params) == 11 || throw(ArgumentError(
+        "double_gaussian_disk_2d_model_abrr expects 11 params " *
+        "(x0, y0, A_narrow, sigma_x_narrow, sigma_y_narrow, A_wide, sigma_wide, beta, skew_y_narrow, skew_y_tail, θ), got $(length(params)).",
     ))
-    x0, y0, A_narrow, sigma_x_narrow, sigma_y_narrow, A_wide, sigma_wide, beta, skew_x, skew_y_narrow, skew_y_tail, θ = params
+    x0, y0, A_narrow, sigma_x_narrow, sigma_y_narrow, A_wide, sigma_wide, beta, skew_y_narrow, skew_y_tail, θ = params
     x = @view coords[1, :]
     y = @view coords[2, :]
     dx = @. x - x0
@@ -206,10 +206,10 @@ function double_gaussian_disk_2d_model_abrr(coords, params)
     sinθ = sin(θ)
     x_rot = @. cosθ * dx + sinθ * dy
     y_rot = @. -sinθ * dx + cosθ * dy
-    narrow_x = gauss_skew_com_unit(x_rot, (sigma_x_narrow, skew_x))
+    narrow_x = gauss_skew_com_unit(x_rot, (sigma_x_narrow, 0.0))
     narrow_y = gauss_skew_com_unit(y_rot, (sigma_y_narrow, skew_y_narrow))
     narrow = @. A_narrow * narrow_x * narrow_y
-    tail_x = gauss_skew_com_unit(x_rot, (sigma_wide, skew_x))
+    tail_x = gauss_skew_com_unit(x_rot, (sigma_wide, 0.0))
     tail_y = gauss_skew_com_unit(y_rot, (sigma_wide, skew_y_tail))
     tail = @. A_wide * tail_x * tail_y
     return @. tail + narrow + beta * narrow^2
@@ -224,11 +224,11 @@ function log_double_gaussian_disk_2d_model_abrr(coords, params)
 end
 
 function expand_fit_params_abrr(params)
-    length(params) == 12 || throw(ArgumentError(
-        "expand_fit_params_abrr expects 12 fit params " *
-        "(x0, y0, A_narrow, sigma_x_narrow, delta_sigma_y, A_wide, sigma_wide, beta, skew_x, skew_y_narrow, skew_y_tail, θ), got $(length(params)).",
+    length(params) == 11 || throw(ArgumentError(
+        "expand_fit_params_abrr expects 11 fit params " *
+        "(x0, y0, A_narrow, sigma_x_narrow, delta_sigma_y, A_wide, sigma_wide, beta, skew_y_narrow, skew_y_tail, θ), got $(length(params)).",
     ))
-    x0, y0, A_narrow, sigma_x_narrow, delta_sigma_y, A_wide, sigma_wide, beta, skew_x, skew_y_narrow, skew_y_tail, θ = params
+    x0, y0, A_narrow, sigma_x_narrow, delta_sigma_y, A_wide, sigma_wide, beta, skew_y_narrow, skew_y_tail, θ = params
     sigma_y_narrow = sigma_x_narrow + delta_sigma_y
     return [
         x0,
@@ -239,7 +239,6 @@ function expand_fit_params_abrr(params)
         A_wide,
         sigma_wide,
         beta,
-        skew_x,
         skew_y_narrow,
         skew_y_tail,
         θ,
@@ -283,14 +282,13 @@ function fit_two_gaussian_2d(
         max(0.2 * guess_1d.sigma_narrow, step_x),
         max(guess_1d.A_wide, eps(Float64)),
         max(guess_1d.sigma_wide, sigma_wide_min),
-        0.01,
-        0.0,
+        1.00,
         0.0,
         0.0,
         0.30,
     ]
-    p_lower = [-center_bound, -center_bound, eps(Float64), step_x, 0.0, eps(Float64), sigma_wide_min, 0.0, 0.0, -10.0, -10.0, 0.30]
-    p_upper = [center_bound, center_bound, Inf, r_narrow_max, r_narrow_max, Inf, max_x * 3, 2.0, 0.0, 10.0, 10.0, 0.30]
+    p_lower = [-center_bound, -center_bound, eps(Float64), step_x, 0.0, eps(Float64), sigma_wide_min, 0.0, 0.0, -10.0, 0.30]
+    p_upper = [center_bound, center_bound, Inf, r_narrow_max, r_narrow_max, Inf, max_x * 3, 2.0, 0.0, 10.0, 0.30]
     fit = curve_fit(
         (coords, params) -> double_gaussian_disk_2d_model_abrr(coords, expand_fit_params_abrr(params)),
         coords_fit,
@@ -336,7 +334,7 @@ function calc_centered_cross_profile(
     fit_density;
     axis::Symbol,
 )
-    x0, y0, A_narrow, sigma_x_narrow, sigma_y_narrow, A_wide, sigma_wide, beta, skew_x, skew_y_narrow, skew_y_tail, θ = fit_density.params
+    x0, y0, A_narrow, sigma_x_narrow, sigma_y_narrow, A_wide, sigma_wide, beta, skew_y_narrow, skew_y_tail, θ = fit_density.params
     s_profile = Float64.(x_dens)
     profile =
         axis == :column ? [interp2_bilinear(x_dens, dens2d, x0, y0 + s) for s in s_profile] :
@@ -353,10 +351,10 @@ function calc_centered_cross_profile(
     else
         throw(ArgumentError("axis must be :column or :row, got $axis."))
     end
-    tail_x = gauss_skew_com_unit(x_rot, (sigma_wide, skew_x))
+    tail_x = gauss_skew_com_unit(x_rot, (sigma_wide, 0.0))
     tail_y = gauss_skew_com_unit(y_rot, (sigma_wide, skew_y_tail))
     tail_raw = @. A_wide * tail_x * tail_y
-    narrow_x = gauss_skew_com_unit(x_rot, (sigma_x_narrow, skew_x))
+    narrow_x = gauss_skew_com_unit(x_rot, (sigma_x_narrow, 0.0))
     narrow_y = gauss_skew_com_unit(y_rot, (sigma_y_narrow, skew_y_narrow))
     narrow_raw = @. A_narrow * narrow_x * narrow_y
     tail = tail_raw
@@ -413,9 +411,9 @@ function fit_centered_density_profiles(
                 "  [$log_tag] fit done IB_idx=$idx_IB istp_idx=$idx_istp " *
                 "rss=$(round(fit_2d.rss_rel; digits=4)) " *
                 (fit_2d.maxiter_reached ? "maxiter=true " : "") *
-                "β=$(round(params[8]; digits=4)) α_x=$(round(params[9]; digits=3)) " *
-                "α_y,n=$(round(params[10]; digits=3)) α_y,t=$(round(params[11]; digits=3)) " *
-                "θ=$(round(params[12]; digits=3))",
+                "β=$(round(params[8]; digits=4)) " *
+                "α_y,n=$(round(params[9]; digits=3)) α_y,t=$(round(params[10]; digits=3)) " *
+                "θ=$(round(params[11]; digits=3))",
             )
             flush(stdout)
         end

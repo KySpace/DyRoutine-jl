@@ -12,7 +12,7 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
-title_anlz = "22.Ntfr2D.Abrr.Rotated.SeprSkewedYWithTail.LargeIter"
+title_anlz = "23.Ntfr2D.Abrr.Rotated.SkewedYWithTail.LargeIter"
 path_data = joinpath(path_root, "0204_interference", "result", "prfl.h5")
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
@@ -27,7 +27,7 @@ r_tail_min_profile = 20.0
 range_r_tail_fit = (17.0, 37.0)
 fit_center_bound = 12.0
 fit_stride_2d = 3
-fit_maxiter_2d = parse(Int, get(ENV, "SSNTFR_2D_MAXITER", "400000"))
+fit_maxiter_2d = parse(Int, get(ENV, "SSNTFR_2D_MAXITER", "40000"))
 fit_threshold_log_2d = 1.5e-1
 fit_sigma_wide_min = 15.0
 model_center = :gaussian
@@ -134,7 +134,6 @@ function build_model_results_payload(;
             "A_wide",
             "sigma_wide",
             "beta",
-            "skew_x",
             "skew_y_narrow",
             "skew_y_tail",
             "theta",
@@ -320,9 +319,9 @@ function draw_density_row!(
             y0,
             params_density[4],
             params_density[5],
-            params_density[12],
+            params_density[11],
         )
-        x_axis_y, y_axis_y = calc_rotated_y_axis(x0, y0, params_density[5], params_density[12])
+        x_axis_y, y_axis_y = calc_rotated_y_axis(x0, y0, params_density[5], params_density[11])
         vlines!(ax, x0; color=(:black, 0.16), linewidth=0.7)
         hlines!(ax, y0; color=(:black, 0.16), linewidth=0.7)
         lines!(ax, x_ellipse, y_ellipse; color=(:white, 0.95), linewidth=0.7)
@@ -381,8 +380,8 @@ function draw_density_row!(
             params_fit = profile_data.fit_density.params
             text_fit =
                 profile_data.axis == :column ?
-                @sprintf("β=%.3f\nσ_y=%.2f α_y,N=%.2f\nα_y,T=%.2f θ=%.2f", profile_data.beta, params_fit[5], params_fit[10], params_fit[11], params_fit[12]) :
-                @sprintf("β=%.3f\nσ_x=%.2f α_x=%.2f\nθ=%.2f", profile_data.beta, params_fit[4], params_fit[9], params_fit[12])
+                @sprintf("β=%.3f\nσ_y=%.2f α_y,N=%.2f\nα_y,T=%.2f θ=%.2f", profile_data.beta, params_fit[5], params_fit[9], params_fit[10], params_fit[11]) :
+                @sprintf("β=%.3f\nσ_x=%.2f\nθ=%.2f", profile_data.beta, params_fit[4], params_fit[11])
             band!(ax_profile, s, zero.(narrow_raw), narrow_raw; color=(clr_center, 0.30))
             lines!(ax_profile, s, profile; color=clr_faint, linewidth=1.0)
             lines!(ax_profile, s, tail; color=(:gray20, 0.55), linewidth=1.0)
