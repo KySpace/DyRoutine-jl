@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "2d1723144d5f2d6accdee0a976a979c61a975c3d"
+project_hash = "263daa308d983d81d32c978bb1f6519f4263cab3"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -237,6 +237,11 @@ deps = ["ChunkCodecCore", "Zstd_jll"]
 git-tree-sha1 = "34d9873079e4cb3d0c62926a225136824677073f"
 uuid = "55437552-ac27-4d47-9aa3-63184e8fd398"
 version = "1.0.0"
+
+[[deps.ChunkSplitters]]
+git-tree-sha1 = "1c52c8e2673edc030191177ff1aee42d25149acb"
+uuid = "ae650224-84b6-46f8-82ea-d812ca08434e"
+version = "3.2.0"
 
 [[deps.CodecZlib]]
 deps = ["TranscodingStreams", "Zlib_jll"]
@@ -526,6 +531,12 @@ deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "e3290f2d49e661fbd94046d7e3726ffcb2d41053"
 uuid = "5ae413db-bbd1-5e63-b57d-d24a61df00f5"
 version = "2.2.4+0"
+
+[[deps.ElasticArrays]]
+deps = ["Adapt"]
+git-tree-sha1 = "75e5697f521c9ab89816d3abeea806dfc5afb967"
+uuid = "fdbdab4c-e67f-52f5-8c3f-e7b388dad3d4"
+version = "1.2.12"
 
 [[deps.EnumX]]
 git-tree-sha1 = "c49898e8438c828577f04b92fc9368c388ac783c"
@@ -1346,6 +1357,12 @@ version = "0.6.56"
     DimensionalData = "0703355e-b756-11e9-17c0-8b28908087d0"
     Hwloc = "0e44f5e4-bd66-52a0-8798-143a42290a1d"
     Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+
+[[deps.NaturalNeighbours]]
+deps = ["ChunkSplitters", "DelaunayTriangulation", "ElasticArrays", "LinearAlgebra", "Random"]
+git-tree-sha1 = "c07721e921b9973c550e8560725bef98580e6555"
+uuid = "f16ad982-4edb-46b1-8125-78e5a8b5a9e6"
+version = "1.3.6"
 
 [[deps.NearestNeighbors]]
 deps = ["AbstractTrees", "Distances", "StaticArrays"]

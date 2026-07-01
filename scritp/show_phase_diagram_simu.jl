@@ -5,7 +5,7 @@ using DataFrames
 using LaTeXStrings
 using Pipe: @pipe
 using Match: @match
-using ScatteredInterpolation
+using NaturalNeighbours
 using Statistics
 
 GLMakie.activate!()
@@ -30,7 +30,6 @@ df_contrast_164_cat = vcat(df_contrast_fine.contrast_164, df_contrast_coarse.con
 df_weightsp_162_cat = vcat(df_weightsp_fine.weightsp_162, df_weightsp_coarse.weightsp_162)
 df_weightsp_164_cat = vcat(df_weightsp_fine.weightsp_164, df_weightsp_coarse.weightsp_164)
 
-using Statistics
 
 function average_duplicate_points(x, y, z1, z2) 
     d = Dict{Tuple{Float64, Float64}, Vector{Tuple{Float64, Float64}}}()
@@ -58,19 +57,20 @@ a22_wght, a12_wght, df_weightsp_162, df_weightsp_164 = average_duplicate_points(
 coor_ctrs = hcat(a22_ctrs, a12_ctrs)'
 coor_wght = hcat(a22_wght, a12_wght)'
 
-ntpl_contrast_162 = interpolate(Shepard(), coor_ctrs, df_contrast_162)
-ntpl_contrast_164 = interpolate(Shepard(), coor_ctrs, df_contrast_164)
-ntpl_weightsp_162 = interpolate(Shepard(), coor_wght, df_weightsp_162)
-ntpl_weightsp_164 = interpolate(Shepard(), coor_wght, df_weightsp_164)
+ntpl_contrast_162 = interpolate(a22_ctrs, a12_ctrs, df_contrast_162; derivatives=true)
+ntpl_contrast_164 = interpolate(a22_ctrs, a12_ctrs, df_contrast_164; derivatives=true)
+ntpl_weightsp_162 = interpolate(a22_wght, a12_wght, df_weightsp_162; derivatives=true)
+ntpl_weightsp_164 = interpolate(a22_wght, a12_wght, df_weightsp_164; derivatives=true)
 
-a22_q = range(88, 108; length=200)
-a12_q = range(70,  96; length=200)
-coor_q = reduce(hcat, ([xi, yi] for xi in a22_q, yi in a12_q))
+a22_g = range(88, 108; length=200)
+a12_g = range(70,  96; length=200)
+a22_q = vec([xi for xi in a22_g, yi in a12_g])
+a12_q = vec([yi for xi in a22_g, yi in a12_g])
 
-contrast_162_q = @pipe evaluate(ntpl_contrast_162, coor_q) |> reshape(_, length(a22_q), length(a12_q))
-contrast_164_q = @pipe evaluate(ntpl_contrast_164, coor_q) |> reshape(_, length(a22_q), length(a12_q))
-weightsp_162_q = @pipe evaluate(ntpl_weightsp_162, coor_q) |> reshape(_, length(a22_q), length(a12_q))
-weightsp_164_q = @pipe evaluate(ntpl_weightsp_164, coor_q) |> reshape(_, length(a22_q), length(a12_q))
+contrast_162_q = @pipe ntpl_contrast_162(a22_q, a12_q; method=Sibson()) |> reshape(_, length(a22_g), length(a12_g))
+contrast_164_q = @pipe ntpl_contrast_164(a22_q, a12_q; method=Sibson()) |> reshape(_, length(a22_g), length(a12_g))
+weightsp_162_q = @pipe ntpl_weightsp_162(a22_q, a12_q; method=Sibson()) |> reshape(_, length(a22_g), length(a12_g))
+weightsp_164_q = @pipe ntpl_weightsp_164(a22_q, a12_q; method=Sibson()) |> reshape(_, length(a22_g), length(a12_g))
 
 fig = Figure();
 Label(fig[0, 1]; text="contrast", valign=:center, halign=:center, font=:bold)
@@ -98,23 +98,23 @@ end
 clrrng_c = extrema(vcat(vec(contrast_162_q), vec(contrast_164_q)))
 clrrng_w = extrema(vcat(vec(weightsp_162_q), vec(weightsp_164_q)))
 
-hm_c1 = heatmap!(ax_contrast_162, a22_q, a12_q, contrast_162_q; colormap=:BrBg, colorrange=clrrng_c)
-hm_w1 = heatmap!(ax_weightsp_162, a22_q, a12_q, weightsp_162_q; colormap=:BrBg, colorrange=clrrng_w)
-hm_c2 = heatmap!(ax_contrast_164, a22_q, a12_q, contrast_164_q; colormap=:BrBg, colorrange=clrrng_c)
-hm_w2 = heatmap!(ax_weightsp_164, a22_q, a12_q, weightsp_164_q; colormap=:BrBg, colorrange=clrrng_w)
+hm_c1 = heatmap!(ax_contrast_162, a22_g, a12_g, contrast_162_q; colormap=clrmp_162, colorrange=clrrng_c)
+hm_w1 = heatmap!(ax_weightsp_162, a22_g, a12_g, weightsp_162_q; colormap=clrmp_162, colorrange=clrrng_w)
+hm_c2 = heatmap!(ax_contrast_164, a22_g, a12_g, contrast_164_q; colormap=clrmp_164, colorrange=clrrng_c)
+hm_w2 = heatmap!(ax_weightsp_164, a22_g, a12_g, weightsp_164_q; colormap=clrmp_164, colorrange=clrrng_w)
 
 Colorbar(fig[3, 1], hm_c1; vertical=false);
 Colorbar(fig[4, 1], hm_c2; vertical=false);
 Colorbar(fig[3, 2], hm_w1; vertical=false);
 Colorbar(fig[4, 2], hm_w2; vertical=false);
 
-colsize!(fig.layout, 1, 500)
-colsize!(fig.layout, 2, 500)
-rowsize!(fig.layout, 1, 300)
-rowsize!(fig.layout, 2, 300)
+colsize!(fig.layout, 1, 300)
+colsize!(fig.layout, 2, 300)
+rowsize!(fig.layout, 1, 360)
+rowsize!(fig.layout, 2, 360)
 
 fig |> resize_to_layout!
 fig |> display
-# fig |> f -> save(joinpath(path_output, "phase_diagram_cw.png"), f; px_per_unit=2.0, backend=CairoMakie)
-# fig |> f -> save(joinpath(path_output, "phase_diagram_cw.svg"), f; px_per_unit=2.0, backend=CairoMakie)
-# fig |> f -> save(joinpath(path_output, "phase_diagram_cw.pdf"), f; px_per_unit=2.0, backend=CairoMakie)
+fig |> f -> save(joinpath(path_output, "phase_diagram_cw.png"), f; px_per_unit=2.0, backend=CairoMakie)
+fig |> f -> save(joinpath(path_output, "phase_diagram_cw.svg"), f; px_per_unit=2.0, backend=CairoMakie)
+fig |> f -> save(joinpath(path_output, "phase_diagram_cw.pdf"), f; px_per_unit=2.0, backend=CairoMakie)
