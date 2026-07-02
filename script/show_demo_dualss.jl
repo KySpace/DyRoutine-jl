@@ -4,13 +4,14 @@ using CSV
 using DataFrames
 using Pipe: @pipe
 using Match: @match
+using Printf
 GLMakie.activate!()
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
 path_demo = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Demo"
-path_simu = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Samples\[07.01].Weijing\density profile\a12=78"
+path_simu = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Samples\[07.01].Weijing\working"
 # commit #c018bbf9368558cbb09a629dcdd8a39cda93bbeb
-path_output = joinpath(path_demo, "17.DualSS.ManySimu")
+path_output = joinpath(path_demo, "22.DualSS.ManySimu")
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 step_grid = 0.25 / 10;
@@ -104,6 +105,12 @@ a22_sample_xy = [
     107.0000,
     108.0000,
 ]
+a22_marker_scale_typical_xy = [
+    (96, :utriangle, 0.3), 
+    (99.8526, :diamond, 1), 
+    (99.8632, :diamond, 1), 
+    (104, :circle, 1),
+]
 a22_sample_xz = [
 
 ]
@@ -128,5 +135,20 @@ for (desc, dens) in [
     linkaxes!(axs_duet)
     save(joinpath(path_output, "$desc.png"), fig_duet; px_per_unit=1, backend=CairoMakie)
     save(joinpath(path_output, "$desc.svg"), fig_duet; backend=CairoMakie)
+    println("$desc displayed and saved")
+end
+
+for (desc, dens, marker, scale) in [
+    [(gen_desc_dens_simu(a22, "xy")..., marker, scale) for (a22, marker, scale) in a22_marker_scale_typical_xy]...,
+]
+    axs_duet |> clear_axes!
+    max_dens, xlim, ylim = (0.2 / scale, (-10, 10), (-2.5, 2.5))
+    plot_duet!(axs_duet, dens; max_dens)
+    fig_duet |> resize_to_layout!
+    fig_duet |> display
+    limits!(axs_duet[1], xlim, ylim)
+    linkaxes!(axs_duet)
+    save(joinpath(path_output, "typical-$desc.[scale=$scale].[marker=$marker].png"), fig_duet; px_per_unit=1, backend=CairoMakie)
+    save(joinpath(path_output, "typical-$desc.[scale=$scale].[marker=$marker].svg"), fig_duet; backend=CairoMakie)
     println("$desc displayed and saved")
 end

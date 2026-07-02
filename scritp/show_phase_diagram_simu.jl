@@ -11,10 +11,10 @@ using Statistics
 GLMakie.activate!()
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
-path_simu = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Samples\[07.01].Weijing\phase diagram"
+path_simu = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Samples\[07.01].Weijing\working"
 path_demo = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Demo"
 # commit #c018bbf9368558cbb09a629dcdd8a39cda93bbeb
-path_output = joinpath(path_demo, "20.DualSS.PhaseDiagram.CW")
+path_output = joinpath(path_demo, "21.DualSS.PhaseDiagram.CW.Reground")
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 
@@ -74,7 +74,8 @@ contrast_164_q = @pipe ntpl_contrast_164(a22_q, a12_q; method=Sibson()) |> resha
 weightsp_162_q = @pipe ntpl_weightsp_162(a22_q, a12_q; method=Sibson()) |> reshape(_, length(a22_g), length(a12_g))
 weightsp_164_q = @pipe ntpl_weightsp_164(a22_q, a12_q; method=Sibson()) |> reshape(_, length(a22_g), length(a12_g))
 
-sample_contrast = [(96, 78, :utriangle), (99.8421, 78, :diamond), (104, 78, :circle)]
+a22_roton_instab = 99.8632
+sample_contrast = [(96, 78, :utriangle), (a22_roton_instab, 78, :diamond), (104, 78, :circle)]
 ##
 fig_full = Figure();
 Label(fig_full[1, 0]; text=L"^{162}\text{Dy}", valign=:center, halign=:center, fontsize=16)
@@ -135,11 +136,11 @@ end
 clrrng_c = (0, 1)
 clrrng_w = (0, 0.25) # extrema(vcat(vec(weightsp_162_q), vec(weightsp_164_q)))
 
-hm_c1 = heatmap!(ax_contrast_162, a22_g, a12_g, contrast_162_q; colormap=clrmp_162, colorrange=clrrng_c)
-hm_w1 = heatmap!(ax_weightsp_162, a22_g, a12_g, weightsp_162_q; colormap=clrmp_162, colorrange=clrrng_w)
-hm_c2 = heatmap!(ax_contrast_164, a22_g, a12_g, contrast_164_q; colormap=clrmp_164, colorrange=clrrng_c)
-hm_w2 = heatmap!(ax_weightsp_164, a22_g, a12_g, weightsp_164_q; colormap=clrmp_164, colorrange=clrrng_w)
-hm_cs = heatmap!(ax_contrast_sample, a22_g, a12_g, contrast_164_q; colormap=clrmp_turqoise, colorrange=clrrng_c)
+hm_c1 = heatmap!(ax_contrast_162, a22_g, a12_g, contrast_162_q; colormap=clrmp_162, colorrange=clrrng_c, rasterize=true)
+hm_w1 = heatmap!(ax_weightsp_162, a22_g, a12_g, weightsp_162_q; colormap=clrmp_162, colorrange=clrrng_w, rasterize=true)
+hm_c2 = heatmap!(ax_contrast_164, a22_g, a12_g, contrast_164_q; colormap=clrmp_164, colorrange=clrrng_c, rasterize=true)
+hm_w2 = heatmap!(ax_weightsp_164, a22_g, a12_g, weightsp_164_q; colormap=clrmp_164, colorrange=clrrng_w, rasterize=true)
+hm_cs = heatmap!(ax_contrast_sample, a22_g, a12_g, contrast_164_q; colormap=clrmp_turqoise, colorrange=clrrng_c, rasterize=true)
 for (a22, a12, marker) in sample_contrast
     scatter!(ax_contrast_sample, [a22], [a12]; color=:mediumpurple4, marker=marker, markersize=8)
 end
@@ -170,10 +171,12 @@ ylims!(ax_a1278, (-0.05, 0.85))
 xlims!(ax_a1278_zoom, (99.8, 99.9))
 ylims!(ax_a1278_zoom, (-0.02, 0.32))
 vspan!(ax_a1278, 99.8, 99.9; color=(Oklch(0.90, 0.005, 192), 0.5))
+vlines!(ax_a1278, a22_roton_instab; color=:mediumpurple4, linewidth=0.8)
+vlines!(ax_a1278_zoom, a22_roton_instab; color=:mediumpurple4, linewidth=0.8)
 cut_c_162 = scatterlines!(ax_a1278, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_162; color=Oklch(0.4, 0.14, hue_theme_istp["162"]), label=L"^{162}\text{Dy}")
-cut_c_164 = scatterlines!(ax_a1278, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_164; color=Oklch(0.4, 0.14, hue_theme_istp["164"]), label=L"^{162}\text{Dy}")
-scatterlines!(ax_a1278_zoom, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_162; color=Oklch(0.4, 0.14, hue_theme_istp["162"]))
-scatterlines!(ax_a1278_zoom, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_164; color=Oklch(0.4, 0.14, hue_theme_istp["164"]))
+cut_c_164 = scatterlines!(ax_a1278, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_164; color=Oklch(0.4, 0.14, hue_theme_istp["164"]), label=L"^{164}\text{Dy}")
+scatterlines!(ax_a1278_zoom, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_162; color=(Oklch(0.4, 0.14, hue_theme_istp["162"]), 1.0))
+scatterlines!(ax_a1278_zoom, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_164; color=(Oklch(0.4, 0.14, hue_theme_istp["164"]), 1.0))
 axislegend(ax_a1278; position=:rt, framevisible=false, labelsize=14)
 ax_a1278.xticks = 90:2:110
 ax_a1278.yticks = 0:0.2:1
