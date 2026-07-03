@@ -14,7 +14,7 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 path_simu = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Samples\[07.01].Weijing\working"
 path_demo = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Demo"
 # commit #c018bbf9368558cbb09a629dcdd8a39cda93bbeb
-path_output = joinpath(path_demo, "21.DualSS.PhaseDiagram.CW.Reground")
+path_output = joinpath(path_demo, "23.DualSS.PhaseDiagram.CW.Reground")
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 
@@ -88,15 +88,13 @@ ax_contrast_164 = Axis(fig_full[2, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22
 ax_weightsp_164 = Axis(fig_full[2, 2]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", xlabelsize=16, ylabelsize=16, aspect=DataAspect());
 
 fig_ctrs_164 = Figure()
-Label(fig_ctrs_164[1, 0]; text=L"^{164}\text{Dy}", valign=:center, halign=:center, fontsize=16)
-ax_contrast_sample = Axis(fig_ctrs_164[1, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", xlabelsize=16, ylabelsize=16, aspect=DataAspect());
+ax_contrast_sample = Axis(fig_ctrs_164[1, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", xlabelsize=16, ylabelsize=16);
 
 fig_a1278 = Figure()
-Label(fig_a1278[0, 1]; text=L"a_{12} = 78 a_0", valign=:center, halign=:center, fontsize=16)
-ax_a1278 = Axis(fig_a1278[1, 1]; ylabel=L"C", xlabel=L"a_{22} \; (a_0)", xlabelsize=16, ylabelsize=16, width=600, height=200);
-Box(fig_a1278[1, 1]; color=:white, width=160, height=100, halign=0.14, valign=0.20)
-Box(fig_a1278[1, 1]; color=(Oklch(0.90, 0.005, 192), 0.2), width=160, height=100, halign=0.14, valign=0.20)
-ax_a1278_zoom = Axis(fig_a1278[1, 1]; backgroundcolor=:white, width=160, height=100, halign=0.14, valign=0.20, xticklabelsize=10, yticklabelsize=10, xgridvisible=false, ygridvisible=false);
+ax_a1278 = Axis(fig_a1278[1, 1]; ylabel=L"C", xlabel=L"a_{22} \; (a_0)", xlabelsize=16, ylabelsize=16, width=450, height=200);
+Box(fig_a1278[1, 1]; color=:white, width=160, height=80, halign=0.12, valign=0.20)
+Box(fig_a1278[1, 1]; color=(Oklch(0.90, 0.005, 192), 0.2), width=160, height=80, halign=0.12, valign=0.20)
+ax_a1278_zoom = Axis(fig_a1278[1, 1]; backgroundcolor=:white, width=160, height=80, halign=0.12, valign=0.20, xticklabelsize=10, yticklabelsize=10, xgridvisible=false, ygridvisible=false);
 
 
 function gen_clrmap_parabola(hue, light_maxchroma, chroma_max, light_min; thres_alpha=0.0, alpha_base=1.0, light_max=1.0, chroma_lightmax=0, hue_range=(0, 0))
@@ -116,7 +114,7 @@ end
 
 clrmp_162 = gen_clrmap_solo(hue_theme_istp["162"])
 clrmp_164 = gen_clrmap_solo(hue_theme_istp["164"])
-clrmp_turqoise = gen_clrmap_parabola(192, 0.58, 0.06, 0.55; hue_range=(0, 0), light_max=0.97, chroma_lightmax=0.008, thres_alpha=0.01, alpha_base=0.7)
+clrmp_turqoise = gen_clrmap_parabola(196, 0.58, 0.06, 0.55; hue_range=(0, 0), light_max=0.97, chroma_lightmax=0.008, thres_alpha=0.01, alpha_base=0.7)
 
 function gen_clrfn(istp; thres_alpha=0.0, alpha_base=1.0)
     hue = hue_theme_istp[istp]
@@ -136,20 +134,20 @@ end
 clrrng_c = (0, 1)
 clrrng_w = (0, 0.25) # extrema(vcat(vec(weightsp_162_q), vec(weightsp_164_q)))
 
-hm_c1 = heatmap!(ax_contrast_162, a22_g, a12_g, contrast_162_q; colormap=clrmp_162, colorrange=clrrng_c, rasterize=true)
-hm_w1 = heatmap!(ax_weightsp_162, a22_g, a12_g, weightsp_162_q; colormap=clrmp_162, colorrange=clrrng_w, rasterize=true)
-hm_c2 = heatmap!(ax_contrast_164, a22_g, a12_g, contrast_164_q; colormap=clrmp_164, colorrange=clrrng_c, rasterize=true)
-hm_w2 = heatmap!(ax_weightsp_164, a22_g, a12_g, weightsp_164_q; colormap=clrmp_164, colorrange=clrrng_w, rasterize=true)
+hm_c1 = heatmap!(ax_contrast_162, a22_g, a12_g, contrast_162_q; colormap=clrmp_162, colorrange=clrrng_c)
+hm_w1 = heatmap!(ax_weightsp_162, a22_g, a12_g, weightsp_162_q; colormap=clrmp_162, colorrange=clrrng_w)
+hm_c2 = heatmap!(ax_contrast_164, a22_g, a12_g, contrast_164_q; colormap=clrmp_164, colorrange=clrrng_c)
+hm_w2 = heatmap!(ax_weightsp_164, a22_g, a12_g, weightsp_164_q; colormap=clrmp_164, colorrange=clrrng_w)
 hm_cs = heatmap!(ax_contrast_sample, a22_g, a12_g, contrast_164_q; colormap=clrmp_turqoise, colorrange=clrrng_c, rasterize=true)
 for (a22, a12, marker) in sample_contrast
-    scatter!(ax_contrast_sample, [a22], [a12]; color=:mediumpurple4, marker=marker, markersize=8)
+    scatter!(ax_contrast_sample, [a22], [a12]; color=:mediumpurple4, marker=marker, markersize=12)
 end
 
 Colorbar(fig_full[3, 1], hm_c1; vertical=false, label=L"C");
 Colorbar(fig_full[4, 1], hm_c2; vertical=false, label=L"C");
 Colorbar(fig_full[3, 2], hm_w1; vertical=false, label=L"W");
 Colorbar(fig_full[4, 2], hm_w2; vertical=false, label=L"W");
-Colorbar(fig_ctrs_164[1, 2], hm_cs; vertical=true, label=L"\text{contrast} \; ^{164}\text{Dy}");
+Colorbar(fig_ctrs_164[1, 2], hm_cs; vertical=true, label=L"\text{contrast} \; ^{164}\text{Dy}", labelrotation = -π/2);
 limits!(ax_contrast_sample, (95, 108), (70, 96))
 
 colsize!(fig_full.layout, 0, 20)
@@ -159,8 +157,8 @@ colgap!(fig_full.layout, 10)
 rowsize!(fig_full.layout, 1, 360)
 rowsize!(fig_full.layout, 2, 360)
 
-colsize!(fig_ctrs_164.layout, 1, 360)
-rowsize!(fig_ctrs_164.layout, 1, 400)
+colsize!(fig_ctrs_164.layout, 1, 400)
+rowsize!(fig_ctrs_164.layout, 1, 320)
 xlims!(ax_contrast_sample, (90, 106))
 ylims!(ax_contrast_sample, (70, 90))
 ax_contrast_sample.xticks = 90:2:110

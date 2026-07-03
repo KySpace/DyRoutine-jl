@@ -142,7 +142,7 @@ for (desc, dens, marker, scale) in [
     [(gen_desc_dens_simu(a22, "xy")..., marker, scale) for (a22, marker, scale) in a22_marker_scale_typical_xy]...,
 ]
     axs_duet |> clear_axes!
-    max_dens, xlim, ylim = (0.2 / scale, (-10, 10), (-2.5, 2.5))
+    max_dens, xlim, ylim = (0.2 / scale, (-12, 12), (-3.0, 3.0))
     plot_duet!(axs_duet, dens; max_dens)
     fig_duet |> resize_to_layout!
     fig_duet |> display
