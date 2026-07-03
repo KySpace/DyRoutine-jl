@@ -78,17 +78,18 @@ a22_roton_instab = 99.8632
 sample_contrast = [(96, 78, :utriangle), (a22_roton_instab, 78, :diamond), (104, 78, :circle)]
 ##
 fig_full = Figure();
+kwargs_axis_common = (; xlabelsize=16, ylabelsize=16, xlabelfont="Helvetica World", ylabelfont="Helvetica World", xticklabelsize=14, yticklabelsize=14)
 Label(fig_full[1, 0]; text=L"^{162}\text{Dy}", valign=:center, halign=:center, fontsize=16)
 Label(fig_full[2, 0]; text=L"^{164}\text{Dy}", valign=:center, halign=:center, fontsize=16)
 Label(fig_full[0, 1]; text="contrast", valign=:center, halign=:center, font=:bold)
 Label(fig_full[0, 2]; text="side peak weight", valign=:center, halign=:center, font=:bold)
-ax_contrast_162 = Axis(fig_full[1, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", xlabelsize=16, ylabelsize=16, aspect=DataAspect());
-ax_weightsp_162 = Axis(fig_full[1, 2]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", xlabelsize=16, ylabelsize=16, aspect=DataAspect());
-ax_contrast_164 = Axis(fig_full[2, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", xlabelsize=16, ylabelsize=16, aspect=DataAspect());
-ax_weightsp_164 = Axis(fig_full[2, 2]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", xlabelsize=16, ylabelsize=16, aspect=DataAspect());
+ax_contrast_162 = Axis(fig_full[1, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", kwargs_axis_common..., aspect=DataAspect());
+ax_weightsp_162 = Axis(fig_full[1, 2]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", kwargs_axis_common..., aspect=DataAspect());
+ax_contrast_164 = Axis(fig_full[2, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", kwargs_axis_common..., aspect=DataAspect());
+ax_weightsp_164 = Axis(fig_full[2, 2]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", kwargs_axis_common..., aspect=DataAspect());
 
 fig_ctrs_164 = Figure()
-ax_contrast_sample = Axis(fig_ctrs_164[1, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", xlabelsize=16, ylabelsize=16);
+ax_contrast_sample = Axis(fig_ctrs_164[1, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", kwargs_axis_common..., width=280, height=280);
 
 fig_a1278 = Figure()
 ax_a1278 = Axis(fig_a1278[1, 1]; ylabel=L"C", xlabel=L"a_{22} \; (a_0)", xlabelsize=16, ylabelsize=16, width=450, height=200);
@@ -97,9 +98,10 @@ Box(fig_a1278[1, 1]; color=(Oklch(0.90, 0.005, 192), 0.2), width=160, height=80,
 ax_a1278_zoom = Axis(fig_a1278[1, 1]; backgroundcolor=:white, width=160, height=80, halign=0.12, valign=0.20, xticklabelsize=10, yticklabelsize=10, xgridvisible=false, ygridvisible=false);
 
 
-function gen_clrmap_parabola(hue, light_maxchroma, chroma_max, light_min; thres_alpha=0.0, alpha_base=1.0, light_max=1.0, chroma_lightmax=0, hue_range=(0, 0))
+function gen_clrmap_parabola(hue, light_maxchroma, chroma_max, light_min; thres_alpha=0.0, alpha_base=1.0, light_max=1.0, chroma_lightmax=0, hue_range=(0, 0), prescale=(t->t))
     clrmap = [
         begin
+            t = prescale(t)
             l = (1 - t) * (light_max - light_min) + light_min
             c = (chroma_lightmax - chroma_max) / (light_max - light_maxchroma)^2 * (l - light_maxchroma)^2 + chroma_max
             h = hue + (t - 0.5) * (hue_range[2] - hue_range[1])
@@ -114,7 +116,7 @@ end
 
 clrmp_162 = gen_clrmap_solo(hue_theme_istp["162"])
 clrmp_164 = gen_clrmap_solo(hue_theme_istp["164"])
-clrmp_turqoise = gen_clrmap_parabola(196, 0.58, 0.06, 0.55; hue_range=(0, 0), light_max=0.97, chroma_lightmax=0.008, thres_alpha=0.01, alpha_base=0.7)
+clrmp_turqoise = gen_clrmap_parabola(196, 0.58, 0.06, 0.55; hue_range=(0, 0), light_max=0.97, chroma_lightmax=0.008, thres_alpha=0, alpha_base=1.0, prescale=t->t^2.5)
 
 function gen_clrfn(istp; thres_alpha=0.0, alpha_base=1.0)
     hue = hue_theme_istp[istp]
@@ -157,8 +159,8 @@ colgap!(fig_full.layout, 10)
 rowsize!(fig_full.layout, 1, 360)
 rowsize!(fig_full.layout, 2, 360)
 
-colsize!(fig_ctrs_164.layout, 1, 400)
-rowsize!(fig_ctrs_164.layout, 1, 320)
+# colsize!(fig_ctrs_164.layout, 1, 320)
+# rowsize!(fig_ctrs_164.layout, 1, 280)
 xlims!(ax_contrast_sample, (90, 106))
 ylims!(ax_contrast_sample, (70, 90))
 ax_contrast_sample.xticks = 90:2:110
