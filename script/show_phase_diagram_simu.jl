@@ -78,7 +78,7 @@ a22_roton_instab = 99.8632
 sample_contrast = [(96, 78, :utriangle), (a22_roton_instab, 78, :diamond), (104, 78, :circle)]
 ##
 fig_full = Figure();
-kwargs_axis_common = (; xlabelsize=16, ylabelsize=16, xlabelfont="Helvetica World", ylabelfont="Helvetica World", xticklabelsize=14, yticklabelsize=14)
+kwargs_axis_common = (; xlabelsize=16, ylabelsize=16, xlabelfont="Helvetica World", ylabelfont="Helvetica World", xticklabelsize=14, yticklabelsize=14, xtickalign=1, ytickalign=1, xgridvisible=false, ygridvisible=false)
 Label(fig_full[1, 0]; text=L"^{162}\text{Dy}", valign=:center, halign=:center, fontsize=16)
 Label(fig_full[2, 0]; text=L"^{164}\text{Dy}", valign=:center, halign=:center, fontsize=16)
 Label(fig_full[0, 1]; text="contrast", valign=:center, halign=:center, font=:bold)
@@ -89,13 +89,13 @@ ax_contrast_164 = Axis(fig_full[2, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22
 ax_weightsp_164 = Axis(fig_full[2, 2]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", kwargs_axis_common..., aspect=DataAspect());
 
 fig_ctrs_164 = Figure()
-ax_contrast_sample = Axis(fig_ctrs_164[1, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", kwargs_axis_common..., width=280, height=280);
+ax_contrast_sample = Axis(fig_ctrs_164[1, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", kwargs_axis_common..., width=240, height=240);
 
 fig_a1278 = Figure()
-ax_a1278 = Axis(fig_a1278[1, 1]; ylabel=L"C", xlabel=L"a_{22} \; (a_0)", xlabelsize=16, ylabelsize=16, width=450, height=200);
-Box(fig_a1278[1, 1]; color=:white, width=160, height=80, halign=0.12, valign=0.20)
-Box(fig_a1278[1, 1]; color=(Oklch(0.90, 0.005, 192), 0.2), width=160, height=80, halign=0.12, valign=0.20)
-ax_a1278_zoom = Axis(fig_a1278[1, 1]; backgroundcolor=:white, width=160, height=80, halign=0.12, valign=0.20, xticklabelsize=10, yticklabelsize=10, xgridvisible=false, ygridvisible=false);
+ax_a1278 = Axis(fig_a1278[1, 1]; ylabel=L"C", xlabel=L"a_{22} \; (a_0)", width=400, height=180, kwargs_axis_common...);
+Box(fig_a1278[1, 1]; color=:white, width=160, height=80, halign=0.11, valign=0.20)
+Box(fig_a1278[1, 1]; color=(Oklch(0.90, 0.005, 192), 0.2), width=160, height=80, halign=0.11, valign=0.20)
+ax_a1278_zoom = Axis(fig_a1278[1, 1]; backgroundcolor=:white, width=160, height=80, halign=0.11, valign=0.20, kwargs_axis_common..., xticklabelsize=10, yticklabelsize=10);
 
 
 function gen_clrmap_parabola(hue, light_maxchroma, chroma_max, light_min; thres_alpha=0.0, alpha_base=1.0, light_max=1.0, chroma_lightmax=0, hue_range=(0, 0), prescale=(t->t))
