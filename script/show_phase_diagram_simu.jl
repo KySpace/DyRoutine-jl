@@ -14,13 +14,13 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 path_simu = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Samples\[07.01].Weijing\working"
 path_demo = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Demo"
 # commit #c018bbf9368558cbb09a629dcdd8a39cda93bbeb
-path_output = joinpath(path_demo, "23.DualSS.PhaseDiagram.CW.Reground")
+path_output = joinpath(path_demo, "24.DualSS.PhaseDiagram.CW.Contrast")
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 
-df_contrast_fine = CSV.read(joinpath(path_simu, "W_new_C.txt"), DataFrame; delim='\t', header=[:a12, :a22, :contrast_162, :contrast_164], skipto=2)
+df_contrast_fine = CSV.read(joinpath(path_simu, "W_new_CN.txt"), DataFrame; delim='\t', header=[:a12, :a22, :contrast_162, :contrast_164], skipto=2)
 df_weightsp_fine = CSV.read(joinpath(path_simu, "W_new2.txt"), DataFrame; delim='\t', header=[:a12, :a22, :weightsp_162, :weightsp_164], skipto=2)
-df_contrast_coarse = CSV.read(joinpath(path_simu, "W_coarse_C.txt"), DataFrame; delim='\t', header=[:a12, :a22, :contrast_162, :contrast_164], skipto=2)
+df_contrast_coarse = CSV.read(joinpath(path_simu, "W_coarse_CN.txt"), DataFrame; delim='\t', header=[:a12, :a22, :contrast_162, :contrast_164], skipto=2)
 df_weightsp_coarse = CSV.read(joinpath(path_simu, "W_coarse2.txt"), DataFrame; delim='\t', header=[:a12, :a22, :weightsp_162, :weightsp_164], skipto=2)
 df_contrast_a12_78 = CSV.read(joinpath(path_simu, "contrast_combined.txt"), DataFrame; delim='\t', header=[:a12, :a22, :contrast_162, :contrast_164], skipto=2)
 a12_ctrs_cat = vcat(df_contrast_fine.a12, df_contrast_coarse.a12)
@@ -107,9 +107,9 @@ ax_contrast_sample = Axis(fig_ctrs_164[1, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=
 
 fig_a1278 = Figure()
 ax_a1278 = Axis(fig_a1278[1, 1]; ylabel="contrast", xlabel=L"a_{22} \; (a_0)", width=400, height=150, kwargs_axis_common...);
-kwargs_a1278_zoom = (; width=100, height=60, halign=0.11, valign=0.3)
-Box(fig_a1278[1, 1]; color=:white, kwargs_a1278_zoom...)
-Box(fig_a1278[1, 1]; color=(Oklch(0.90, 0.005, 192), 0.2), kwargs_a1278_zoom...)
+kwargs_a1278_zoom = (; width=140, height=80, halign=0.13, valign=0.35)
+Box(fig_a1278[1, 1]; color=:white, kwargs_a1278_zoom..., strokewidth = 0)
+Box(fig_a1278[1, 1]; color=(Oklch(0.90, 0.005, 192), 0.2), kwargs_a1278_zoom..., strokewidth = 0)
 ax_a1278_zoom = Axis(fig_a1278[1, 1]; backgroundcolor=:white, kwargs_a1278_zoom..., kwargs_axis_common..., xticklabelsize=13, yticklabelsize=13);
 ax_a1278_zoom.xticks = [99.8, 99.90]
 ax_a1278_zoom.xminorticks = 99.80:0.02:99.90
@@ -137,7 +137,7 @@ end
 
 clrmp_162 = gen_clrmap_solo(hue_theme_istp["162"])
 clrmp_164 = gen_clrmap_solo(hue_theme_istp["164"])
-clrmp_turqoise = gen_clrmap_parabola(196, 0.58, 0.06, 0.55; hue_range=(0, 0), light_max=0.97, chroma_lightmax=0.008, thres_alpha=0, alpha_base=1.0, prescale=t->t^2.5)
+clrmp_turqoise = gen_clrmap_parabola(196, 0.58, 0.06, 0.55; hue_range=(0, 0), light_max=0.97, chroma_lightmax=0.008, thres_alpha=0, alpha_base=1.0, prescale=t->t^5)
 
 function gen_clrfn(istp; thres_alpha=0.0, alpha_base=1.0)
     hue = hue_theme_istp[istp]
@@ -189,19 +189,19 @@ ax_contrast_sample.xticks = 90:2:110
 ax_contrast_sample.yticks = 70:2:106
 
 xlims!(ax_a1278, (95.8, 101.2))
-ylims!(ax_a1278, (-0.05, 0.85))
+ylims!(ax_a1278, (-0.05, 1.05))
 xlims!(ax_a1278_zoom, (99.8, 99.9))
-ylims!(ax_a1278_zoom, (-0.02, 0.32))
+ylims!(ax_a1278_zoom, (-0.02, 0.52))
 vspan!(ax_a1278, 99.8, 99.9; color=(Oklch(0.90, 0.005, 192), 0.5))
 # vlines!(ax_a1278, a22_roton_instab; color=:mediumpurple4, linewidth=0.8)
 vlines!(ax_a1278_zoom, a22_roton_instab; color=sample_contrast[2][4], linewidth=0.8, linestyle=:dash)
 kwargs_lines = i -> (; linewidth=1, color=clr_lines[i], strokecolor=clr_lines[i], strokewidth=1, markersize=8, marker=(i==1 ? :rect : :circle), markercolor=clr_marker_face[i])
 cut_c_162 = scatterlines!(ax_a1278, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_162; kwargs_lines(1)..., label=L"^{162}\text{Dy}")
 cut_c_164 = scatterlines!(ax_a1278, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_164; kwargs_lines(2)..., label=L"^{164}\text{Dy}")
-scatterlines!(ax_a1278_zoom, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_162; kwargs_lines(1)..., markersize=6)
-scatterlines!(ax_a1278_zoom, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_164; kwargs_lines(2)..., markersize=6)
+scatterlines!(ax_a1278_zoom, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_162; kwargs_lines(1)...)
+scatterlines!(ax_a1278_zoom, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_164; kwargs_lines(2)...)
 let (a22, _, marker, clr_stroke, clr_face) = sample_contrast[2]
-    scatter!(ax_a1278_zoom, [a22], [0.28]; 
+    scatter!(ax_a1278_zoom, [a22], [0.47]; 
         color=clr_face, strokecolor=clr_stroke, strokewidth=1, marker=marker, markersize=8)
 end
 axislegend(ax_a1278; position=:rt, framevisible=false, labelsize=14)
