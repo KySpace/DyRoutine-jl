@@ -12,13 +12,13 @@ GLMakie.activate!()
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
 path_simu_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Samples\[07.01].Weijing"
-path_simu_w = joinpath(path_simu_root, "[07.06] weight recalculation")
+path_simu_w = joinpath(path_simu_root, "[07.06] weight recalculation wolfram")
 path_simu_c = joinpath(path_simu_root, "[07.05] contrast without blur")
-path_simu_z = joinpath(path_simu_root, "[07.02] density profiles")
+path_simu_z = joinpath(path_simu_root, "[07.01] vert sepr")
 path_simu_sample_xy = joinpath(path_simu_root, "[07.02] density profiles")
 path_demo = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Demo"
 # commit #93504925a6f1b5e790e838a1a66c2e5f653afdf5
-path_output = joinpath(path_demo, "27.DualSS.PhaseDiagram.CWZ.Rework")
+path_output = joinpath(path_demo, "29.DualSS.PhaseDiagram.CWZ.Wolfram.WithZ")
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 
@@ -55,14 +55,15 @@ function make_dataframe_nondupl(path, filenames, header; delim='\t', header_dupl
 end
 
 (df_ctrs, (a12_ctrs, a22_ctrs, vec_ctrs_162, vec_ctrs_164)) = make_dataframe_nondupl(path_simu_c, ["C_coarse.txt", "C_coarse2.txt", "C_fine.txt", "C_precise.txt"], [:a12, :a22, :contrast_162, :contrast_164]; header_dupl=[:a12, :a22])
-(df_wght, (a12_wght, a22_wght, vec_wght_162, vec_wght_164)) = make_dataframe_nondupl(path_simu_w, ["W_coarse.txt", "W_coarse2.txt", "W_fine.txt", "W_precise.txt"], [:a12, :a22, :weightsp_162, :weightsp_164]; header_dupl=[:a12, :a22])
-# (df_wght, (a12_wght, a22_wght, vec_wght_162, vec_wght_164, _, _)) = make_dataframe_nondupl(path_simu_w, ["pdspw1a0.csv", "pdspw2a0.csv", "pdspwline.csv", "pdspwfine.csv"], [:a12, :a22, :weightsp_162, :weightsp_164, :err_weightsp_162, :err_weightsp_164]; delim=',', header_dupl=[:a12, :a22], skipto=1)
+(df_sepr, (a12_sepr, a22_sepr, vec_sepr)) = make_dataframe_nondupl(path_simu_c, ["dz_coarse.txt"], [:a12, :a22, :vert_sepr]; header_dupl=[:a12, :a22])
+# (df_wght, (a12_wght, a22_wght, vec_wght_162, vec_wght_164)) = make_dataframe_nondupl(path_simu_w, ["W_coarse.txt", "W_coarse2.txt", "W_fine.txt", "W_precise.txt"], [:a12, :a22, :weightsp_162, :weightsp_164]; header_dupl=[:a12, :a22])
+(df_wght, (a12_wght, a22_wght, vec_wght_162, vec_wght_164, _, _)) = make_dataframe_nondupl(path_simu_w, ["pdspw1a0.csv", "pdspw2a0.csv", "pdspwline.csv", "pdspwfine.csv"], [:a12, :a22, :weightsp_162, :weightsp_164, :err_weightsp_162, :err_weightsp_164]; delim=',', header_dupl=[:a12, :a22], skipto=1)
 df_ctrs_a12_78 = @pipe df_ctrs[df_ctrs.a12.==78, :] |> sort!(_, :a22)
 df_wght_a12_78 = @pipe df_wght[df_wght.a12.==78, :] |> sort!(_, :a22)
 
 ##
 clrrng_c = (0, 1)
-clrrng_w = (0, 0.45) # extrema(vcat(vec(weightsp_162_q), vec(weightsp_164_q)))
+clrrng_w = (0, 0.45) # extrema(vcat(vec(wght_162_q), vec(wght_164_q)))
 coor_ctrs = hcat(a22_ctrs, a12_ctrs)'
 coor_wght = hcat(a22_wght, a12_wght)'
 
@@ -70,6 +71,7 @@ ntpl_ctrs_162 = interpolate(a22_ctrs, a12_ctrs, vec_ctrs_162; derivatives=true)
 ntpl_ctrs_164 = interpolate(a22_ctrs, a12_ctrs, vec_ctrs_164; derivatives=true)
 ntpl_wght_162 = interpolate(a22_wght, a12_wght, vec_wght_162; derivatives=true)
 ntpl_wght_164 = interpolate(a22_wght, a12_wght, vec_wght_164; derivatives=true)
+ntpl_sepr = interpolate(a22_sepr, a12_sepr, vec_sepr; derivatives=true)
 
 a22_g = range(88, 108; length=200)
 a12_g = range(70, 96; length=200)
@@ -80,6 +82,7 @@ ctrs_162_q = @pipe ntpl_ctrs_162(a22_q, a12_q; method=Sibson()) |> reshape(_, le
 ctrs_164_q = @pipe ntpl_ctrs_164(a22_q, a12_q; method=Sibson()) |> reshape(_, length(a22_g), length(a12_g))
 wght_162_q = @pipe ntpl_wght_162(a22_q, a12_q; method=Sibson()) |> reshape(_, length(a22_g), length(a12_g))
 wght_164_q = @pipe ntpl_wght_164(a22_q, a12_q; method=Sibson()) |> reshape(_, length(a22_g), length(a12_g))
+sepr_q = @pipe ntpl_sepr(a22_q, a12_q; method=Sibson()) |> reshape(_, length(a22_g), length(a12_g))
 
 a22_roton_instab = 99.8632
 sample_ctrs = [
@@ -99,6 +102,7 @@ ax_ctrs_162 = Axis(fig_full[1, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \;
 ax_wght_162 = Axis(fig_full[1, 2]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", kwargs_axis_common..., aspect=DataAspect());
 ax_ctrs_164 = Axis(fig_full[2, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", kwargs_axis_common..., aspect=DataAspect());
 ax_wght_164 = Axis(fig_full[2, 2]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", kwargs_axis_common..., aspect=DataAspect());
+ax_sepr = Axis(fig_full[3, 1:2]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", kwargs_axis_common..., aspect=DataAspect());
 clrmp_162 = gen_clrmap_solo(hue_theme_istp["162"])
 clrmp_164 = gen_clrmap_solo(hue_theme_istp["164"])
 
@@ -176,6 +180,22 @@ for (name_prop, abbr_prop, clrrng_map, df_prop, df_prop_line, prop_variant_line,
         kwargs_a1278_zoom=(; width=140, height=80, halign=0.13, valign=0.35),
         info_sample=sample_ctrs,
         clr_hm=(; hue=196, prescale=(t -> t^5))
+    ),
+    (
+        name_prop="sidepeak weight",
+        abbr_prop="W",
+        clrrng_map=(0, 0.5),
+        df_prop=df_wght,
+        df_prop_line=df_wght_a12_78,
+        prop_variant_line=[:weightsp_162, :weightsp_164],
+        prop_variant_map=[wght_162_q, wght_164_q],
+        lim_prop=(-0.05, 0.55),
+        lim_prop_zoom=(-0.02, 0.32),
+        ticks_prop=0:0.1:0.6,
+        ticks_prop_zoom=0:0.1:0.6,
+        kwargs_a1278_zoom=(; width=140, height=80, halign=0.13, valign=0.35),
+        info_sample=sample_ctrs,
+        clr_hm=(; hue=84, prescale=(t -> t))
     ),
     (
         name_prop="sidepeak weight",
