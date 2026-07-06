@@ -11,51 +11,55 @@ using Statistics
 GLMakie.activate!()
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
-path_simu = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Samples\[07.01].Weijing\working"
+path_simu_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Samples\[07.01].Weijing"
+path_simu_w = joinpath(path_simu_root, "[07.06] weight recalculation")
+path_simu_c = joinpath(path_simu_root, "[07.05] contrast without blur")
+path_simu_z = joinpath(path_simu_root, "[07.02] density profiles")
+path_simu_sample_xy = joinpath(path_simu_root, "[07.02] density profiles")
 path_demo = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Demo"
 # commit #c018bbf9368558cbb09a629dcdd8a39cda93bbeb
-path_output = joinpath(path_demo, "24.DualSS.PhaseDiagram.CW.Contrast")
+path_output = joinpath(path_demo, "25.DualSS.PhaseDiagram.CWZ")
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 
-df_contrast_fine = CSV.read(joinpath(path_simu, "W_new_CN.txt"), DataFrame; delim='\t', header=[:a12, :a22, :contrast_162, :contrast_164], skipto=2)
-df_weightsp_fine = CSV.read(joinpath(path_simu, "W_new2.txt"), DataFrame; delim='\t', header=[:a12, :a22, :weightsp_162, :weightsp_164], skipto=2)
-df_contrast_coarse = CSV.read(joinpath(path_simu, "W_coarse_CN.txt"), DataFrame; delim='\t', header=[:a12, :a22, :contrast_162, :contrast_164], skipto=2)
-df_weightsp_coarse = CSV.read(joinpath(path_simu, "W_coarse2.txt"), DataFrame; delim='\t', header=[:a12, :a22, :weightsp_162, :weightsp_164], skipto=2)
-df_contrast_a12_78 = CSV.read(joinpath(path_simu, "contrast_combined.txt"), DataFrame; delim='\t', header=[:a12, :a22, :contrast_162, :contrast_164], skipto=2)
-a12_ctrs_cat = vcat(df_contrast_fine.a12, df_contrast_coarse.a12)
-a22_ctrs_cat = vcat(df_contrast_fine.a22, df_contrast_coarse.a22)
-a12_wght_cat = vcat(df_weightsp_fine.a12, df_weightsp_coarse.a12)
-a22_wght_cat = vcat(df_weightsp_fine.a22, df_weightsp_coarse.a22)
-df_contrast_162_cat = vcat(df_contrast_fine.contrast_162, df_contrast_coarse.contrast_162)
-df_contrast_164_cat = vcat(df_contrast_fine.contrast_164, df_contrast_coarse.contrast_164)
-df_weightsp_162_cat = vcat(df_weightsp_fine.weightsp_162, df_weightsp_coarse.weightsp_162)
-df_weightsp_164_cat = vcat(df_weightsp_fine.weightsp_164, df_weightsp_coarse.weightsp_164)
+function average_duplicate_points(df::AbstractDataFrame, header_dupl::AbstractVector{Symbol})
+    header = Symbol.(names(df))
+    header_missing = setdiff(header_dupl, header)
+    isempty(header_missing) ||
+        throw(ArgumentError("header_dupl contains columns not present in df: $(header_missing)"))
 
-
-function average_duplicate_points(x, y, z1, z2)
-    d = Dict{Tuple{Float64,Float64},Vector{Tuple{Float64,Float64}}}()
-    for (xi, yi, z1i, z2i) in zip(vec(x), vec(y), vec(z1), vec(z2))
-        if isfinite(xi) && isfinite(yi) && isfinite(z1i) && isfinite(z2i)
-            push!(
-                get!(d, (Float64(xi), Float64(yi)), Tuple{Float64,Float64}[]),
-                (Float64(z1i), Float64(z2i)),
-            )
-        end
-    end
-    xs, ys, z1s, z2s = Float64[], Float64[], Float64[], Float64[]
-    for ((xi, yi), vals) in d
-        push!(xs, xi)
-        push!(ys, yi)
-        push!(z1s, mean(first.(vals)))
-        push!(z2s, mean(last.(vals)))
-    end
-    return xs, ys, z1s, z2s
+    ids_valid = [
+        all(col -> begin
+                val = row[col]
+                !ismissing(val) && (!(val isa Number) || isfinite(val))
+            end, header)
+        for row in eachrow(df)
+    ]
+    df_valid = df[ids_valid, :]
+    header_avg = setdiff(header, header_dupl)
+    df_nondupl = combine(
+        groupby(df_valid, header_dupl),
+        header_avg .=> (col -> mean(Float64.(col))) .=> header_avg,
+    )
+    return select(df_nondupl, header)
 end
 
-a22_ctrs, a12_ctrs, df_contrast_162, df_contrast_164 = average_duplicate_points(a22_ctrs_cat, a12_ctrs_cat, df_contrast_162_cat, df_contrast_164_cat)
-a22_wght, a12_wght, df_weightsp_162, df_weightsp_164 = average_duplicate_points(a22_wght_cat, a12_wght_cat, df_weightsp_162_cat, df_weightsp_164_cat)
+function make_dataframe_nondupl(path, filenames, header; header_dupl=[:a12, :a22], skipto=2)
+    df = @pipe [
+                         CSV.read(joinpath(path, fn), DataFrame; delim='\t', header, skipto)
+                         for fn in filenames
+                     ] |> vcat(_...) 
+    df_nondupl = average_duplicate_points(df, header_dupl)
+    col_nondupl = @pipe df_nondupl |> Tables.columntable(_) |> Tuple(_)
+    (;df=df_nondupl, col_nondupl)
+end
 
+(df_ctrs, (a12_ctrs, a22_ctrs, df_contrast_162, df_contrast_164)) = make_dataframe_nondupl(path_simu_c, ["C_coarse.txt", "C_coarse2.txt", "C_fine.txt", "C_precise.txt"], [:a12, :a22, :contrast_162, :contrast_164]; header_dupl=[:a12, :a22])
+(df_wght, (a12_wght, a22_wght, df_weightsp_162, df_weightsp_164)) = make_dataframe_nondupl(path_simu_w, ["W_coarse.txt", "W_coarse2.txt", "W_fine.txt", "W_precise.txt"], [:a12, :a22, :weightsp_162, :weightsp_164]; header_dupl=[:a12, :a22])
+df_contrast_a12_78 = df_ctrs[df_ctrs.a12 .== 78, :]
+df_weightsp_a12_78 = df_wght[df_wght.a12 .== 78, :]
+
+##
 coor_ctrs = hcat(a22_ctrs, a12_ctrs)'
 coor_wght = hcat(a22_wght, a12_wght)'
 
@@ -76,10 +80,10 @@ weightsp_164_q = @pipe ntpl_weightsp_164(a22_q, a12_q; method=Sibson()) |> resha
 
 a22_roton_instab = 99.8632
 sample_contrast = [
-    (96, 78, :utriangle, colorant"rgb(107, 93, 147)", colorant"rgb(179, 162, 209)"), 
-    (a22_roton_instab, 78, :dtriangle, colorant"rgb(107, 107, 107)", colorant"rgb(217, 217, 217)"), 
+    (96, 78, :utriangle, colorant"rgb(107, 93, 147)", colorant"rgb(179, 162, 209)"),
+    (a22_roton_instab, 78, :dtriangle, colorant"rgb(107, 107, 107)", colorant"rgb(217, 217, 217)"),
     (104, 78, :diamond, colorant"rgb(144, 113, 45)", colorant"rgb(217, 195, 131)"),
-    ]
+]
 ##
 fig_full = Figure();
 kwargs_axis_common = (; xlabelsize=16, ylabelsize=16, xlabelfont="Helvetica World", ylabelfont="Helvetica World", xticklabelsize=14, yticklabelsize=14, xtickalign=1, ytickalign=1, xminortickalign=1, yminortickalign=1, xgridvisible=false, ygridvisible=false)
@@ -96,7 +100,7 @@ clr_lines = [
     colorant"rgb(157, 76, 76)",
     colorant"rgb(72, 93, 144)"
 ]
-clr_marker_face = [ 
+clr_marker_face = [
     colorant"rgb(214, 163, 164)",
     colorant"rgb(164, 181, 217)",
 ]
@@ -108,8 +112,8 @@ ax_contrast_sample = Axis(fig_ctrs_164[1, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=
 fig_a1278 = Figure()
 ax_a1278 = Axis(fig_a1278[1, 1]; ylabel="contrast", xlabel=L"a_{22} \; (a_0)", width=400, height=150, kwargs_axis_common...);
 kwargs_a1278_zoom = (; width=140, height=80, halign=0.13, valign=0.35)
-Box(fig_a1278[1, 1]; color=:white, kwargs_a1278_zoom..., strokewidth = 0)
-Box(fig_a1278[1, 1]; color=(Oklch(0.90, 0.005, 192), 0.2), kwargs_a1278_zoom..., strokewidth = 0)
+Box(fig_a1278[1, 1]; color=:white, kwargs_a1278_zoom..., strokewidth=0)
+Box(fig_a1278[1, 1]; color=(Oklch(0.90, 0.005, 192), 0.2), kwargs_a1278_zoom..., strokewidth=0)
 ax_a1278_zoom = Axis(fig_a1278[1, 1]; backgroundcolor=:white, kwargs_a1278_zoom..., kwargs_axis_common..., xticklabelsize=13, yticklabelsize=13);
 ax_a1278_zoom.xticks = [99.8, 99.90]
 ax_a1278_zoom.xminorticks = 99.80:0.02:99.90
@@ -119,7 +123,7 @@ ax_a1278.xminorticks = IntervalsBetween(2)
 ax_a1278.xminorticksvisible = true
 ax_a1278.yticks = 0:0.2:1
 
-function gen_clrmap_parabola(hue, light_maxchroma, chroma_max, light_min; thres_alpha=0.0, alpha_base=1.0, light_max=1.0, chroma_lightmax=0, hue_range=(0, 0), prescale=(t->t))
+function gen_clrmap_parabola(hue, light_maxchroma, chroma_max, light_min; thres_alpha=0.0, alpha_base=1.0, light_max=1.0, chroma_lightmax=0, hue_range=(0, 0), prescale=(t -> t))
     clrmap = [
         begin
             t = prescale(t)
@@ -137,7 +141,7 @@ end
 
 clrmp_162 = gen_clrmap_solo(hue_theme_istp["162"])
 clrmp_164 = gen_clrmap_solo(hue_theme_istp["164"])
-clrmp_turqoise = gen_clrmap_parabola(196, 0.58, 0.06, 0.55; hue_range=(0, 0), light_max=0.97, chroma_lightmax=0.008, thres_alpha=0, alpha_base=1.0, prescale=t->t^5)
+clrmp_turqoise = gen_clrmap_parabola(196, 0.58, 0.06, 0.55; hue_range=(0, 0), light_max=0.97, chroma_lightmax=0.008, thres_alpha=0, alpha_base=1.0, prescale=t -> t^5)
 
 function gen_clrfn(istp; thres_alpha=0.0, alpha_base=1.0)
     hue = hue_theme_istp[istp]
@@ -163,7 +167,7 @@ hm_c2 = heatmap!(ax_contrast_164, a22_g, a12_g, contrast_164_q; colormap=clrmp_1
 hm_w2 = heatmap!(ax_weightsp_164, a22_g, a12_g, weightsp_164_q; colormap=clrmp_164, colorrange=clrrng_w)
 hm_cs = heatmap!(ax_contrast_sample, a22_g, a12_g, contrast_164_q; colormap=clrmp_turqoise, colorrange=clrrng_c, rasterize=true)
 for (a22, a12, marker, clr_stroke, clr_face) in sample_contrast
-    scatter!(ax_contrast_sample, [a22], [a12]; 
+    scatter!(ax_contrast_sample, [a22], [a12];
         color=clr_face, strokecolor=clr_stroke, strokewidth=1.5, marker=marker, markersize=12)
 end
 
@@ -171,7 +175,7 @@ Colorbar(fig_full[3, 1], hm_c1; vertical=false, label=L"C");
 Colorbar(fig_full[4, 1], hm_c2; vertical=false, label=L"C");
 Colorbar(fig_full[3, 2], hm_w1; vertical=false, label=L"W");
 Colorbar(fig_full[4, 2], hm_w2; vertical=false, label=L"W");
-Colorbar(fig_ctrs_164[1, 2], hm_cs; vertical=true, label="contrast", labelrotation = -π/2);
+Colorbar(fig_ctrs_164[1, 2], hm_cs; vertical=true, label="contrast", labelrotation=-π / 2);
 limits!(ax_contrast_sample, (95, 108), (70, 96))
 
 colsize!(fig_full.layout, 0, 20)
@@ -195,13 +199,13 @@ ylims!(ax_a1278_zoom, (-0.02, 0.52))
 vspan!(ax_a1278, 99.8, 99.9; color=(Oklch(0.90, 0.005, 192), 0.5))
 # vlines!(ax_a1278, a22_roton_instab; color=:mediumpurple4, linewidth=0.8)
 vlines!(ax_a1278_zoom, a22_roton_instab; color=sample_contrast[2][4], linewidth=0.8, linestyle=:dash)
-kwargs_lines = i -> (; linewidth=1, color=clr_lines[i], strokecolor=clr_lines[i], strokewidth=1, markersize=8, marker=(i==1 ? :rect : :circle), markercolor=clr_marker_face[i])
+kwargs_lines = i -> (; linewidth=1, color=clr_lines[i], strokecolor=clr_lines[i], strokewidth=1, markersize=8, marker=(i == 1 ? :rect : :circle), markercolor=clr_marker_face[i])
 cut_c_162 = scatterlines!(ax_a1278, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_162; kwargs_lines(1)..., label=L"^{162}\text{Dy}")
 cut_c_164 = scatterlines!(ax_a1278, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_164; kwargs_lines(2)..., label=L"^{164}\text{Dy}")
 scatterlines!(ax_a1278_zoom, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_162; kwargs_lines(1)...)
 scatterlines!(ax_a1278_zoom, df_contrast_a12_78.a22, df_contrast_a12_78.contrast_164; kwargs_lines(2)...)
 let (a22, _, marker, clr_stroke, clr_face) = sample_contrast[2]
-    scatter!(ax_a1278_zoom, [a22], [0.47]; 
+    scatter!(ax_a1278_zoom, [a22], [0.47];
         color=clr_face, strokecolor=clr_stroke, strokewidth=1, marker=marker, markersize=8)
 end
 axislegend(ax_a1278; position=:rt, framevisible=false, labelsize=14)

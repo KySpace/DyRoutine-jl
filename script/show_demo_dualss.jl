@@ -11,7 +11,7 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 path_demo = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Demo"
 path_simu = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Samples\[07.01].Weijing\working"
 # commit #c018bbf9368558cbb09a629dcdd8a39cda93bbeb
-path_output = joinpath(path_demo, "22.DualSS.ManySimu")
+path_output = joinpath(path_demo, "25.DualSS.XYSimu&XZSimu")
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 step_grid = 0.25 / 10;
@@ -42,12 +42,21 @@ function gen_dens(; λ_crys=3, σx=3, σy=8, σx_tf=3, σy_tf=8, A_tf=6, A_halo=
     end
 end
 
-function set_axis_dual!()
+function set_axis_dual_tb!()
     fig = Figure(; backgroundcolor=:transparent)
     ax_1 = Axis(fig[1, 1]; width=400, height=100, backgroundcolor=:transparent)
     ax_2 = Axis(fig[2, 1]; width=400, height=100, backgroundcolor=:transparent)
     axs = [ax_1, ax_2]
     rowgap!(fig.layout, 0)
+    fig, axs
+end
+
+function set_axis_dual_lr!()
+    fig = Figure(; backgroundcolor=:transparent)
+    ax_1 = Axis(fig[1, 1]; width=400, height=200, backgroundcolor=:transparent)
+    ax_2 = Axis(fig[1, 2]; width=400, height=200, backgroundcolor=:transparent)
+    axs = [ax_1, ax_2]
+    colgap!(fig.layout, 0)
     fig, axs
 end
 
@@ -63,17 +72,17 @@ function plot_duet!(axs, xydens; max_dens=10)
     end
 end
 
-fig_duet, axs_duet = set_axis_dual!()
+fig_duet, axs_duet = set_axis_dual_tb!()
 fmt_demo = gen -> (; x_posi, y_posi, dens=([gen(x, y) for x in x_posi, y in y_posi] |> a -> [a, a]))
 gen_desc_dens_simu = (a22, proj) -> begin
     prefix = @match proj begin
-            "xy" => "density%d"
-            "xz" => "density%dz"
-        end
+        "xy" => "density%d"
+        "xz" => "density%dz"
+    end
     filename_fmt = Printf.Format(prefix * "_78_%g")
     @sprintf("[simu %s a12=78'a22=%.04f]", proj, a22),
     read_dens_simu(joinpath(path_simu, "outdens_$proj"), [Printf.format(filename_fmt, i, a22) for i in 1:2])
-    end
+end
 a22_sample_xy = [
     88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 98.2, 98.4, 98.6, 98.8, 99, 99.2, 99.4, 99.6,
     99.8000,
@@ -106,13 +115,16 @@ a22_sample_xy = [
     108.0000,
 ]
 a22_marker_scale_typical_xy = [
-    (96, :utriangle, 0.3), 
-    (99.8526, :diamond, 1), 
-    (99.8632, :diamond, 1), 
+    (96, :utriangle, 0.3),
+    (99.8526, :diamond, 1),
+    (99.8632, :diamond, 1),
     (104, :circle, 1),
 ]
+a22_marker_scale_typical_xz = [
+    (96, :utriangle, 1.0),
+    (104, :circle, 2.0),
+]
 a22_sample_xz = [
-
 ]
 for (desc, dens) in [
     ("[demo uniform bec     ]", gen_dens(; λ_crys=2.5, σx=2.5, σy=10, σx_tf=2.5, σy_tf=10, A_tf=1, A_halo=4, x0=0, y0=0, φ=0π, η=0.0, γ=1.0, soft=0.3) |> fmt_demo),
@@ -122,7 +134,6 @@ for (desc, dens) in [
     # ("[simu 1]", read_dens_simu(joinpath(path_simu), ["density1_1", "density2_1"])),
     # ("[simu 2]", read_dens_simu(joinpath(path_simu), ["density1_2", "density2_2"])),
     [gen_desc_dens_simu(a22, "xy") for a22 in a22_sample_xy]...,
-    [gen_desc_dens_simu(a22, "xz") for a22 in a22_sample_xz]...,
 ]
     axs_duet |> clear_axes!
     max_dens, xlim, ylim = contains(desc, "simu") ?
@@ -132,21 +143,24 @@ for (desc, dens) in [
     fig_duet |> resize_to_layout!
     fig_duet |> display
     limits!(axs_duet[1], xlim, ylim)
+    limits!(axs_duet[2], xlim, ylim)
     linkaxes!(axs_duet)
     save(joinpath(path_output, "$desc.png"), fig_duet; px_per_unit=1, backend=CairoMakie)
     save(joinpath(path_output, "$desc.svg"), fig_duet; backend=CairoMakie)
     println("$desc displayed and saved")
 end
 
+fig_duet, axs_duet = set_axis_dual_lr!()
 for (desc, dens, marker, scale) in [
-    [(gen_desc_dens_simu(a22, "xy")..., marker, scale) for (a22, marker, scale) in a22_marker_scale_typical_xy]...,
+    [(gen_desc_dens_simu(a22, "xz")..., marker, scale) for (a22, marker, scale) in a22_marker_scale_typical_xz]...,
 ]
     axs_duet |> clear_axes!
-    max_dens, xlim, ylim = (0.2 / scale, (-12, 12), (-3.0, 3.0))
+    max_dens, xlim, ylim = (0.2 / scale, (-12, 12), (-6.0, 6.0))
     plot_duet!(axs_duet, dens; max_dens)
     fig_duet |> resize_to_layout!
     fig_duet |> display
     limits!(axs_duet[1], xlim, ylim)
+    limits!(axs_duet[2], xlim, ylim)
     linkaxes!(axs_duet)
     save(joinpath(path_output, "typical-$desc.[scale=$scale].[marker=$marker].png"), fig_duet; px_per_unit=1, backend=CairoMakie)
     save(joinpath(path_output, "typical-$desc.[scale=$scale].[marker=$marker].svg"), fig_duet; backend=CairoMakie)
