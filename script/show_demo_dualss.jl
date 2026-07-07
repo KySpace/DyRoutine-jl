@@ -11,7 +11,7 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 path_demo = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Demo"
 path_simu = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Samples\[07.01].Weijing\working"
 # commit #c018bbf9368558cbb09a629dcdd8a39cda93bbeb
-path_output = joinpath(path_demo, "25.DualSS.XYSimu&XZSimu")
+path_output = joinpath(path_demo, "31.DualSS.XYSimu&XZSimu")
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 step_grid = 0.25 / 10;
@@ -58,6 +58,17 @@ function set_axis_dual_lr!()
     axs = [ax_1, ax_2]
     colgap!(fig.layout, 0)
     fig, axs
+end
+
+function calc_com_x(x_posi::AbstractVector{<:Real}, dens::AbstractMatrix{<:Real})
+    length(x_posi) == size(dens, 1) ||
+        throw(DimensionMismatch("x_posi length $(length(x_posi)) must match density first dimension $(size(dens, 1))."))
+
+    dens_x = vec(sum(dens; dims=2))
+    sum_dens = sum(dens_x)
+    sum_dens > 0 ||
+        throw(ArgumentError("density sum must be positive to calculate center of mass, got $sum_dens."))
+    return sum(x_posi .* dens_x) / sum_dens
 end
 
 function plot_duet!(axs, xydens; max_dens=10)
@@ -156,6 +167,10 @@ for (desc, dens, marker, scale) in [
 ]
     axs_duet |> clear_axes!
     max_dens, xlim, ylim = (0.2 / scale, (-12, 12), (-6.0, 6.0))
+    x_coms = [calc_com_x(dens.x_posi, dens.dens[i]) for i in eachindex(dens.dens)]
+    for i in eachindex(axs_duet, x_coms)
+        hlines!(axs_duet[i], x_coms[i]; color=Oklch(0.5, 0, 0), linewidth=1)
+    end
     plot_duet!(axs_duet, dens; max_dens)
     fig_duet |> resize_to_layout!
     fig_duet |> display

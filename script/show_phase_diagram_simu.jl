@@ -13,7 +13,7 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
 # commit #93504925a6f1b5e790e838a1a66c2e5f653afdf5
 path_demo = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Demo"
-path_output = joinpath(path_demo, "29.DualSS.PhaseDiagram.CWZ.Wolfram.WithZ")
+path_output = joinpath(path_demo, "30.DualSS.PhaseDiagram.CWZ")
 
 path_simu_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Samples\[07.01].Weijing"
 path_simu_w = joinpath(path_simu_root, "[07.06] weight recalculation wolfram")
@@ -230,8 +230,8 @@ for (
         name_prop="vertical separation (μm)",
         abbr_prop="Z",
         info_sample=sample_sepr,
-        clrrng_map=(0, 2),
-        clr_hm=(; hue=293, prescale=(t -> t)),
+        clrrng_map=(0.3, 2.0),
+        clr_hm=(; hue=293, prescale=(t -> t^2)),
         clrs_line=(; line=[Oklch(0.56, 0.08, 293)], markerface=[Oklch(0.80, 0.066, 293)]),
         df_prop_line=df_sepr_a12_78,
         prop_variant_line=[:vert_sepr],
@@ -242,7 +242,7 @@ for (
         zoom=nothing,
     ),
 ]
-    clrmp_map = gen_clrmap_parabola(clr_hm.hue, 0.58, 0.06, 0.55; light_max=0.97, chroma_lightmax=0.008, prescale=clr_hm.prescale)
+    clrmp_map = gen_clrmap_parabola(clr_hm.hue, 0.58, 0.06, 0.44; light_max=0.99, chroma_lightmax=0.008, prescale=clr_hm.prescale)
     for (i, prop) in enumerate(prop_variant_map)
         fig_prop = Figure()
         ax_prop = Axis(fig_prop[1, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", kwargs_axis_common..., width=280, height=280)
