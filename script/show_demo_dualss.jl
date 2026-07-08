@@ -11,7 +11,7 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 path_demo = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Demo"
 path_simu = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Samples\[07.01].Weijing\working"
 # commit #c018bbf9368558cbb09a629dcdd8a39cda93bbeb
-path_output = joinpath(path_demo, "31.DualSS.XYSimu&XZSimu")
+path_output = joinpath(path_demo, "32.DualSS.XYSimu&XZSimu.Alpha")
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 step_grid = 0.25 / 10;
@@ -42,19 +42,19 @@ function gen_dens(; λ_crys=3, σx=3, σy=8, σx_tf=3, σy_tf=8, A_tf=6, A_halo=
     end
 end
 
-function set_axis_dual_tb!()
+function set_axis_dual_tb!(;kwargs_fig=(;))
     fig = Figure(; backgroundcolor=:transparent)
-    ax_1 = Axis(fig[1, 1]; width=400, height=100, backgroundcolor=:transparent)
-    ax_2 = Axis(fig[2, 1]; width=400, height=100, backgroundcolor=:transparent)
+    ax_1 = Axis(fig[1, 1]; width=400, height=100, backgroundcolor=:transparent, kwargs_fig...)
+    ax_2 = Axis(fig[2, 1]; width=400, height=100, backgroundcolor=:transparent, kwargs_fig...)
     axs = [ax_1, ax_2]
     rowgap!(fig.layout, 0)
     fig, axs
 end
 
-function set_axis_dual_lr!()
+function set_axis_dual_lr!(;kwargs_fig=(;))
     fig = Figure(; backgroundcolor=:transparent)
-    ax_1 = Axis(fig[1, 1]; width=400, height=200, backgroundcolor=:transparent)
-    ax_2 = Axis(fig[1, 2]; width=400, height=200, backgroundcolor=:transparent)
+    ax_1 = Axis(fig[1, 1]; width=400, height=200, backgroundcolor=:transparent, kwargs_fig...)
+    ax_2 = Axis(fig[1, 2]; width=400, height=200, backgroundcolor=:transparent, kwargs_fig...)
     axs = [ax_1, ax_2]
     colgap!(fig.layout, 0)
     fig, axs
@@ -75,7 +75,7 @@ function plot_duet!(axs, xydens; max_dens=10)
     local x_posi, y_posi, dens = xydens
 
     for i in 1:2
-        clrmap_dens = gen_clrmap_solo(hue_theme_istp[i == 1 ? "162" : "164"]; thres_alpha=0.1, alpha_base=-0.1)
+        clrmap_dens = gen_clrmap_solo(hue_theme_istp[i == 1 ? "162" : "164"]; thres_alpha=0.1, alpha_base=-0.001)
         heatmap!(axs[i], y_posi, x_posi, dens[i]'; colorrange=(0, max_dens), colormap=clrmap_dens, rasterize=true)
         axs[i] |> hidedecorations!
         axs[i].aspect = DataAspect()
@@ -148,7 +148,7 @@ for (desc, dens) in [
 ]
     axs_duet |> clear_axes!
     max_dens, xlim, ylim = contains(desc, "simu") ?
-                           (0.5, (-10, 10), (-2.5, 2.5)) :
+                           (0.5, (-12, 12), (-3, 3)) :
                            (8., (-20, 20), (-5, 5))
     plot_duet!(axs_duet, dens; max_dens)
     fig_duet |> resize_to_layout!
@@ -169,7 +169,7 @@ for (desc, dens, marker, scale) in [
     max_dens, xlim, ylim = (0.2 / scale, (-12, 12), (-6.0, 6.0))
     x_coms = [calc_com_x(dens.x_posi, dens.dens[i]) for i in eachindex(dens.dens)]
     for i in eachindex(axs_duet, x_coms)
-        hlines!(axs_duet[i], x_coms[i]; color=Oklch(0.5, 0, 0), linewidth=1)
+        hlines!(axs_duet[i], 0.0; color=Oklch(0.75, 0, 0), linewidth=1)
     end
     plot_duet!(axs_duet, dens; max_dens)
     fig_duet |> resize_to_layout!

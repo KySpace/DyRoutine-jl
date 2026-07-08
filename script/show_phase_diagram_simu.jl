@@ -11,9 +11,11 @@ using Statistics
 GLMakie.activate!()
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
+set_theme!(fonts = (; regular = raw"C:/Windows/Fonts/arial.ttf", italic = raw"C:/Windows/Fonts/ariali.ttf"))
+
 # commit #93504925a6f1b5e790e838a1a66c2e5f653afdf5
 path_demo = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Demo"
-path_output = joinpath(path_demo, "30.DualSS.PhaseDiagram.CWZ")
+path_output = joinpath(path_demo, "33.DualSS.PhaseDiagram.CWZ.Size")
 
 path_simu_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Samples\[07.01].Weijing"
 path_simu_w = joinpath(path_simu_root, "[07.06] weight recalculation wolfram")
@@ -88,20 +90,46 @@ sepr_q = @pipe ntpl_sepr(a22_q, a12_q; method=Sibson()) |> reshape(_, length(a22
 
 a22_roton_instab = 99.8632
 sample_tripts = [
-    (96, 78, :utriangle, colorant"rgb(107, 93, 147)", colorant"rgb(179, 162, 209)"),
-    (a22_roton_instab, 78, :dtriangle, colorant"rgb(107, 107, 107)", colorant"rgb(217, 217, 217)"),
-    (104, 78, :diamond, colorant"rgb(144, 113, 45)", colorant"rgb(217, 195, 131)"),
+    (96, 78, BezierPath("m 0.0,0.0 l 0.93134,1.651 h -1.905 z"; fit=true, flipy=true), colorant"#6f5b98", colorant"#b8a2d6"),
+    (a22_roton_instab, 78, BezierPath("m 0.0,0.0 l -0.93134,1.650997 l -0.97102,-1.650997 z"; fit=true, flipy=true), colorant"#555555", colorant"#cfcfcf"),
+    (104, 78, BezierPath("m 0.0,0.0 l 1.01335,-1.016008 l 1.016,1.016008 l -1.016,1.01599 z"; fit=true, flipy=true), colorant"#9b7118", colorant"#e3c27a"),
 ]
 sample_sepr = [
-    (96, 78, :utriangle, colorant"rgb(107, 93, 147)", colorant"rgb(179, 162, 209)"),
-    (104, 78, :diamond, colorant"rgb(144, 113, 45)", colorant"rgb(217, 195, 131)"),
+    (96, 78, BezierPath("m 0.0,0.0 l 0.93134,1.651 h -1.905 z"; fit=true, flipy=true), colorant"#6f5b98", colorant"#b8a2d6"),
+    (104, 78, BezierPath("m 0.0,0.0 l 1.01335,-1.016008 l 1.016,1.016008 l -1.016,1.01599 z"; fit=true, flipy=true), colorant"#9b7118", colorant"#e3c27a"),
 ]
 
 ## Visualization: Heatmap on contrast and wght
 fig_full = Figure();
-kwargs_axis_common = (; xlabelsize=16, ylabelsize=16, xlabelfont="Helvetica World", ylabelfont="Helvetica World", xticklabelsize=14, yticklabelsize=14, xtickalign=1, ytickalign=1, xminortickalign=1, yminortickalign=1, xgridvisible=false, ygridvisible=false)
-Label(fig_full[1, 0]; text=L"^{162}\text{Dy}", valign=:center, halign=:center, fontsize=16)
-Label(fig_full[2, 0]; text=L"^{164}\text{Dy}", valign=:center, halign=:center, fontsize=16)
+kwargs_style_common = (; spinewidth=0.212/0.132*1.0, 
+                         leftspinecolor=colorant"#4a4a4a", rightspinecolor=colorant"#4a4a4a", topspinecolor=colorant"#4a4a4a", bottomspinecolor=colorant"#4a4a4a",
+                         )
+kwargs_axis_common = (; xlabelsize=18.67, 
+                        ylabelsize=18.67, 
+                        xlabelfont="Arial", 
+                        ylabelfont="Arial", 
+                        xticklabelsize=16, 
+                        yticklabelsize=16, 
+                        xtickalign=1, ytickalign=1, 
+                        xminortickalign=1, yminortickalign=1, 
+                        xgridvisible=false, ygridvisible=false,
+                        xtickcolor=colorant"#4a4a4a", ytickcolor=colorant"#4a4a4a",
+                        xlabelcolor=colorant"#222222", ylabelcolor=colorant"#222222",
+                        xticklabelcolor=colorant"#333333", yticklabelcolor=colorant"#333333",
+                        xminortickcolor=colorant"#4a4a4a", yminortickcolor=colorant"#4a4a4a",
+                        xtickwidth=0.212/0.132*1.0, ytickwidth=0.212/0.132*1.0,
+                        xminortickwidth=0.169/0.132*1.0, yminortickwidth=0.169/0.132*1.0,
+                        kwargs_style_common...)
+kwargs_clrbar_common = (; labelsize=18.67,
+                          ticklabelsize=16,
+                          tickcolor=colorant"#4a4a4a",
+                          labelcolor=colorant"#222222",
+                          ticklabelcolor=colorant"#333333",
+                          tickwidth=0.212/0.132*1.0,
+                          kwargs_style_common...)
+kwargs_marker_common = (; strokewidth=2*0.296/0.265, markersize=16*1.902/2.117)
+Label(fig_full[1, 0]; text=L"^{162}\text{Dy}", valign=:center, halign=:center, fontsize=18.67)
+Label(fig_full[2, 0]; text=L"^{164}\text{Dy}", valign=:center, halign=:center, fontsize=18.67)
 Label(fig_full[0, 1]; text="contrast", valign=:center, halign=:center, font=:bold)
 Label(fig_full[0, 2]; text="side peak weight", valign=:center, halign=:center, font=:bold)
 Label(fig_full[0, 3]; text="vertical separation (μm)", valign=:center, halign=:center, font=:bold)
@@ -141,12 +169,16 @@ end
 
 ## Visualization: Heatmap and Linecut for one property
 clr_lines_istp = [
-    colorant"rgb(157, 76, 76)",
-    colorant"rgb(72, 93, 144)"
+    colorant"#c44e52",
+    colorant"#4c72b0"
+]
+clr_stroke_istp = [
+    colorant"#b14549",
+    colorant"#3e6198"
 ]
 clr_marker_face_istp = [
-    colorant"rgb(214, 163, 164)",
-    colorant"rgb(164, 181, 217)",
+    colorant"#e6a0a3",
+    colorant"#9bb5dd",
 ]
 
 function gen_clrmap_parabola(hue, light_maxchroma, chroma_max, light_min; thres_alpha=0.0, alpha_base=1.0, light_max=1.0, chroma_lightmax=0, hue_range=(0, 0), prescale=(t -> t))
@@ -180,27 +212,37 @@ for (
     name_prop,
     abbr_prop,
     info_sample,
+    label_axis_hm,
+    label_axis_line,
     clrrng_map,
     clr_hm,
+    labels_hm,
+    kwargs_axis_prop,
     clrs_line,
     df_prop_line,
     prop_variant_line,
     labels_line,
+    kwargs_axis_line,
     prop_variant_map,
     lim_prop,
     ticks_prop,
     zoom
 ) in [
     (
-        name_prop="contrast",
+        name_prop="Contrast",
         abbr_prop="C",
         info_sample=sample_tripts,
+        label_axis_hm="Contrast",
+        label_axis_line="Contrast",
         clrrng_map=(0, 1.0),
         clr_hm=(; hue=84, prescale=(t -> t^5)),
-        clrs_line=(; line=clr_lines_istp, markerface=clr_marker_face_istp),
+        labels_hm=["162", "164"],
+        kwargs_axis_prop=(;),
+        clrs_line=(; line=clr_lines_istp, stroke=clr_stroke_istp, markerface=clr_marker_face_istp),
         df_prop_line=df_ctrs_a12_78,
         prop_variant_line=[:contrast_162, :contrast_164],
-        labels_line=[L"^{162}\text{Dy}", L"^{164}\text{Dy}"],
+        labels_line=["162", "164"],
+        kwargs_axis_line=(;),
         prop_variant_map=[ctrs_162_q, ctrs_164_q],
         lim_prop=(-0.05, 1.05),
         ticks_prop=0:0.2:1,
@@ -212,30 +254,40 @@ for (
         ),
     ),
     (
-        name_prop="sidepeak weight",
+        name_prop="Side-peak weight",
         abbr_prop="W",
         info_sample=sample_tripts,
+        label_axis_hm=rich("Side-peak weight ", rich("W", font = :italic), subscript("162"),),
+        label_axis_line=rich(rich("W", font = :italic), subscript(rich("i", font = :italic))),
         clrrng_map=(0, 0.5),
-        clr_hm=(; hue=196, prescale=(t -> t^2)),
-        clrs_line=(; line=clr_lines_istp, markerface=clr_marker_face_istp),
+        clr_hm=(; hue=196, prescale=(t -> t^3)),
+        labels_hm=["162", "164"],
+        kwargs_axis_prop=(;),
+        clrs_line=(; line=clr_lines_istp, stroke=clr_stroke_istp, markerface=clr_marker_face_istp),
         df_prop_line=df_wght_a12_78,
         prop_variant_line=[:weightsp_162, :weightsp_164],
-        labels_line=[L"^{162}\text{Dy}", L"^{164}\text{Dy}"],
+        labels_line=["162", "164"],
+        kwargs_axis_line=(; width=320),
         prop_variant_map=[wght_162_q, wght_164_q],
         lim_prop=(-0.05, 0.55),
         ticks_prop=0:0.1:0.6,
         zoom=nothing,
     ),
     (
-        name_prop="vertical separation (μm)",
+        name_prop="Vertical separation",
         abbr_prop="Z",
         info_sample=sample_sepr,
+        label_axis_hm=rich("Vertical separation ", rich("δz", font=:italic), " (μm)"),
+        label_axis_line=rich(rich("δz", font=:italic), " (μm)"),
         clrrng_map=(0.3, 2.0),
         clr_hm=(; hue=293, prescale=(t -> t^2)),
-        clrs_line=(; line=[Oklch(0.56, 0.08, 293)], markerface=[Oklch(0.80, 0.066, 293)]),
+        labels_hm=[""],
+        kwargs_axis_prop=(; width=500, height=500),
+        clrs_line=(; line=[Oklch(0.56, 0.08, 293)], stroke=[Oklch(0.56, 0.08, 293)], markerface=[Oklch(0.80, 0.066, 293)]),
         df_prop_line=df_sepr_a12_78,
         prop_variant_line=[:vert_sepr],
         labels_line=[nothing],
+        kwargs_axis_line=(;),
         prop_variant_map=[sepr_q],
         lim_prop=(-0.2, 2.2),
         ticks_prop=0:0.5:2,
@@ -244,36 +296,37 @@ for (
 ]
     clrmp_map = gen_clrmap_parabola(clr_hm.hue, 0.58, 0.06, 0.44; light_max=0.99, chroma_lightmax=0.008, prescale=clr_hm.prescale)
     for (i, prop) in enumerate(prop_variant_map)
-        fig_prop = Figure()
-        ax_prop = Axis(fig_prop[1, 1]; ylabel=L"a_{12} \; (a_0)", xlabel=L"a_{22} \; (a_0)", kwargs_axis_common..., width=280, height=280)
+        fig_prop = Figure(;backgroundcolor = :transparent)
+        ax_prop = Axis(fig_prop[1, 1]; ylabel=rich(rich("a", font = :italic), subscript("12"), "\u2005(", rich("a", font = :italic), subscript("0"), ")",), 
+                                        xlabel=rich(rich("a", font = :italic), subscript("22"), "\u2005(", rich("a", font = :italic), subscript("0"), ")",), kwargs_axis_common..., width=280, height=280, kwargs_axis_prop...)
         ax_prop |> empty!
-        istp = i == 1 ? "162" : "164"
         hm = heatmap!(ax_prop, a22_g, a12_g, prop; colormap=clrmp_map, colorrange=clrrng_map, rasterize=true)
         for (a22, a12, marker, clr_stroke, clr_face) in info_sample
             scatter!(ax_prop, [a22], [a12];
-                color=clr_face, strokecolor=clr_stroke, strokewidth=1.5, marker=marker, markersize=12)
+                color=clr_face, strokecolor=clr_stroke, marker=marker, kwargs_marker_common...)
         end
-        Colorbar(fig_prop[1, 2], hm; vertical=true, label=name_prop, labelrotation=-π / 2)
-        limits!(ax_prop, (90, 106), (70, 90))
+        Colorbar(fig_prop[1, 2], hm; vertical=true, label=label_axis_hm, labelrotation=-π / 2, kwargs_clrbar_common...)
+        limits!(ax_prop, (94, 106), (70, 86))
         ax_prop.xticks = 90:2:110
         ax_prop.yticks = 70:2:106
         fig_prop |> resize_to_layout!
         fig_prop |> display
         for format in ["png", "svg", "pdf"]
-            fig_prop |> f -> save(joinpath(path_output, "phase_diagram_$(abbr_prop)_$(istp)_sample.$format"), f; px_per_unit=2.0, backend=CairoMakie)
+            fig_prop |> f -> save(joinpath(path_output, "phase_diagram_$(abbr_prop)_$(labels_hm[i])_sample.$format"), f; px_per_unit=2.0, backend=CairoMakie)
         end
     end
 
-    fig_a1278 = Figure()
-    ax_a1278 = Axis(fig_a1278[1, 1]; ylabel=name_prop, xlabel=L"a_{22} \; (a_0)", width=400, height=150, kwargs_axis_common...)
+    fig_a1278 = Figure(;backgroundcolor = :transparent)
+    ax_a1278 = Axis(fig_a1278[1, 1]; xticksmirrored = true, yticksmirrored = true, ylabel=label_axis_line, xlabel=rich(rich("a", font = :italic), subscript("22"), "\u2005(", rich("a", font = :italic), subscript("0"), ")",), width=400, height=150, kwargs_axis_common..., kwargs_axis_line...)
 
     ax_a1278.xticks = 90:1:110
     ax_a1278.xminorticks = IntervalsBetween(2)
     ax_a1278.xminorticksvisible = true
     ax_a1278.yticks = ticks_prop
 
-    limits!(ax_a1278, (95.8, 101.2), lim_prop)
-    kwargs_lines = i -> (; linewidth=1, color=clrs_line.line[i], strokecolor=clrs_line.line[i], strokewidth=1, markersize=8, marker=(i == 1 ? :rect : :circle), markercolor=clrs_line.markerface[i])
+    lim_axis_line = (95.8, 101.2)
+    limits!(ax_a1278, lim_axis_line, lim_prop)
+    kwargs_lines = i -> (; linewidth=1, color=clrs_line.line[i], strokecolor=clrs_line.stroke[i], strokewidth=1.2, markersize=8, marker=(i == 1 ? :rect : :circle), markercolor=clrs_line.markerface[i])
     if !isnothing(zoom)
         Box(fig_a1278[1, 1]; color=:white, zoom.kwargs_a1278..., strokewidth=0)
         Box(fig_a1278[1, 1]; color=(Oklch(0.90, 0.005, 192), 0.2), zoom.kwargs_a1278..., strokewidth=0)
@@ -283,7 +336,7 @@ for (
         ax_a1278_zoom.xminorticksvisible = true
         ax_a1278_zoom.yticks = zoom.ticks_prop
         limits!(ax_a1278_zoom, zoom.lim_x, zoom.lim_prop)
-        vlines!(ax_a1278_zoom, a22_roton_instab; color=info_sample[2][4], linewidth=0.8, linestyle=:dash)
+        lines!(ax_a1278_zoom, [a22_roton_instab, a22_roton_instab], [zoom.lim_prop[1], zoom.lim_prop[2]*0.90]; color=info_sample[2][4], linewidth=0.8, linestyle=:dash)
         vspan!(ax_a1278, zoom.lim_x[1], zoom.lim_x[2]; color=(Oklch(0.90, 0.005, 192), 0.5))
         for (i, col) in enumerate(prop_variant_line)
             scatterlines!(ax_a1278_zoom, df_prop_line.a22, df_prop_line[!, col]; kwargs_lines(i)...)
@@ -291,20 +344,21 @@ for (
         y_marker = zoom.lim_prop[2] * 0.90
         let (a22, _, marker, clr_stroke, clr_face) = info_sample[2]
             scatter!(ax_a1278_zoom, [a22], [y_marker];
-                color=clr_face, strokecolor=clr_stroke, strokewidth=1, marker=marker, markersize=8)
+                color=clr_face, strokecolor=clr_stroke, marker=marker, kwargs_marker_common...)
         end
     else
-        vlines!(ax_a1278, a22_roton_instab; color=info_sample[2][4], linewidth=0.8)
-        y_marker = lim_prop[2] * 0.95
+        lines!(ax_a1278, [a22_roton_instab, a22_roton_instab], [lim_prop[1], lim_prop[2]*0.84]; color=colorant"#d0d0d0", linewidth=0.8)
+        y_marker = lim_prop[2] * 0.90
         let (a22, _, marker, clr_stroke, clr_face) = info_sample[2]
             scatter!(ax_a1278, [a22], [y_marker];
-                color=clr_face, strokecolor=clr_stroke, strokewidth=1, marker=marker, markersize=8)
+                color=clr_face, strokecolor=clr_stroke, marker=marker, kwargs_marker_common...)
         end
     end
     for (i, col) in enumerate(prop_variant_line)
-        scatterlines!(ax_a1278, df_prop_line.a22, df_prop_line[!, col]; kwargs_lines(i)..., label=labels_line[i])
+        global sel_a22 = lim_axis_line[1] .<= df_prop_line.a22 .<= lim_axis_line[2]
+        scatterlines!(ax_a1278, df_prop_line.a22[sel_a22], df_prop_line[sel_a22, col]; kwargs_lines(i)..., label=labels_line[i])
     end
-    axislegend(ax_a1278; position=:rt, framevisible=false, labelsize=14)
+    axislegend(ax_a1278; position=:rt, framevisible=false, labelsize=16)
     fig_a1278 |> resize_to_layout!
     fig_a1278 |> display
     for format in ["png", "svg", "pdf"]
