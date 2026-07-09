@@ -12,6 +12,10 @@ path_root = isdefined(@__MODULE__, :path_root) ? path_root : raw"C:\Users\ky\One
 path_data_src = joinpath(path_root, "0204_interference", "result", "data.h5")
 path_prfl_ref = joinpath(path_root, "0204_interference", "result", "prfl.h5")
 
+# commit 26ed0f19dfb14fe217aeca3824a40643f0c06112
+path_output_src = isdefined(@__MODULE__, :path_output) ? path_output : joinpath(path_root, "AnlzRoutine", "28.IncoCohrModlNtfr.[WL-migration]")
+save_src_profiles = isdefined(@__MODULE__, :save_src_profiles) ? save_src_profiles : false
+
 tag = isdefined(@__MODULE__, :tag) ? tag : "SSNTFR"
 val_istp = isdefined(@__MODULE__, :val_istp) ? val_istp : ["162", "164"]
 val_IB_ref = [
@@ -38,9 +42,6 @@ xy_fixed_src = (201, 201)
 mag_src = 22.06
 pixsz_src = 6.5
 bin_src = 1
-pad_src = 0
-save_src_profiles = isdefined(@__MODULE__, :save_src_profiles) ? save_src_profiles : false
-path_output_src = isdefined(@__MODULE__, :path_output) ? path_output : joinpath(path_root, "AnlzRoutine", "28.IncoCohrModlNtfr.[WL-migration]")
 num_err_src = 0.6e4
 range_center_src = 181:220
 smwh_center_fit_src = (50, 50)

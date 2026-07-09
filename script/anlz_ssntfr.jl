@@ -11,13 +11,13 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
-use_src_profiles = true
-title_anlz = use_src_profiles ? "28.IncoCohrModlNtfr.[WL-migration]" : "27.IncoCohrModlNtfr.[reconstr.22]"
+use_src_profiles = false
+title_anlz = use_src_profiles ? "28.IncoCohrModlNtfr.[WL-migration]" : "30.IncoCohrModlNtfr.[reconstr.29]"
 path_data = joinpath(path_root, "0204_interference", "result", "prfl.h5")
 path_model_results = joinpath(
     path_root,
     "AnlzRoutine",
-    "22.Ntfr2D.Abrr.Rotated.SeprSkewedYWithTail.LargeIter",
+    "29.Ntfr2D.Abrr.LinearWeight.Lib",
     "SSNTFR_ntfr2d_model_results.jld2",
 )
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
@@ -93,6 +93,7 @@ function gen_clrmap_IB(clr_endpoints::NamedTuple; n::Integer=256, alpha=1.0)
 end
 
 function calc_modl_tail(
+    x_modl::AbstractVector{<:Real},
     prfl::AbstractArray{<:Real,3},
     prfl_modl_fit::AbstractArray{<:Real,3},
 )
@@ -100,9 +101,12 @@ function calc_modl_tail(
         "profile size $(size(prfl)) must match prfl_modl_fit size $(size(prfl_modl_fit)).",
     ))
     prfl_tailess = similar(prfl, Float64)
+    sel_center = abs.(x_modl) .<= 0.1
     for idx_IB in axes(prfl, 3), idx_istp in axes(prfl, 2)
-        prfl_tailess[:, idx_istp, idx_IB] .=
-            @view(prfl[:, idx_istp, idx_IB]) .- @view(prfl_modl_fit[:, idx_istp, idx_IB])
+        ids = (:, idx_istp, idx_IB)
+        scale = sum(prfl[ids...][sel_center]) / sum(prfl_modl_fit[ids...][sel_center])
+        prfl_tailess[ids...] .=
+            @view(prfl[ids...]) .- scale .* @view(prfl_modl_fit[ids...])
     end
     prfl_total_avg = vec(mean(prfl; dims=(2, 3)))
     tail = vec(mean(prfl_modl_fit; dims=(2, 3)))
@@ -366,8 +370,8 @@ colorrange_inco = calc_prfl_colorrange(prfl_inco, x_modl, range_x_colorrange)
 colorrange_cohr = calc_prfl_colorrange(prfl_cohr, x_modl, range_x_colorrange)
 
 prfl_modl_fit = load_prfl_modl_fit_jld2(path_model_results, x_modl, val_IB, val_istp)
-tail_inco = calc_modl_tail(prfl_inco, prfl_modl_fit)
-tail_cohr = calc_modl_tail(prfl_cohr, prfl_modl_fit)
+tail_inco = calc_modl_tail(x_modl, prfl_inco, prfl_modl_fit)
+tail_cohr = calc_modl_tail(x_modl, prfl_cohr, prfl_modl_fit)
 prfl_tail = build_profile_variant_arrays(
     prfl_inco,
     prfl_cohr,

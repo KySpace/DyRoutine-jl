@@ -30,8 +30,8 @@ function orient_ntfr2d_axes(
     end
 
     throw(DimensionMismatch(
-        "ntfr2d_mean size $(size(ntfr2d)) must be either (x, y, istp, IB) " *
-        "$((n_x, n_x, n_istp, n_IB)) or (IB, istp, x, y) $((n_IB, n_istp, n_x, n_x)).",
+        "ntfr2d_mean size $(size(ntfr2d)) must be either (y, x, istp, IB) " *
+        "$((n_x, n_x, n_istp, n_IB)) or (IB, istp, y, x) $((n_IB, n_istp, n_x, n_x)).",
     ))
 end
 
@@ -211,8 +211,8 @@ function calc_fit_coords_2d(x_dens::AbstractVector{<:Real}, stride::Integer)
     idx = 1:stride:length(x_dens)
     x_fit = Float64.(x_dens[idx])
     coords = Matrix{Float64}(undef, 2, length(x_fit)^2)
-    coords[1, :] .= repeat(x_fit; outer=length(x_fit))
-    coords[2, :] .= repeat(x_fit; inner=length(x_fit))
+    coords[1, :] .= repeat(x_fit; inner=length(x_fit))
+    coords[2, :] .= repeat(x_fit; outer=length(x_fit))
     return idx, coords
 end
 
@@ -261,30 +261,6 @@ function fit_two_gaussian_2d(
     rss_rel = norm(residuals(fit)) / max(norm(z_fit_sel), eps(Float64))
     maxiter_reached = !fit.converged
     return (; params, rss_rel, maxiter_reached, guess_1d, model_center, threshold)
-end
-
-function interp2_bilinear(
-    x_dens::AbstractVector{<:Real},
-    dens2d::AbstractMatrix{<:Real},
-    xq::Real,
-    yq::Real,
-)
-    (xq < first(x_dens) || xq > last(x_dens) || yq < first(x_dens) || yq > last(x_dens)) && return NaN
-    idx_x_hi = searchsortedfirst(x_dens, xq)
-    idx_y_hi = searchsortedfirst(x_dens, yq)
-    idx_x_hi == 1 && (idx_x_hi = 2)
-    idx_y_hi == 1 && (idx_y_hi = 2)
-    idx_x_hi > length(x_dens) && (idx_x_hi = length(x_dens))
-    idx_y_hi > length(x_dens) && (idx_y_hi = length(x_dens))
-    idx_x_lo = idx_x_hi - 1
-    idx_y_lo = idx_y_hi - 1
-    tx = (xq - x_dens[idx_x_lo]) / (x_dens[idx_x_hi] - x_dens[idx_x_lo])
-    ty = (yq - x_dens[idx_y_lo]) / (x_dens[idx_y_hi] - x_dens[idx_y_lo])
-    z00 = dens2d[idx_x_lo, idx_y_lo]
-    z10 = dens2d[idx_x_hi, idx_y_lo]
-    z01 = dens2d[idx_x_lo, idx_y_hi]
-    z11 = dens2d[idx_x_hi, idx_y_hi]
-    return (1 - tx) * (1 - ty) * z00 + tx * (1 - ty) * z10 + (1 - tx) * ty * z01 + tx * ty * z11
 end
 
 function calc_centered_cross_profile(
@@ -409,10 +385,6 @@ function calc_prfl_modl_cmpx_1d(dens::AbstractMatrix{<:Real}, smwh::Tuple{<:Inte
     return modl_cmpx ./ norm_modl
 end
 
-function calc_prfl_modl_1d(dens::AbstractMatrix{<:Real}, smwh::Tuple{<:Integer,<:Integer}; step_modl::Real=1)
-    return abs.(calc_prfl_modl_cmpx_1d(dens, smwh; step_modl))
-end
-
 function calc_prfl_modl_1d(dens::AbstractVector{<:AbstractMatrix{<:Real}}, smwh::Tuple{<:Integer,<:Integer}; step_modl::Real=1)
     isempty(dens) && throw(ArgumentError("dens must contain at least one density image."))
     modl_cmpx = map(d -> calc_prfl_modl_cmpx_1d(d, smwh; step_modl), dens)
@@ -422,61 +394,6 @@ function calc_prfl_modl_1d(dens::AbstractVector{<:AbstractMatrix{<:Real}}, smwh:
     prfl_inco = vec(mean(abs.(modl_cmpx_mat); dims=2))
     prfl_cohr = abs.(vec(mean(modl_cmpx_mat; dims=2)))
     return (; prfl_cohr, prfl_inco)
-end
-
-function calc_reconstructed_ntfr2d(
-    x_dens::AbstractVector{<:Real},
-    fit_density::AbstractMatrix,
-)
-    coords = Matrix{Float64}(undef, 2, length(x_dens)^2)
-    x_grid = Float64.(x_dens)
-    coords[1, :] .= repeat(x_grid; outer=length(x_grid))
-    coords[2, :] .= repeat(x_grid; inner=length(x_grid))
-
-    return map(fit_density) do fit
-        reshape(
-            double_gaussian_disk_2d_model_abrr(coords, fit.params),
-            length(x_dens),
-            length(x_dens),
-        )
-    end
-end
-
-function calc_reconstructed_prfl_modl(
-    ntfr2d_fit::AbstractMatrix{<:AbstractMatrix},
-    smwh::Tuple{<:Integer,<:Integer};
-    step_modl::Real,
-)
-    return map(dens2d -> calc_prfl_modl_1d(dens2d, smwh; step_modl), ntfr2d_fit)
-end
-
-function fit_reconstructed_prfl_modl(
-    x_dens::AbstractVector{<:Real},
-    ntfr2d_fmt::AbstractMatrix{<:AbstractMatrix},
-    smwh::Tuple{<:Integer,<:Integer};
-    step_modl::Real,
-    r_tail_min::Real,
-    center_bound::Real,
-    stride::Integer,
-    threshold::Real,
-    sigma_wide_min::Real,
-    maxiter::Integer=30_000,
-    model_center::Symbol=:gaussian,
-)
-    fit_centered = fit_centered_density_profiles(
-        x_dens,
-        ntfr2d_fmt,
-        r_tail_min;
-        center_bound,
-        stride,
-        threshold,
-        sigma_wide_min,
-        maxiter,
-        model_center,
-    )
-    ntfr2d_fit = calc_reconstructed_ntfr2d(x_dens, fit_centered.fit_density)
-    prfl_modl_fit = calc_reconstructed_prfl_modl(ntfr2d_fit, smwh; step_modl)
-    return (; fit_centered, ntfr2d_fit, prfl_modl_fit)
 end
 
 function pack_prfl_modl_fit(

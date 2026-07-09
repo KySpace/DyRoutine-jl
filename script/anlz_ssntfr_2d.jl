@@ -12,7 +12,7 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
-title_anlz = "24.Ntfr2D.Abrr.LinearWeight.WithDiff.[redo.15]"
+title_anlz = "29.Ntfr2D.Abrr.LinearWeight.Lib"
 path_data = joinpath(path_root, "0204_interference", "result", "prfl.h5")
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
@@ -137,8 +137,8 @@ function build_model_results_payload(;
         ],
         dim_fit_params="param,istp,IB",
         dim_fit_rss_rel="istp,IB",
-        dim_ntfr2d_fit="x_dens,y_dens,istp,IB",
-        dim_ntfr2d_diff="x_dens,y_dens,istp,IB",
+        dim_ntfr2d_fit="y_dens,x_dens,istp,IB",
+        dim_ntfr2d_diff="y_dens,x_dens,istp,IB",
         dim_prfl_modl_fit="x_modl,istp,IB",
         fit_maxiter_2d,
         fit_threshold_log_2d,
@@ -272,7 +272,7 @@ function draw_density_row!(
         axs_dens[idx_istp] = ax
         dens2d = ntfr2d_fmt[idx_IB, idx_istp]
         clrmap = gen_clrmap_solo(hue_theme_istp[istp])
-        heatmap!(ax, x_dens, x_dens, dens2d; colormap=clrmap, colorrange, rasterize=true)
+        heatmap!(ax, x_dens, x_dens, dens2d'; colormap=clrmap, colorrange, rasterize=true)
         params_density = fit_density[idx_IB, idx_istp].params
         x0, y0 = params_density[1:2]
         x_ellipse, y_ellipse = calc_axis_aligned_ellipse(
@@ -308,7 +308,7 @@ function draw_density_row!(
             ax_diff,
             x_dens,
             x_dens,
-            ntfr2d_diff_fmt[idx_IB, idx_istp];
+            ntfr2d_diff_fmt[idx_IB, idx_istp]';
             colormap=clrmap_diff,
             colorrange=colorrange_diff_fmt[idx_IB, idx_istp],
             rasterize=true,
@@ -468,14 +468,22 @@ fit_density = fit_centered.fit_density
 profile_fits = fit_centered.profile_fits
 
 t_stage = log_step("reconstructing fitted densities and modulation profiles")
-ntfr2d_fit = calc_reconstructed_ntfr2d(x_dens, fit_density)
+coords = reduce(hcat, ([x, y] for y in x_dens, x in x_dens))
+ntfr2d_fit = map(fit_density) do fit
+    reshape(
+        double_gaussian_disk_2d_model_abrr(coords, fit.params),
+        length(x_dens),
+        length(x_dens),
+    )
+end
+
 ntfr2d_diff = map(-, ntfr2d_mean, ntfr2d_fit)
 max_abs_diff = maximum(maximum(abs, diff2d) for diff2d in ntfr2d_diff)
 colorrange_diff = map(ntfr2d_diff) do diff2d
     c = maximum(abs, diff2d)
     (-c, c)
 end
-prfl_modl_fit = calc_reconstructed_prfl_modl(ntfr2d_fit, smwh_reconstruct; step_modl)
+prfl_modl_fit = @pipe ntfr2d_fit |> map(ds -> calc_prfl_modl_1d([ds], smwh_reconstruct; step_modl).prfl_inco, _)
 length(x_modl) == length(prfl_modl_fit[1]) || throw(DimensionMismatch(
     "x_modl length $(length(x_modl)) must match reconstructed profile length $(length(prfl_modl_fit[1])).",
 ))
