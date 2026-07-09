@@ -118,79 +118,6 @@ function gaussian_offset_1d(x, p)
     return @. p[1] * exp(-((x - p[2])^2) / (2 * p[3]^2)) + p[4]
 end
 
-function fit_gaussian_offset_center_1d(prfl::AbstractVector{<:Real})
-    n = length(prfl)
-    y = Float64.(prfl)
-    x = collect(1.0:n)
-    p0 = [maximum(y), (n + 1) / 2, n / 10, minimum(y)]
-    fit = curve_fit(gaussian_offset_1d, x, y, p0)
-    return fit.param[2]
-end
-
-function calc_center_peak_src(dens::AbstractMatrix{<:Real})
-    dens_smooth = imfilter(dens, Kernel.gaussian(sigma_center_filter_src))
-    x_center = fit_gaussian_offset_center_1d(vec(sum(dens_smooth; dims=1)))
-    y_center = fit_gaussian_offset_center_1d(vec(sum(dens_smooth; dims=2)))
-    return round.(Int, (x_center, y_center))
-end
-
-function calc_valid_duet_mask_src(
-    dens_src_raw_fmt::AbstractArray{<:AbstractMatrix,3};
-    num_err::Real=num_err_src,
-    range_center=range_center_src,
-)
-    n_IB, n_istp, n_rep = size(dens_src_raw_fmt)
-    num_src = Array{Float64}(undef, n_IB, n_istp, n_rep)
-    xy_center_src = Array{Tuple{Int,Int}}(undef, n_IB, n_istp, n_rep)
-
-    for idx_IB in 1:n_IB, idx_istp in 1:n_istp, idx_rep in 1:n_rep
-        dens = dens_src_raw_fmt[idx_IB, idx_istp, idx_rep]
-        num_src[idx_IB, idx_istp, idx_rep] = sum(dens)
-        xy_center_src[idx_IB, idx_istp, idx_rep] = calc_center_peak_src(dens)
-    end
-
-    num_median_src = dropdims(median(num_src; dims=3); dims=3)
-    mask_valid_duet = falses(n_IB, n_rep)
-    for idx_IB in 1:n_IB, idx_rep in 1:n_rep
-        is_valid_number = all(
-            abs(num_src[idx_IB, idx_istp, idx_rep] - num_median_src[idx_IB, idx_istp]) <= num_err
-            for idx_istp in 1:n_istp
-        )
-        is_valid_center = all(
-            (xy -> xy[1] in range_center && xy[2] in range_center)(xy_center_src[idx_IB, idx_istp, idx_rep])
-            for idx_istp in 1:n_istp
-        )
-        mask_valid_duet[idx_IB, idx_rep] = is_valid_number && is_valid_center
-    end
-
-    return (; mask_valid_duet, xy_center_src, num_src, num_median_src)
-end
-
-function crop_valid_source_densities(
-    dens_src_raw_fmt::AbstractArray{<:AbstractMatrix,3},
-    mask_valid_duet::AbstractMatrix{Bool},
-    xy_center_src::AbstractArray{<:Tuple{Int,Int},3},
-    smwh::Tuple{<:Integer,<:Integer},
-)
-    n_IB, n_istp, n_rep = size(dens_src_raw_fmt)
-    size(mask_valid_duet) == (n_IB, n_rep) || throw(DimensionMismatch(
-        "mask_valid_duet size $(size(mask_valid_duet)) must match (IB, rep) $((n_IB, n_rep)).",
-    ))
-    size(xy_center_src) == size(dens_src_raw_fmt) || throw(DimensionMismatch(
-        "xy_center_src size $(size(xy_center_src)) must match density source size $(size(dens_src_raw_fmt)).",
-    ))
-
-    dens_src_core = Array{Vector{Matrix{Float64}}}(undef, n_IB, n_istp)
-    for idx_IB in 1:n_IB, idx_istp in 1:n_istp
-        dens_src_core[idx_IB, idx_istp] = [
-            crop_center(dens_src_raw_fmt[idx_IB, idx_istp, idx_rep], xy_center_src[idx_IB, idx_istp, idx_rep], smwh) |> copy
-            for idx_rep in 1:n_rep
-            if mask_valid_duet[idx_IB, idx_rep]
-        ]
-    end
-    return dens_src_core
-end
-
 function save_src_profiles_h5(
     path_output::AbstractString,
     x_dens::AbstractVector{<:Real},
@@ -305,10 +232,52 @@ check_reference_axes(path_prfl_ref, x_dens, x_modl)
 step_modl = median(diff(x_modl))
 val_IB = copy(val_IB_ref)
 
-valid_src = calc_valid_duet_mask_src(dens_src_raw_fmt)
-count_profile_shot = vec(sum(valid_src.mask_valid_duet; dims=2))
+num_src = Array{Float64}(undef, n_IB_src, n_istp_src, n_rep_src)
+xy_center_src = Array{Tuple{Int,Int}}(undef, n_IB_src, n_istp_src, n_rep_src)
+for idx_IB in 1:n_IB_src, idx_istp in 1:n_istp_src, idx_rep in 1:n_rep_src
+    dens = dens_src_raw_fmt[idx_IB, idx_istp, idx_rep]
+    dens_smooth = imfilter(dens, Kernel.gaussian(sigma_center_filter_src))
+
+    prfl_x = vec(sum(dens_smooth; dims=1))
+    x_fit = collect(1.0:length(prfl_x))
+    p0_x = [maximum(prfl_x), (length(prfl_x) + 1) / 2, length(prfl_x) / 10, minimum(prfl_x)]
+    x_center = curve_fit(gaussian_offset_1d, x_fit, Float64.(prfl_x), p0_x).param[2]
+
+    prfl_y = vec(sum(dens_smooth; dims=2))
+    y_fit = collect(1.0:length(prfl_y))
+    p0_y = [maximum(prfl_y), (length(prfl_y) + 1) / 2, length(prfl_y) / 10, minimum(prfl_y)]
+    y_center = curve_fit(gaussian_offset_1d, y_fit, Float64.(prfl_y), p0_y).param[2]
+
+    num_src[idx_IB, idx_istp, idx_rep] = sum(dens)
+    xy_center_src[idx_IB, idx_istp, idx_rep] = round.(Int, (x_center, y_center))
+end
+
+num_median_src = dropdims(median(num_src; dims=3); dims=3)
+mask_valid_duet = falses(n_IB_src, n_rep_src)
+for idx_IB in 1:n_IB_src, idx_rep in 1:n_rep_src
+    is_valid_number = all(
+        abs(num_src[idx_IB, idx_istp, idx_rep] - num_median_src[idx_IB, idx_istp]) <= num_err_src
+        for idx_istp in 1:n_istp_src
+    )
+    is_valid_center = all(
+        (xy -> xy[1] in range_center_src && xy[2] in range_center_src)(xy_center_src[idx_IB, idx_istp, idx_rep])
+        for idx_istp in 1:n_istp_src
+    )
+    mask_valid_duet[idx_IB, idx_rep] = is_valid_number && is_valid_center
+end
+
+count_profile_shot = vec(sum(mask_valid_duet; dims=2))
 println("  [$tag] valid source duet counts per IB=$(count_profile_shot)")
-dens_src_core = crop_valid_source_densities(dens_src_raw_fmt, valid_src.mask_valid_duet, valid_src.xy_center_src, smwh_src)
+
+dens_src_core = Array{Vector{Matrix{Float64}}}(undef, n_IB_src, n_istp_src)
+for idx_IB in 1:n_IB_src, idx_istp in 1:n_istp_src
+    dens_src_core[idx_IB, idx_istp] = [
+        crop_center(dens_src_raw_fmt[idx_IB, idx_istp, idx_rep], xy_center_src[idx_IB, idx_istp, idx_rep], smwh_src) |> copy
+        for idx_rep in 1:n_rep_src
+        if mask_valid_duet[idx_IB, idx_rep]
+    ]
+end
+
 ntfr2d_mean = map(dens_src_core) do ds
     isempty(ds) && throw(ArgumentError("No valid source densities available for a condition."))
     dropdims(mean(stack(ds); dims=3); dims=3)
