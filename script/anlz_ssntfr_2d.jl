@@ -12,7 +12,8 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
-title_anlz = "29.Ntfr2D.Abrr.LinearWeight.Lib"
+# commit a775786f78a2740ccc029b95ef58c41ccec9b3cd
+title_anlz = "31.Ntfr2D.Abrr.LinearWeight.SkewX"
 path_data = joinpath(path_root, "0204_interference", "result", "prfl.h5")
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
 isdir(path_output) || mkpath(path_output)
@@ -27,7 +28,7 @@ r_tail_min_profile = 20.0
 range_r_tail_fit = (17.0, 37.0)
 fit_center_bound = 12.0
 fit_stride_2d = 3
-fit_maxiter_2d = parse(Int, get(ENV, "SSNTFR_2D_MAXITER", "10000"))
+fit_maxiter_2d = parse(Int, get(ENV, "SSNTFR_2D_MAXITER", "1000"))
 fit_threshold_log_2d = 1.5e-1
 fit_sigma_wide_min = 15.0
 model_center = :gaussian
@@ -134,6 +135,7 @@ function build_model_results_payload(;
             "A_wide",
             "sigma_wide",
             "beta",
+            "skew_x",
         ],
         dim_fit_params="param,istp,IB",
         dim_fit_rss_rel="istp,IB",
@@ -339,7 +341,7 @@ function draw_density_row!(
             text_fit =
                 profile_data.axis == :column ?
                 @sprintf("β=%.3f\nσ_y=%.2f", profile_data.beta, params_fit[5]) :
-                @sprintf("β=%.3f\nσ_x=%.2f", profile_data.beta, params_fit[4])
+                @sprintf("β=%.3f\nσ_x=%.2f\nα_x=%.2f", profile_data.beta, params_fit[4], profile_data.skew_x)
             band!(ax_profile, s, zero.(narrow_raw), narrow_raw; color=(clr_center, 0.30))
             lines!(ax_profile, s, profile; color=clr_faint, linewidth=1.0)
             lines!(ax_profile, s, tail; color=(:gray20, 0.55), linewidth=1.0)
@@ -522,7 +524,7 @@ idx_col_IB_right = 2 * length(val_istp) + length(profile_fits) * length(val_istp
 Label(
     fig_ntfr[0, 1:idx_col_IB_right];
     text=@sprintf(
-        "%s 2D NTFR mean densities, fit residuals with per-panel scale, cocenter Gaussian tail + Gaussian peak |> (_ + βN²) fit, mask > %.1g, σ_wide ≥ %.0f μm, common max %.3g, max residual ±%.3g, Δk=%.5f",
+        "%s 2D NTFR mean densities, fit residuals with per-panel scale, x-skewed cocenter Gaussian tail + Gaussian peak |> (_ + βN²) fit, mask > %.1g, σ_wide ≥ %.0f μm, common max %.3g, max residual ±%.3g, Δk=%.5f",
         tag,
         fit_threshold_log_2d,
         fit_sigma_wide_min,

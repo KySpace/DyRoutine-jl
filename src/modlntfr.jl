@@ -3,6 +3,7 @@ using ImageFiltering
 using LinearAlgebra
 using LsqFit
 using NaturalNeighbours
+using SpecialFunctions: erf
 using Statistics
 using Pipe: @pipe
 
@@ -184,19 +185,31 @@ function double_gaussian_disk_2d_model(coords, params)
               A_wide * exp(-r2 / (2 * sigma_wide^2))
 end
 
+function gauss_skew_com_unit(pos, params)
+    sigma, alpha = params
+    phi = t -> @. exp(-t^2 / 2)
+    Phi = t -> @. 1 + erf(t / sqrt(2))
+    mu = -sigma * alpha / sqrt(alpha^2 + 1) * sqrt(2 / pi)
+    pos_rel = @. (pos - mu) / sigma
+    return phi(pos_rel) .* Phi(pos_rel .* alpha)
+end
+
 function double_gaussian_disk_2d_model_abrr(coords, params)
-    length(params) == 8 || throw(ArgumentError(
-        "double_gaussian_disk_2d_model_abrr expects 8 params " *
-        "(x0, y0, A_narrow, sigma_x_narrow, sigma_y_narrow, A_wide, sigma_wide, beta), got $(length(params)).",
+    length(params) == 9 || throw(ArgumentError(
+        "double_gaussian_disk_2d_model_abrr expects 9 params " *
+        "(x0, y0, A_narrow, sigma_x_narrow, sigma_y_narrow, A_wide, sigma_wide, beta, skew_x), got $(length(params)).",
     ))
-    x0, y0, A_narrow, sigma_x_narrow, sigma_y_narrow, A_wide, sigma_wide, beta = params
+    x0, y0, A_narrow, sigma_x_narrow, sigma_y_narrow, A_wide, sigma_wide, beta, skew_x = params
     x = @view coords[1, :]
     y = @view coords[2, :]
-    dx2 = @. (x - x0)^2
-    dy2 = @. (y - y0)^2
-    r2 = @. dx2 + dy2
-    narrow = @. A_narrow * exp(-dx2 / (2 * sigma_x_narrow^2) - dy2 / (2 * sigma_y_narrow^2))
-    tail = @. A_wide * exp(-r2 / (2 * sigma_wide^2))
+    x_local = @. x - x0
+    y_local = @. y - y0
+    narrow_x = gauss_skew_com_unit(x_local, (sigma_x_narrow, skew_x))
+    narrow_y = gauss_skew_com_unit(y_local, (sigma_y_narrow, 0.0))
+    narrow = @. A_narrow * narrow_x * narrow_y
+    tail_x = gauss_skew_com_unit(x_local, (sigma_wide, skew_x))
+    tail_y = gauss_skew_com_unit(y_local, (sigma_wide, 0.0))
+    tail = @. A_wide * tail_x * tail_y
     return @. tail + narrow + beta * narrow^2
 end
 
@@ -246,9 +259,10 @@ function fit_two_gaussian_2d(
         max(guess_1d.A_wide, eps(Float64)),
         max(guess_1d.sigma_wide, sigma_wide_min),
         0.01,
+        0.0,
     ]
-    p_lower = [-center_bound, -center_bound, eps(Float64), step_x, step_x, eps(Float64), sigma_wide_min, 0.0]
-    p_upper = [center_bound, center_bound, Inf, r_narrow_max, r_narrow_max, Inf, max_x * 3, 2.0]
+    p_lower = [-center_bound, -center_bound, eps(Float64), step_x, step_x, eps(Float64), sigma_wide_min, 0.0, -10.0]
+    p_upper = [center_bound, center_bound, Inf, r_narrow_max, r_narrow_max, Inf, max_x * 3, 2.0, 10.0]
     fit = curve_fit(
         double_gaussian_disk_2d_model_abrr,
         coords_fit,
@@ -272,9 +286,30 @@ function interp2_bilinear(
 )
     length(xq) == length(yq) || throw(DimensionMismatch("xq length $(length(xq)) must match yq length $(length(yq))."))
     x_grid = Float64.(x_dens)
-    x_site = repeat(x_grid; inner=length(x_grid))
-    y_site = repeat(x_grid; outer=length(x_grid))
-    itp = interpolate(x_site, y_site, vec(Float64.(dens2d)); derivatives=false)
+    idx_bracket = q -> begin
+        idx_hi = searchsortedfirst(x_grid, q)
+        idx_hi <= firstindex(x_grid) && return firstindex(x_grid):firstindex(x_grid)+1
+        idx_hi > lastindex(x_grid) && return lastindex(x_grid)-1:lastindex(x_grid)
+        return idx_hi-1:idx_hi
+    end
+
+    if all(==(first(xq)), xq)
+        idx_x = idx_bracket(first(xq))
+        x_site = repeat(x_grid[idx_x]; inner=length(x_grid))
+        y_site = repeat(x_grid; outer=length(idx_x))
+        z_site = vec(Float64.(@view dens2d[:, idx_x]))
+    elseif all(==(first(yq)), yq)
+        idx_y = idx_bracket(first(yq))
+        x_site = repeat(x_grid; inner=length(idx_y))
+        y_site = repeat(x_grid[idx_y]; outer=length(x_grid))
+        z_site = vec(Float64.(@view dens2d[idx_y, :]))
+    else
+        x_site = repeat(x_grid; inner=length(x_grid))
+        y_site = repeat(x_grid; outer=length(x_grid))
+        z_site = vec(Float64.(dens2d))
+    end
+
+    itp = interpolate(x_site, y_site, z_site; derivatives=false)
     val = fill(NaN, length(xq))
     mask_valid = (first(x_dens) .<= xq .<= last(x_dens)) .& (first(x_dens) .<= yq .<= last(x_dens))
     if any(mask_valid)
@@ -298,29 +333,30 @@ function calc_centered_cross_profile(
     fit_density;
     axis::Symbol,
 )
-    x0, y0, A_narrow, sigma_x_narrow, sigma_y_narrow, A_wide, sigma_wide, beta = fit_density.params
+    x0, y0, A_narrow, sigma_x_narrow, sigma_y_narrow, A_wide, sigma_wide, beta, skew_x = fit_density.params
     s_profile = Float64.(x_dens)
     profile =
         axis == :column ? interp2_bilinear(x_dens, dens2d, fill(x0, length(s_profile)), y0 .+ s_profile) :
         axis == :row ? interp2_bilinear(x_dens, dens2d, x0 .+ s_profile, fill(y0, length(s_profile))) :
         throw(ArgumentError("axis must be :column or :row, got $axis."))
     if axis == :column
-        dx2 = zero.(s_profile)
-        dy2 = @. s_profile^2
-    elseif axis == :row
-        dx2 = @. s_profile^2
-        dy2 = zero.(s_profile)
+        x_local = zero.(s_profile)
+        y_local = s_profile
     else
-        throw(ArgumentError("axis must be :column or :row, got $axis."))
+        x_local = s_profile
+        y_local = zero.(s_profile)
     end
-    r2 = @. dx2 + dy2
-    tail_raw = @. A_wide * exp(-r2 / (2 * sigma_wide^2))
-    narrow_raw = @. A_narrow * exp(-dx2 / (2 * sigma_x_narrow^2) - dy2 / (2 * sigma_y_narrow^2))
+    narrow_x = gauss_skew_com_unit(x_local, (sigma_x_narrow, skew_x))
+    narrow_y = gauss_skew_com_unit(y_local, (sigma_y_narrow, 0.0))
+    narrow_raw = @. A_narrow * narrow_x * narrow_y
+    tail_x = gauss_skew_com_unit(x_local, (sigma_wide, skew_x))
+    tail_y = gauss_skew_com_unit(y_local, (sigma_wide, 0.0))
+    tail_raw = @. A_wide * tail_x * tail_y
     tail = tail_raw
     narrow = @. narrow_raw + beta * narrow_raw^2
     narrow_abrr = narrow
     tailess = profile .- tail
-    return (; axis, s_profile, profile, tail, narrow, narrow_abrr, tailess, tail_raw, narrow_raw, beta, fit_density)
+    return (; axis, s_profile, profile, tail, narrow, narrow_abrr, tailess, tail_raw, narrow_raw, beta, skew_x, fit_density)
 end
 
 function fit_centered_density_profiles(
@@ -370,7 +406,8 @@ function fit_centered_density_profiles(
                 "  [$log_tag] fit done IB_idx=$idx_IB istp_idx=$idx_istp " *
                 "rss=$(round(fit_2d.rss_rel; digits=4)) " *
                 (fit_2d.maxiter_reached ? "maxiter=true " : "") *
-                "β=$(round(params[8]; digits=4))",
+                "β=$(round(params[8]; digits=4)) " *
+                "skew_x=$(round(params[9]; digits=4))",
             )
             flush(stdout)
         end

@@ -12,6 +12,7 @@ include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
 use_src_profiles = false
+# a775786f78a2740ccc029b95ef58c41ccec9b3cd
 title_anlz = use_src_profiles ? "28.IncoCohrModlNtfr.[WL-migration]" : "30.IncoCohrModlNtfr.[reconstr.29]"
 path_data = joinpath(path_root, "0204_interference", "result", "prfl.h5")
 path_model_results = joinpath(
