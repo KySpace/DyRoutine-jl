@@ -382,25 +382,45 @@ function tucky1d(sml; alpha=0.2)
      for x in (-sml:sml) ./ sml]
 end
 
-function calc_prfl_modl_cmpx_1d(dens::AbstractMatrix{<:Real}, radius_blur, idx_strip, idx_modl, tucky_prfl, step_modl::Real)
-    dens_strip = @view dens[:, idx_strip]
-    prfl_dens = imfilter(dens_strip, Kernel.gaussian(radius_blur) |> ds -> vec(mean(ds; dims=2))
-    modl_cmpx = fftshift(fft(prfl_dens .* tucky_prfl))[idx_modl]
-    return modl_cmpx ./ (sum(abs.(modl_cmpx)) * step_modl / 2)
+function get_prfl_modl_1d_config(smwh::Tuple{<:Integer,<:Integer})
+    smw, smh = smwh
+    smh_dens_strip = 20
+    smw_modl = 120
+    smh_dens_strip <= smh || throw(ArgumentError("smh_dens_strip=$smh_dens_strip exceeds smh=$smh."))
+    smw_modl <= smw || throw(ArgumentError("smw_modl=$smw_modl exceeds smw=$smw."))
+    return (; smh_dens_strip, smw_modl, radius_blur=2.5)
 end
 
-function calc_prfl_modl_1d(dens::AbstractVector{AbstractMatrix{<:Real}}, smwh::Tuple{<:Integer,<:Integer}; step_modl::Real=1)
-    smwh .* 2 .+ 1 == size(dens) || throw(DimensionMismatch("smwh $smwh expects density size $(smwh .* 2 .+ 1), got $(size(dens))."))
+function calc_prfl_modl_cmpx_1d(dens::AbstractMatrix{<:Real}, smwh::Tuple{<:Integer,<:Integer}; step_modl::Real=1)
     smw, smh = smwh
-    smw_dens_strip = 20
-    smh_modl = 120
-    radius_blur = 2.5
-    tucky_prfl = tucky1d(smh; alpha=0.2)
-    idx_strip = (smw_dens_strip |> s -> (-s:1:s) .+ smw .+ 1)
-    idx_modl = (smh_modl |> s -> (-s:1:s) .+ smh .+ 1)
-    modl_cmpx = dens |> ds -> map(d -> calc_prfl_modl_cmpx_1d(d, radius_blur, idx_strip, idx_modl, tucky_prfl, step_modl), ds)
-    prfl_inco = modl_cmpx |> abs.(_) |> mean
-    prfl_cohr = modl_cmpx |> mean |> abs.(_)
+    wh_expected = (2 * smh + 1, 2 * smw + 1)
+    size(dens) == wh_expected || throw(DimensionMismatch(
+        "smwh $smwh expects density size $wh_expected, got $(size(dens)).",
+    ))
+    cfg = get_prfl_modl_1d_config(smwh)
+    tucky_prfl = tucky1d(smw; alpha=0.2)
+    idx_strip = (cfg.smh_dens_strip |> s -> (-s:1:s) .+ smh .+ 1)
+    idx_modl = (cfg.smw_modl |> s -> (-s:1:s) .+ smw .+ 1)
+    dens_strip = @view dens[idx_strip, :]
+    prfl_dens = imfilter(dens_strip, Kernel.gaussian(cfg.radius_blur)) |> ds -> vec(mean(ds; dims=1))
+    modl_cmpx = fftshift(fft(prfl_dens .* tucky_prfl))[idx_modl]
+    norm_modl = sum(abs.(modl_cmpx)) * step_modl / 2
+    norm_modl > 0 || throw(ArgumentError("modulation profile normalization must be positive, got $norm_modl."))
+    return modl_cmpx ./ norm_modl
+end
+
+function calc_prfl_modl_1d(dens::AbstractMatrix{<:Real}, smwh::Tuple{<:Integer,<:Integer}; step_modl::Real=1)
+    return abs.(calc_prfl_modl_cmpx_1d(dens, smwh; step_modl))
+end
+
+function calc_prfl_modl_1d(dens::AbstractVector{<:AbstractMatrix{<:Real}}, smwh::Tuple{<:Integer,<:Integer}; step_modl::Real=1)
+    isempty(dens) && throw(ArgumentError("dens must contain at least one density image."))
+    modl_cmpx = map(d -> calc_prfl_modl_cmpx_1d(d, smwh; step_modl), dens)
+    len_modl = length(first(modl_cmpx))
+    all(length(m) == len_modl for m in modl_cmpx) || throw(DimensionMismatch("All modulation profiles must have length $len_modl."))
+    modl_cmpx_mat = reduce(hcat, modl_cmpx)
+    prfl_inco = vec(mean(abs.(modl_cmpx_mat); dims=2))
+    prfl_cohr = abs.(vec(mean(modl_cmpx_mat; dims=2)))
     return (; prfl_cohr, prfl_inco)
 end
 

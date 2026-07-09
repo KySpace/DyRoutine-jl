@@ -17,7 +17,7 @@ This project uses the following names for experimental variation metadata:
 - Values named `istp`, `rep`, `t_hold`, etc. may be used as shared axis values. Avoid reusing these names as loop counters in top-level script scope; use names like `idx_istp` or `val_istp` instead.
 
 # Coding style
-functional style, prefers piping operations when processing data.
+functional style, prefers piping operations with |> when processing data. Prefer using @pipe and _ when the data is being used only once in between |>s (for fear of performance issues caused by 2 _ after @pipe)
 
 # Data processing
 As long as the processing is not too memory consuming:

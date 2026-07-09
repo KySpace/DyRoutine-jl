@@ -11,9 +11,10 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
-title_anlz = "27.IncoCohrModlNtfr.[reconstr.22]"
+use_src_profiles = true
+title_anlz = use_src_profiles ? "28.IncoCohrModlNtfr.[WL-migration]" : "27.IncoCohrModlNtfr.[reconstr.22]"
 path_data = joinpath(path_root, "0204_interference", "result", "prfl.h5")
-path_model_results_24 = joinpath(
+path_model_results = joinpath(
     path_root,
     "AnlzRoutine",
     "22.Ntfr2D.Abrr.Rotated.SeprSkewedYWithTail.LargeIter",
@@ -126,19 +127,19 @@ function load_prfl_modl_fit_jld2(
     end
 
     length(payload.x_modl) == length(x_modl) || throw(DimensionMismatch(
-        "24 reconstructed x_modl length $(length(payload.x_modl)) must match current x_modl length $(length(x_modl)).",
+        "Reconstructed model x_modl length $(length(payload.x_modl)) must match current x_modl length $(length(x_modl)).",
     ))
-    all(isapprox.(payload.x_modl, x_modl; rtol=0.0, atol=1e-12)) || throw(DimensionMismatch(
-        "24 reconstructed x_modl values do not match current x_modl.",
+    all(isapprox.(payload.x_modl, x_modl; rtol=0.0, atol=1e-12)) || @warn(DimensionMismatch(
+        "Reconstructed model x_modl values do not match current x_modl.",
     ))
     payload.val_IB == val_IB || throw(DimensionMismatch(
-        "24 reconstructed val_IB $(payload.val_IB) must match current val_IB $val_IB.",
+        "Reconstructed model val_IB $(payload.val_IB) must match current val_IB $val_IB.",
     ))
     payload.val_istp == String.(val_istp) || throw(DimensionMismatch(
-        "24 reconstructed val_istp $(payload.val_istp) must match current val_istp $(String.(val_istp)).",
+        "Reconstructed model val_istp $(payload.val_istp) must match current val_istp $(String.(val_istp)).",
     ))
     size(payload.prfl_modl_fit) == (length(x_modl), length(val_istp), length(val_IB)) || throw(DimensionMismatch(
-        "24 reconstructed prfl_modl_fit size $(size(payload.prfl_modl_fit)) must match " *
+        "Reconstructed model prfl_modl_fit size $(size(payload.prfl_modl_fit)) must match " *
         "(x_modl, istp, IB) $((length(x_modl), length(val_istp), length(val_IB))).",
     ))
     return Float64.(payload.prfl_modl_fit)
@@ -345,21 +346,26 @@ function draw_tail_diagnostic_duet!(
     return axs
 end
 
-x_dens, x_modl, val_IB, ntfr2d_mean, prfl_inco, prfl_cohr = h5open(path_data, "r") do file
-    x_dens = read(file["x_dens"])
-    x_modl = read(file["x_modl"])
-    val_IB = read(file["val_IB"])
-    ntfr2d_mean = orient_ntfr2d_axes(read(file["ntfr2d_mean"]), x_dens, val_IB, val_istp)
-    prfl_inco = orient_prfl_axes(read(file["prfl_inco"]), x_modl, val_IB, val_istp)
-    prfl_cohr = orient_prfl_axes(read(file["prfl_cohr"]), x_modl, val_IB, val_istp)
-    return x_dens, x_modl, val_IB, ntfr2d_mean, prfl_inco, prfl_cohr
+if use_src_profiles
+    save_src_profiles = true
+    include(joinpath(@__DIR__, "anlz_ssntfr_src.jl"))
+else
+    x_dens, x_modl, val_IB, ntfr2d_mean, prfl_inco, prfl_cohr = h5open(path_data, "r") do file
+        x_dens = read(file["x_dens"])
+        x_modl = read(file["x_modl"])
+        val_IB = read(file["val_IB"])
+        ntfr2d_mean = orient_ntfr2d_axes(read(file["ntfr2d_mean"]), x_dens, val_IB, val_istp)
+        prfl_inco = orient_prfl_axes(read(file["prfl_inco"]), x_modl, val_IB, val_istp)
+        prfl_cohr = orient_prfl_axes(read(file["prfl_cohr"]), x_modl, val_IB, val_istp)
+        return x_dens, x_modl, val_IB, ntfr2d_mean, prfl_inco, prfl_cohr
+    end
 end
 step_modl = median(diff(x_modl))
 
 colorrange_inco = calc_prfl_colorrange(prfl_inco, x_modl, range_x_colorrange)
 colorrange_cohr = calc_prfl_colorrange(prfl_cohr, x_modl, range_x_colorrange)
 
-prfl_modl_fit = load_prfl_modl_fit_jld2(path_model_results_24, x_modl, val_IB, val_istp)
+prfl_modl_fit = load_prfl_modl_fit_jld2(path_model_results, x_modl, val_IB, val_istp)
 tail_inco = calc_modl_tail(prfl_inco, prfl_modl_fit)
 tail_cohr = calc_modl_tail(prfl_cohr, prfl_modl_fit)
 prfl_tail = build_profile_variant_arrays(

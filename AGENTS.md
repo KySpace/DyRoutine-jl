@@ -42,9 +42,10 @@ While a task is still in progress, mostly edit the latest relevant log entry ins
 - When reshaping flattened variation data, reshape so the fastest-varying variable is innermost before `permutedims` into the consumer-facing order.
 - Prefer typed method signatures for public helpers and data-processing functions, especially `AbstractArray`, `AbstractMatrix`, `AbstractVector`, `Tuple{...}`, and `Real` bounds.
 - Validate dimensions and user-facing numeric arguments early with `ArgumentError` or `DimensionMismatch`. Include the offending value and expected size when it helps debugging.
-- Use functional data flow and Julia pipes for transformations, especially `|>` with short anonymous functions for `read`, `permutedims`, `mapslices`, `dropdims`, `reshape`, and plotting save steps.
+- Use functional data flow and Julia pipes for transformations, especially `|>` with short anonymous functions for `read`, `permutedims`, `mapslices`, `dropdims`, `reshape`, and plotting save steps. Prefer using @pipe and _ when the data is being used only once in between |>s (for fear of performance issues caused by 2 _ after @pipe)
 - Prefer standard library or established package functions over custom implementations when they fit the task.
 - Use `@view` for non-copying array regions and broadcasting for elementwise operations.
 - For plotting, use mutating Makie-style helpers ending in `!` when they alter axes, figures, or layouts, such as `set_panel_solo_essn_2d!` and `draw_solo_essn_2d!`.
 - Keep comments sparse and practical: short section comments for analysis stages are useful, while old exploratory plotting blocks may remain commented in scripts when they document active workflows.
 - For now, scripts may `include(joinpath(@__DIR__, "..", "src", "..."))`; future packaging should move these relationships behind modules.
+- If you are writing the script for a functionality like a simple conversion/packing/unpacking that you cannot see being used many times, and it is a only a few lines, or during a testing script when you are doing the final visualization, please do not wrap these things up in functions.
