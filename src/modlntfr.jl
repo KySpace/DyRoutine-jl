@@ -2,6 +2,7 @@ using FFTW
 using ImageFiltering
 using LinearAlgebra
 using LsqFit
+using NaturalNeighbours
 using Statistics
 using Pipe: @pipe
 
@@ -263,6 +264,34 @@ function fit_two_gaussian_2d(
     return (; params, rss_rel, maxiter_reached, guess_1d, model_center, threshold)
 end
 
+function interp2_bilinear(
+    x_dens::AbstractVector{<:Real},
+    dens2d::AbstractMatrix{<:Real},
+    xq::AbstractVector{<:Real},
+    yq::AbstractVector{<:Real},
+)
+    length(xq) == length(yq) || throw(DimensionMismatch("xq length $(length(xq)) must match yq length $(length(yq))."))
+    x_grid = Float64.(x_dens)
+    x_site = repeat(x_grid; inner=length(x_grid))
+    y_site = repeat(x_grid; outer=length(x_grid))
+    itp = interpolate(x_site, y_site, vec(Float64.(dens2d)); derivatives=false)
+    val = fill(NaN, length(xq))
+    mask_valid = (first(x_dens) .<= xq .<= last(x_dens)) .& (first(x_dens) .<= yq .<= last(x_dens))
+    if any(mask_valid)
+        val[mask_valid] .= itp(Float64.(xq[mask_valid]), Float64.(yq[mask_valid]); method=Sibson())
+    end
+    return val
+end
+
+function interp2_bilinear(
+    x_dens::AbstractVector{<:Real},
+    dens2d::AbstractMatrix{<:Real},
+    xq::Real,
+    yq::Real,
+)
+    return only(interp2_bilinear(x_dens, dens2d, [xq], [yq]))
+end
+
 function calc_centered_cross_profile(
     x_dens::AbstractVector{<:Real},
     dens2d::AbstractMatrix{<:Real},
@@ -272,8 +301,8 @@ function calc_centered_cross_profile(
     x0, y0, A_narrow, sigma_x_narrow, sigma_y_narrow, A_wide, sigma_wide, beta = fit_density.params
     s_profile = Float64.(x_dens)
     profile =
-        axis == :column ? [interp2_bilinear(x_dens, dens2d, x0, y0 + s) for s in s_profile] :
-        axis == :row ? [interp2_bilinear(x_dens, dens2d, x0 + s, y0) for s in s_profile] :
+        axis == :column ? interp2_bilinear(x_dens, dens2d, fill(x0, length(s_profile)), y0 .+ s_profile) :
+        axis == :row ? interp2_bilinear(x_dens, dens2d, x0 .+ s_profile, fill(y0, length(s_profile))) :
         throw(ArgumentError("axis must be :column or :row, got $axis."))
     if axis == :column
         dx2 = zero.(s_profile)
