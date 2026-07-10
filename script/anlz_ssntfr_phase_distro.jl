@@ -2,6 +2,7 @@
 using GLMakie
 using HDF5
 using ImageFiltering
+using LsqFit: curve_fit, stderror
 using Printf
 using Statistics
 
@@ -43,12 +44,24 @@ bin = 1
 num_err = 0.6e4
 range_center = 181:220
 sigma_center_filter = 5
+x_max_fit = 20 # μm
+sigma_peak_init = 12.0
+eta_peak_init = 0.25
+lambda_peak_init = 2.0
+phi_peak_init = 0.0
+fit_lower_peak = [0.0, 1.0, 0.0, 0.1, -2pi]
+fit_upper_peak = [Inf, 80.0, 1.0, 20.0, 2pi]
 
 # live inspector selections
 ib, istp, idx_rep = (5, 1, 1)
 x_row = 0.0
 x_col = 0.0
 ylims_profile = (-1.0, 15.0)
+
+function modl_peak_1d(x, p)
+    (A, σ, η, λ, φ) = p
+    @. A * exp(-(x/σ)^2) * (1 + η * cos(x/λ - φ))
+end
 
 function load_density_payload(path_data::AbstractString, val_istp::AbstractVector{<:AbstractString})
     name_dataset_by_istp = Dict(
@@ -77,6 +90,7 @@ function draw_profile_inspector!(
     fig::Figure,
     x_dens::AbstractVector{<:Real},
     dens_core::AbstractMatrix,
+    fit_peak::AbstractMatrix,
     val_istp::AbstractVector;
     ib::Integer,
     istp::Integer,
@@ -91,8 +105,14 @@ function draw_profile_inspector!(
     size(dens_core, 2) == length(val_istp) || throw(DimensionMismatch(
         "dens_core second dimension $(size(dens_core, 2)) must match length(val_istp) $(length(val_istp)).",
     ))
+    size(fit_peak) == size(dens_core) || throw(DimensionMismatch(
+        "fit_peak size $(size(fit_peak)) must match dens_core size $(size(dens_core)).",
+    ))
     for idx in CartesianIndices(dens_core)
         isempty(dens_core[idx]) && continue
+        length(fit_peak[idx]) == length(dens_core[idx]) || throw(DimensionMismatch(
+            "fit_peak[$(Tuple(idx)...)] length $(length(fit_peak[idx])) must match dens_core length $(length(dens_core[idx])).",
+        ))
         size(first(dens_core[idx])) == (length(x_dens), length(x_dens)) || throw(DimensionMismatch(
             "dens_core[$(Tuple(idx)...)] crop size $(size(first(dens_core[idx]))) must match " *
             "(length(x_dens), length(x_dens)) $((length(x_dens), length(x_dens))).",
@@ -107,6 +127,7 @@ function draw_profile_inspector!(
     idx_center = cld(length(x_dens), 2)
     idxs_center = max(1, idx_center - smidx_mean_profile):min(length(x_dens), idx_center + smidx_mean_profile)
     dens2d = dens_vec[idx_rep]
+    fit_info = fit_peak[ib, istp][idx_rep]
     dens_mean = mean(dens_vec)
 
     gen_theme_clr(idx_istp::Integer, alpha::Real) =
@@ -116,6 +137,7 @@ function draw_profile_inspector!(
 
     clr_mean = RGBAf(0.35, 0.35, 0.35, 0.62)
     clr_strip = RGBAf(0.86, 0.86, 0.86, 0.22)
+    clr_fit = RGBAf(Oklch(0.60, 0.17, 145), 0.95)
     step_dens = median(diff(x_dens))
     x_strip_min = x_dens[first(idxs_center)] - step_dens / 2
     x_strip_max = x_dens[last(idxs_center)] + step_dens / 2
@@ -138,6 +160,13 @@ function draw_profile_inspector!(
     obs_profile_col = Observable(vec(@view dens2d[:, idx_col]))
     obs_profile_row_mean = Observable(vec(mean(@view(dens2d[idxs_center, :]); dims=1)))
     obs_profile_col_mean = Observable(vec(mean(@view(dens2d[:, idxs_center]); dims=2)))
+    obs_fit_row = Observable(fit_info.fit)
+    obs_fit_text = Observable(
+        @sprintf(
+            "A=%.3g\nσ=%.3g\nη=%.3g\nλ=%.3g\nφ=%.3g",
+            fit_info.params...,
+        ),
+    )
     obs_title = lift(obs_idx_IB, obs_idx_istp, obs_idx_rep, obs_val_row, obs_val_col) do idx_IB_live, idx_istp_live, idx_rep_live, val_row_live, val_col_live
         @sprintf(
             "IB idx=%d, istp=%s, rep=%d/%d, x_row=%.3f μm, x_col=%.3f μm",
@@ -190,6 +219,17 @@ function draw_profile_inspector!(
     end
     lines!(ax_row, x_dens, obs_profile_row_mean; color=clr_mean, linewidth=2.2)
     lines!(ax_row, x_dens, obs_profile_row; color=obs_clr_theme, linewidth=1.7)
+    lines!(ax_row, x_dens, obs_fit_row; color=clr_fit, linewidth=2.0)
+    text!(
+        ax_row,
+        0.98,
+        0.96;
+        text=obs_fit_text,
+        space=:relative,
+        align=(:right, :top),
+        color=clr_fit,
+        fontsize=10,
+    )
     xlims!(ax_row, extrema(x_dens))
     ylims!(ax_row, ylims_profile)
 
@@ -215,6 +255,7 @@ function draw_profile_inspector!(
         isempty(dens_vec_live) && return nothing
         obs_idx_rep[] = mod1(obs_idx_rep[], length(dens_vec_live))
         dens2d_live = dens_vec_live[obs_idx_rep[]]
+        fit_info_live = fit_peak[obs_idx_IB[], obs_idx_istp[]][obs_idx_rep[]]
         dens_mean_live = mean(dens_vec_live)
         obs_dens2d[] = dens2d_live
         obs_colorrange[] = (0.0, maximum(dens2d_live))
@@ -225,6 +266,11 @@ function draw_profile_inspector!(
         obs_profile_row[] = vec(@view dens2d_live[obs_idx_row[], :])
         obs_profile_row_mean[] = vec(mean(@view(dens2d_live[idxs_center, :]); dims=1))
         obs_profile_col_mean[] = vec(mean(@view(dens2d_live[:, idxs_center]); dims=2))
+        obs_fit_row[] = fit_info_live.fit
+        obs_fit_text[] = @sprintf(
+            "A=%.3g\nσ=%.3g\nη=%.3g\nλ=%.3g\nφ=%.3g",
+            fit_info_live.params...,
+        )
         return nothing
     end
 
@@ -346,6 +392,7 @@ end
 count_profile_shot = vec(sum(mask_valid_duet; dims=2))
 println("  [$tag] valid duet counts per IB=$(count_profile_shot)")
 
+ids_rep_valid = [findall(@view mask_valid_duet[idx_IB, :]) for idx_IB in 1:n_IB]
 dens_core = Array{Vector{Matrix{Float64}}}(undef, n_IB, n_istp)
 for idx_IB in 1:n_IB, idx_istp in 1:n_istp
     dens_core[idx_IB, idx_istp] = [
@@ -354,6 +401,56 @@ for idx_IB in 1:n_IB, idx_istp in 1:n_istp
         if mask_valid_duet[idx_IB, idx_rep]
     ]
 end
+
+idx_center = cld(length(x_dens), 2)
+idxs_center = max(1, idx_center - cfg_prfl.smh_dens_strip):min(length(x_dens), idx_center + cfg_prfl.smh_dens_strip)
+mask_fit = abs.(x_dens) .<= x_max_fit
+x_fit_peak = x_dens[mask_fit]
+
+fit_peak = Array{Vector{NamedTuple}}(undef, n_IB, n_istp)
+for idx_IB in 1:n_IB, idx_istp in 1:n_istp
+    fit_peak[idx_IB, idx_istp] = map(enumerate(dens_core[idx_IB, idx_istp])) do (idx_rep_valid, dens2d)
+        profile = vec(mean(@view(dens2d[idxs_center, :]); dims=1))
+        y_fit_peak = Float64.(profile[mask_fit])
+        amp_init = max(maximum(y_fit_peak), eps(Float64))
+        p_init = [amp_init, sigma_peak_init, eta_peak_init, lambda_peak_init, phi_peak_init]
+        p_lower = copy(fit_lower_peak)
+        p_upper = copy(fit_upper_peak)
+        p_upper[1] = 2 * amp_init
+        try
+            fit = curve_fit(modl_peak_1d, x_fit_peak, y_fit_peak, p_init; lower=p_lower, upper=p_upper)
+            param_err = try
+                stderror(fit)
+            catch err
+                err isa SingularException || rethrow()
+                fill(NaN, length(fit.param))
+            end
+            (;
+                idx_rep=ids_rep_valid[idx_IB][idx_rep_valid],
+                success=true,
+                params=copy(fit.param),
+                param_err,
+                profile,
+                fit=modl_peak_1d(x_dens, fit.param),
+                resid=copy(fit.resid),
+            )
+        catch err
+            @warn "modl_peak_1d fit failed" idx_IB idx_istp idx_rep=ids_rep_valid[idx_IB][idx_rep_valid] err
+            (;
+                idx_rep=ids_rep_valid[idx_IB][idx_rep_valid],
+                success=false,
+                params=fill(NaN, length(p_init)),
+                param_err=fill(NaN, length(p_init)),
+                profile,
+                fit=fill(NaN, length(x_dens)),
+                resid=fill(NaN, length(x_fit_peak)),
+            )
+        end
+    end
+end
+count_fit = sum(sum(f.success for f in fits) for fits in fit_peak)
+count_fit_err = sum(sum(f.success && any(isnan, f.param_err) for f in fits) for fits in fit_peak)
+println("  [$tag] fitted modl_peak_1d for $count_fit selected crops; singular error estimates for $count_fit_err crops")
 
 ntfr2d_mean = map(dens_core) do ds
     isempty(ds) && throw(ArgumentError("No valid densities available for a condition."))
@@ -367,6 +464,7 @@ profile_axes = draw_profile_inspector!(
     fig_live,
     x_dens,
     dens_core,
+    fit_peak,
     val_istp;
     ib,
     istp,
