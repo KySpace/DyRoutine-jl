@@ -7,6 +7,7 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 
+# after running partially from anlz_ssntfr_src.jl
 fig_live = Figure()
 axs_dens = Axis(fig_live[1, 1]; aspect=DataAspect())
 axs_dens_mean = Axis(fig_live[1, 2]; aspect=DataAspect())
