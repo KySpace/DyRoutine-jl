@@ -190,8 +190,115 @@ function gauss_skew_com_unit(pos, params)
     phi = t -> @. exp(-t^2 / 2)
     Phi = t -> @. 1 + erf(t / sqrt(2))
     mu = -sigma * alpha / sqrt(alpha^2 + 1) * sqrt(2 / pi)
-    pos_rel = @. (pos - mu) / sigma
+    pos_rel = @. (pos - 0*mu) / sigma
     return phi(pos_rel) .* Phi(pos_rel .* alpha)
+end
+
+function skewed_gauss_1d(pos::AbstractVector{<:Real}, A::Real, x0::Real, sigma::Real, skew::Real, beta::Real)
+    return gauss_skew_com_unit(Float64.(pos) .- x0, (sigma, skew)) |> g -> @. A * (g + beta * g^2)
+end
+
+function double_skew_beta_gauss_1d_model(x, params)
+    length(params) == 9 || throw(ArgumentError(
+        "double_skew_beta_gauss_1d_model expects 9 params " *
+        "(x0, A_narrow, sigma_narrow, skew_narrow, beta_narrow, A_wide, sigma_wide, skew_wide, beta_wide), got $(length(params)).",
+    ))
+    x0, A_narrow, sigma_narrow, skew_narrow, beta_narrow, A_wide, sigma_wide, skew_wide, beta_wide = params
+    narrow = skewed_gauss_1d(Float64.(x), A_narrow, 0, sigma_narrow, skew_narrow, beta_narrow)
+    wide = skewed_gauss_1d(Float64.(x), A_wide, x0, sigma_wide, skew_wide, beta_wide)
+    return narrow .+ wide
+end
+
+function log_double_skew_beta_gauss_1d_model(x, params)
+    return log.(max.(double_skew_beta_gauss_1d_model(x, params), eps(Float64)))
+end
+
+function calc_center_row_strip_profile(
+    x_dens::AbstractVector{<:Real},
+    dens2d::AbstractMatrix{<:Real};
+    smh_dens_strip::Integer,
+)
+    size(dens2d) == (length(x_dens), length(x_dens)) || throw(DimensionMismatch(
+        "dens2d size $(size(dens2d)) must match (length(x_dens), length(x_dens)) $((length(x_dens), length(x_dens))).",
+    ))
+    smh_dens_strip >= 0 || throw(ArgumentError("smh_dens_strip must be nonnegative, got $smh_dens_strip."))
+    idx_center = cld(size(dens2d, 1), 2)
+    idx_rows = max(1, idx_center - smh_dens_strip):min(size(dens2d, 1), idx_center + smh_dens_strip)
+    return vec(mean(@view(dens2d[idx_rows, :]); dims=1))
+end
+
+function fit_skew_beta_gauss_1d(
+    x_dens::AbstractVector{<:Real},
+    profile::AbstractVector{<:Real};
+    center_bound::Real,
+    threshold::Real,
+    sigma_wide_min::Real,
+    r_narrow_max::Real,
+    maxiter::Integer=30_000,
+    fit_log::Bool=false,
+)
+    length(x_dens) == length(profile) || throw(DimensionMismatch(
+        "x_dens length $(length(x_dens)) must match profile length $(length(profile)).",
+    ))
+    x_fit = Float64.(x_dens)
+    y_fit = Float64.(profile)
+    mask_fit = @. isfinite(y_fit) & (y_fit > threshold)
+    any(mask_fit) || throw(ArgumentError("No 1D profile points above threshold=$threshold."))
+    step_x = minimum(diff(x_fit))
+    max_x = maximum(abs, x_fit)
+    y_sel = y_fit[mask_fit]
+    x_sel = x_fit[mask_fit]
+    idx_max = argmax(y_fit)
+    A_peak = max(y_fit[idx_max], eps(Float64))
+    A_tail = max(median(y_fit[abs.(x_fit) .> sigma_wide_min]), eps(Float64))
+    p_init = [
+        clamp(x_fit[idx_max], -center_bound, center_bound),
+        A_peak,
+        max(r_narrow_max / 4, step_x),
+        0.0,
+        0.5,
+        A_tail,
+        30,
+        0.0,
+        -0.25,
+    ]
+    p_lower = [-center_bound, eps(Float64), step_x, -2.0, 0, eps(Float64), 25, -2.0, -0.25]
+    p_upper = [center_bound, Inf, r_narrow_max, 2.0, 2.0, Inf, 35, 2.0, 0]
+    model_fit = fit_log ? log_double_skew_beta_gauss_1d_model : double_skew_beta_gauss_1d_model
+    y_sel_fit = fit_log ? log.(max.(y_sel, eps(Float64))) : y_sel
+    fit = curve_fit(
+        model_fit,
+        x_sel,
+        y_sel_fit,
+        p_init;
+        lower=p_lower,
+        upper=p_upper,
+        maxIter=maxiter,
+    )
+    params = coef(fit)
+    y_model = double_skew_beta_gauss_1d_model(x_fit, params)
+    x0, A_narrow, sigma_narrow, skew_narrow, beta_narrow, A_wide, sigma_wide, skew_wide, beta_wide = params
+    narrow = skewed_gauss_1d(x_fit, A_narrow, x0, sigma_narrow, skew_narrow, beta_narrow)
+    tail = skewed_gauss_1d(x_fit, A_wide, x0, sigma_wide, skew_wide, beta_wide)
+    narrow_beta0 = skewed_gauss_1d(x_fit, A_narrow, x0, sigma_narrow, skew_narrow, 0.0)
+    tail_beta0 = skewed_gauss_1d(x_fit, A_wide, x0, sigma_wide, skew_wide, 0.0)
+    rss_rel = norm(residuals(fit)) / max(norm(y_sel_fit), eps(Float64))
+    return (;
+        params,
+        rss_rel,
+        maxiter_reached=!fit.converged,
+        threshold,
+        fit_log,
+        s_profile=x_fit,
+        profile=y_fit,
+        fit=y_model,
+        narrow,
+        tail,
+        narrow_beta0,
+        tail_beta0,
+        tailess=y_fit .- tail,
+        tailess_beta0=y_fit .- tail_beta0,
+    )
 end
 
 function double_gaussian_disk_2d_model_abrr(coords, params)
@@ -426,7 +533,7 @@ end
 
 function get_prfl_modl_1d_config(smwh::Tuple{<:Integer,<:Integer})
     smw, smh = smwh
-    smh_dens_strip = 20
+    smh_dens_strip = min(20, smh)
     smw_modl = 120
     smh_dens_strip <= smh || throw(ArgumentError("smh_dens_strip=$smh_dens_strip exceeds smh=$smh."))
     smw_modl <= smw || throw(ArgumentError("smw_modl=$smw_modl exceeds smw=$smw."))
