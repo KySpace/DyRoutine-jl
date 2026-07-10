@@ -279,6 +279,8 @@ for idx_IB in 1:n_IB_src, idx_istp in 1:n_istp_src
     ]
 end
 
+##
+
 ntfr2d_mean = map(dens_src_core) do ds
     isempty(ds) && throw(ArgumentError("No valid source densities available for a condition."))
     dropdims(mean(stack(ds); dims=3); dims=3)

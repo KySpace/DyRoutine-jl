@@ -1,4 +1,7 @@
+## Prepare selected SSNTFR repeat collections for later analysis.
 using GLMakie
+using HDF5
+using ImageFiltering
 using Printf
 using Statistics
 
@@ -8,46 +11,102 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "persolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 
-# selections
-ib, istp, idx_profile = (5, 1, 1)
+path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
+path_data = joinpath(path_root, "0204_interference", "result", "data.h5")
+path_output = joinpath(path_root, "AnlzRoutine", "36.PhaseDistro")
+
+tag = "SSNTFR"
+val_istp = ["162", "164"]
+val_IB_ref = [
+    5.310,
+    5.312,
+    5.314,
+    5.316,
+    5.317,
+    5.318,
+    5.319,
+    5.320,
+    5.322,
+    5.324,
+    5.326,
+    5.328,
+    5.330,
+    5.332,
+    5.334,
+    5.338,
+    5.342,
+]
+smwh = (150, 150)
+mag = 22.06
+pixsz = 6.5
+bin = 1
+num_err = 0.6e4
+range_center = 181:220
+sigma_center_filter = 5
+
+# live inspector selections
+ib, istp, idx_rep = (5, 1, 1)
 x_row = 0.0
 x_col = 0.0
 ylims_profile = (-1.0, 15.0)
 
-function draw_src_profile_inspector!(
+function load_density_payload(path_data::AbstractString, val_istp::AbstractVector{<:AbstractString})
+    name_dataset_by_istp = Dict(
+        "162" => "im64us",
+        "164" => "im62us",
+    )
+
+    h5open(path_data, "r") do file
+        dens_loaded = map(val_istp) do istp
+            read(file[name_dataset_by_istp[istp]])
+        end
+        _, _, n_rep, n_IB = size(first(dens_loaded))
+        dens_raw = Array{Matrix{Float64}}(undef, n_IB, length(val_istp), n_rep)
+        for idx_IB in 1:n_IB, idx_istp in eachindex(val_istp), idx_rep in 1:n_rep
+            dens_raw[idx_IB, idx_istp, idx_rep] = Float64.(copy(@view dens_loaded[idx_istp][:, :, idx_rep, idx_IB]))
+        end
+        return dens_raw
+    end
+end
+
+function gaussian_offset_1d(x, p)
+    return @. p[1] * exp(-((x - p[2])^2) / (2 * p[3]^2)) + p[4]
+end
+
+function draw_profile_inspector!(
     fig::Figure,
     x_dens::AbstractVector{<:Real},
-    dens_src_core::AbstractMatrix,
+    dens_core::AbstractMatrix,
     val_istp::AbstractVector;
     ib::Integer,
     istp::Integer,
-    idx_profile::Integer,
+    idx_rep::Integer,
     x_row::Real,
     x_col::Real,
     smidx_mean_profile::Integer,
-    ylims_profile::Tuple{<:Real,<:Real}=(-1.0, 15.0),
+    ylims_profile::Tuple{<:Real,<:Real},
 )
-    ib in axes(dens_src_core, 1) || throw(ArgumentError("ib must be in $(axes(dens_src_core, 1)), got $ib."))
-    istp in axes(dens_src_core, 2) || throw(ArgumentError("istp must be in $(axes(dens_src_core, 2)), got $istp."))
-    size(dens_src_core, 2) == length(val_istp) || throw(DimensionMismatch(
-        "dens_src_core second dimension $(size(dens_src_core, 2)) must match length(val_istp) $(length(val_istp)).",
+    ib in axes(dens_core, 1) || throw(ArgumentError("ib must be in $(axes(dens_core, 1)), got $ib."))
+    istp in axes(dens_core, 2) || throw(ArgumentError("istp must be in $(axes(dens_core, 2)), got $istp."))
+    size(dens_core, 2) == length(val_istp) || throw(DimensionMismatch(
+        "dens_core second dimension $(size(dens_core, 2)) must match length(val_istp) $(length(val_istp)).",
     ))
-    for idx in CartesianIndices(dens_src_core)
-        isempty(dens_src_core[idx]) && continue
-        size(first(dens_src_core[idx])) == (length(x_dens), length(x_dens)) || throw(DimensionMismatch(
-            "dens_src_core[$(Tuple(idx)...)] crop size $(size(first(dens_src_core[idx]))) must match " *
+    for idx in CartesianIndices(dens_core)
+        isempty(dens_core[idx]) && continue
+        size(first(dens_core[idx])) == (length(x_dens), length(x_dens)) || throw(DimensionMismatch(
+            "dens_core[$(Tuple(idx)...)] crop size $(size(first(dens_core[idx]))) must match " *
             "(length(x_dens), length(x_dens)) $((length(x_dens), length(x_dens))).",
         ))
     end
 
-    dens_vec = dens_src_core[ib, istp]
-    isempty(dens_vec) && throw(ArgumentError("dens_src_core[$ib, $istp] has no selected crops."))
-    idx_profile = mod1(idx_profile, length(dens_vec))
+    dens_vec = dens_core[ib, istp]
+    isempty(dens_vec) && throw(ArgumentError("dens_core[$ib, $istp] has no selected crops."))
+    idx_rep = mod1(idx_rep, length(dens_vec))
     idx_row = argmin(abs.(x_dens .- x_row))
     idx_col = argmin(abs.(x_dens .- x_col))
     idx_center = cld(length(x_dens), 2)
     idxs_center = max(1, idx_center - smidx_mean_profile):min(length(x_dens), idx_center + smidx_mean_profile)
-    dens2d = dens_vec[idx_profile]
+    dens2d = dens_vec[idx_rep]
     dens_mean = mean(dens_vec)
 
     gen_theme_clr(idx_istp::Integer, alpha::Real) =
@@ -64,7 +123,7 @@ function draw_src_profile_inspector!(
 
     obs_idx_IB = Observable(ib)
     obs_idx_istp = Observable(istp)
-    obs_idx_profile = Observable(idx_profile)
+    obs_idx_rep = Observable(idx_rep)
     obs_idx_row = Observable(idx_row)
     obs_idx_col = Observable(idx_col)
     obs_val_row = Observable(x_dens[idx_row])
@@ -79,13 +138,13 @@ function draw_src_profile_inspector!(
     obs_profile_col = Observable(vec(@view dens2d[:, idx_col]))
     obs_profile_row_mean = Observable(vec(mean(@view(dens2d[idxs_center, :]); dims=1)))
     obs_profile_col_mean = Observable(vec(mean(@view(dens2d[:, idxs_center]); dims=2)))
-    obs_title = lift(obs_idx_IB, obs_idx_istp, obs_idx_profile, obs_val_row, obs_val_col) do idx_IB_live, idx_istp_live, idx_profile_live, val_row_live, val_col_live
+    obs_title = lift(obs_idx_IB, obs_idx_istp, obs_idx_rep, obs_val_row, obs_val_col) do idx_IB_live, idx_istp_live, idx_rep_live, val_row_live, val_col_live
         @sprintf(
-            "IB idx=%d, istp=%s, profile=%d/%d, x_row=%.3f μm, x_col=%.3f μm",
+            "IB idx=%d, istp=%s, rep=%d/%d, x_row=%.3f μm, x_col=%.3f μm",
             idx_IB_live,
             string(val_istp[idx_istp_live]),
-            idx_profile_live,
-            length(dens_src_core[idx_IB_live, idx_istp_live]),
+            idx_rep_live,
+            length(dens_core[idx_IB_live, idx_istp_live]),
             val_row_live,
             val_col_live,
         )
@@ -152,10 +211,10 @@ function draw_src_profile_inspector!(
     ax_col.xreversed = true
 
     function update_profiles!()
-        dens_vec_live = dens_src_core[obs_idx_IB[], obs_idx_istp[]]
+        dens_vec_live = dens_core[obs_idx_IB[], obs_idx_istp[]]
         isempty(dens_vec_live) && return nothing
-        obs_idx_profile[] = mod1(obs_idx_profile[], length(dens_vec_live))
-        dens2d_live = dens_vec_live[obs_idx_profile[]]
+        obs_idx_rep[] = mod1(obs_idx_rep[], length(dens_vec_live))
+        dens2d_live = dens_vec_live[obs_idx_rep[]]
         dens_mean_live = mean(dens_vec_live)
         obs_dens2d[] = dens2d_live
         obs_colorrange[] = (0.0, maximum(dens2d_live))
@@ -181,11 +240,11 @@ function draw_src_profile_inspector!(
     end
 
     function update_data_index!(step_IB::Integer, step_istp::Integer, step_profile::Integer)
-        obs_idx_IB[] = mod1(obs_idx_IB[] + step_IB, size(dens_src_core, 1))
-        obs_idx_istp[] = mod1(obs_idx_istp[] + step_istp, size(dens_src_core, 2))
-        dens_vec_live = dens_src_core[obs_idx_IB[], obs_idx_istp[]]
+        obs_idx_IB[] = mod1(obs_idx_IB[] + step_IB, size(dens_core, 1))
+        obs_idx_istp[] = mod1(obs_idx_istp[] + step_istp, size(dens_core, 2))
+        dens_vec_live = dens_core[obs_idx_IB[], obs_idx_istp[]]
         isempty(dens_vec_live) && return nothing
-        obs_idx_profile[] = mod1(obs_idx_profile[] + step_profile, length(dens_vec_live))
+        obs_idx_rep[] = mod1(obs_idx_rep[] + step_profile, length(dens_vec_live))
         update_profiles!()
         return nothing
     end
@@ -228,7 +287,7 @@ function draw_src_profile_inspector!(
         hm,
         idx_IB=obs_idx_IB,
         idx_istp=obs_idx_istp,
-        idx_profile=obs_idx_profile,
+        idx_rep=obs_idx_rep,
         idx_row=obs_idx_row,
         idx_col=obs_idx_col,
         x_row=obs_val_row,
@@ -238,24 +297,83 @@ function draw_src_profile_inspector!(
     )
 end
 
-@isdefined(dens_src_core) || error("Run the crop/profile part of script/anlz_ssntfr_src.jl first so dens_src_core is defined.")
-@isdefined(x_dens) || error("Run the setup part of script/anlz_ssntfr_src.jl first so x_dens is defined.")
-@isdefined(val_istp) || error("Run the setup part of script/anlz_ssntfr_src.jl first so val_istp is defined.")
-@isdefined(smwh_src) || error("Run the setup part of script/anlz_ssntfr_src.jl first so smwh_src is defined.")
+println("  [$tag] loading densities from $path_data")
+dens_raw_fmt = load_density_payload(path_data, val_istp)
+n_IB, n_istp, n_rep = size(dens_raw_fmt)
+wh_raw = size(dens_raw_fmt[1, 1, 1])
+println("  [$tag] formatted densities as (IB, istp, rep)=$(size(dens_raw_fmt)), image size=$wh_raw")
+length(val_IB_ref) == n_IB || throw(DimensionMismatch("val_IB_ref length $(length(val_IB_ref)) must match IB count $n_IB."))
+length(val_istp) == n_istp || throw(DimensionMismatch("val_istp length $(length(val_istp)) must match istp count $n_istp."))
 
-cfg = get_prfl_modl_1d_config(smwh_src)
+cfg_prfl = get_prfl_modl_1d_config(smwh)
+x_dens = (pixsz * bin / mag) .* collect(-smwh[2]:smwh[2])
+val_IB = copy(val_IB_ref)
+
+num = Array{Float64}(undef, n_IB, n_istp, n_rep)
+xy_center = Array{Tuple{Int,Int}}(undef, n_IB, n_istp, n_rep)
+for idx_IB in 1:n_IB, idx_istp in 1:n_istp, idx_rep in 1:n_rep
+    dens = dens_raw_fmt[idx_IB, idx_istp, idx_rep]
+    dens_smooth = imfilter(dens, Kernel.gaussian(sigma_center_filter))
+
+    prfl_x = vec(sum(dens_smooth; dims=1))
+    x_fit = collect(1.0:length(prfl_x))
+    p0_x = [maximum(prfl_x), (length(prfl_x) + 1) / 2, length(prfl_x) / 10, minimum(prfl_x)]
+    x_center = curve_fit(gaussian_offset_1d, x_fit, Float64.(prfl_x), p0_x).param[2]
+
+    prfl_y = vec(sum(dens_smooth; dims=2))
+    y_fit = collect(1.0:length(prfl_y))
+    p0_y = [maximum(prfl_y), (length(prfl_y) + 1) / 2, length(prfl_y) / 10, minimum(prfl_y)]
+    y_center = curve_fit(gaussian_offset_1d, y_fit, Float64.(prfl_y), p0_y).param[2]
+
+    num[idx_IB, idx_istp, idx_rep] = sum(dens)
+    xy_center[idx_IB, idx_istp, idx_rep] = round.(Int, (x_center, y_center))
+end
+
+num_median = dropdims(median(num; dims=3); dims=3)
+mask_valid_duet = falses(n_IB, n_rep)
+for idx_IB in 1:n_IB, idx_rep in 1:n_rep
+    is_valid_number = all(
+        abs(num[idx_IB, idx_istp, idx_rep] - num_median[idx_IB, idx_istp]) <= num_err
+        for idx_istp in 1:n_istp
+    )
+    is_valid_center = all(
+        (xy -> xy[1] in range_center && xy[2] in range_center)(xy_center[idx_IB, idx_istp, idx_rep])
+        for idx_istp in 1:n_istp
+    )
+    mask_valid_duet[idx_IB, idx_rep] = is_valid_number && is_valid_center
+end
+
+count_profile_shot = vec(sum(mask_valid_duet; dims=2))
+println("  [$tag] valid duet counts per IB=$(count_profile_shot)")
+
+dens_core = Array{Vector{Matrix{Float64}}}(undef, n_IB, n_istp)
+for idx_IB in 1:n_IB, idx_istp in 1:n_istp
+    dens_core[idx_IB, idx_istp] = [
+        crop_center(dens_raw_fmt[idx_IB, idx_istp, idx_rep], xy_center[idx_IB, idx_istp, idx_rep], smwh) |> copy
+        for idx_rep in 1:n_rep
+        if mask_valid_duet[idx_IB, idx_rep]
+    ]
+end
+
+ntfr2d_mean = map(dens_core) do ds
+    isempty(ds) && throw(ArgumentError("No valid densities available for a condition."))
+    dropdims(mean(stack(ds); dims=3); dims=3)
+end
+
+isdir(path_output) || mkpath(path_output)
+
 fig_live = Figure(fontsize=14)
-profile_axes = draw_src_profile_inspector!(
+profile_axes = draw_profile_inspector!(
     fig_live,
     x_dens,
-    dens_src_core,
+    dens_core,
     val_istp;
     ib,
     istp,
-    idx_profile,
+    idx_rep,
     x_row,
     x_col,
-    smidx_mean_profile=cfg.smh_dens_strip,
+    smidx_mean_profile=cfg_prfl.smh_dens_strip,
     ylims_profile,
 )
 display(fig_live)
