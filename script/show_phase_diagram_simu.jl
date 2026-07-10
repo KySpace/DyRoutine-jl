@@ -13,7 +13,7 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
 set_theme!(fonts = (; regular = raw"C:/Windows/Fonts/arial.ttf", italic = raw"C:/Windows/Fonts/ariali.ttf"))
 
-# commit #93504925a6f1b5e790e838a1a66c2e5f653afdf5
+# commit #706657ff45a8cf83882d67b6c273d63425d9966d
 path_demo = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS\Demo"
 path_output = joinpath(path_demo, "33.DualSS.PhaseDiagram.CWZ.Size")
 
@@ -258,7 +258,7 @@ for (
         abbr_prop="W",
         info_sample=sample_tripts,
         label_axis_hm=rich("Side-peak weight ", rich("W", font = :italic), subscript("162"),),
-        label_axis_line=rich(rich("W", font = :italic), subscript(rich("i", font = :italic))),
+        label_axis_line=rich(rich("W", font = :italic), subscript("162,164")),
         clrrng_map=(0, 0.5),
         clr_hm=(; hue=196, prescale=(t -> t^3)),
         labels_hm=["162", "164"],
