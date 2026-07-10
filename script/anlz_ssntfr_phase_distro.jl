@@ -44,23 +44,24 @@ bin = 1
 num_err = 0.6e4
 range_center = 181:220
 sigma_center_filter = 5
-x_max_fit = 20 # μm
+x_max_fit = 10 # μm
 sigma_peak_init = 12.0
-eta_peak_init = 0.25
-lambda_peak_init = 2.0
+eta_peak_init = 0.5
+lambda_peak_init = 5.0
 phi_peak_init = 0.0
-fit_lower_peak = [0.0, 1.0, 0.0, 0.1, -2pi]
-fit_upper_peak = [Inf, 80.0, 1.0, 20.0, 2pi]
+# [amp_init, sigma_peak_init, eta_peak_init, lambda_peak_init, phi_peak_init]
+fit_lower_peak = [ 0.0, 10.0, 0.0, 3.0, -2pi]
+fit_upper_peak = [25.0, 25.0, 1.5, 6.0, 2pi]
 
 # live inspector selections
 ib, istp, idx_rep = (5, 1, 1)
-x_row = 0.0
+y_row = 0.0
 x_col = 0.0
 ylims_profile = (-1.0, 15.0)
 
 function modl_peak_1d(x, p)
     (A, σ, η, λ, φ) = p
-    @. A * exp(-(x/σ)^2) * (1 + η * cos(x/λ - φ))
+    @. A * exp(-(x/σ)^2) * (1 + η * cos(2π * x/λ - φ))
 end
 
 function load_density_payload(path_data::AbstractString, val_istp::AbstractVector{<:AbstractString})
@@ -95,7 +96,7 @@ function draw_profile_inspector!(
     ib::Integer,
     istp::Integer,
     idx_rep::Integer,
-    x_row::Real,
+    y_row::Real,
     x_col::Real,
     smidx_mean_profile::Integer,
     ylims_profile::Tuple{<:Real,<:Real},
@@ -122,7 +123,7 @@ function draw_profile_inspector!(
     dens_vec = dens_core[ib, istp]
     isempty(dens_vec) && throw(ArgumentError("dens_core[$ib, $istp] has no selected crops."))
     idx_rep = mod1(idx_rep, length(dens_vec))
-    idx_row = argmin(abs.(x_dens .- x_row))
+    idx_row = argmin(abs.(x_dens .- y_row))
     idx_col = argmin(abs.(x_dens .- x_col))
     idx_center = cld(length(x_dens), 2)
     idxs_center = max(1, idx_center - smidx_mean_profile):min(length(x_dens), idx_center + smidx_mean_profile)
@@ -154,8 +155,8 @@ function draw_profile_inspector!(
     obs_dens2d_hm = lift(ds -> ds', obs_dens2d)
     obs_colorrange = Observable((0.0, maximum(dens2d)))
     obs_clrmap = Observable(gen_theme_clrmap(istp))
-    obs_clr_theme = Observable(gen_theme_clr(istp, 0.92))
-    obs_clr_theme_faint = Observable(gen_theme_clr(istp, 0.70))
+    obs_clr_theme = Observable(gen_theme_clr(istp, 0.3))
+    obs_clr_theme_faint = Observable(gen_theme_clr(istp, 0.40))
     obs_profile_row = Observable(vec(@view dens2d[idx_row, :]))
     obs_profile_col = Observable(vec(@view dens2d[:, idx_col]))
     obs_profile_row_mean = Observable(vec(mean(@view(dens2d[idxs_center, :]); dims=1)))
@@ -169,7 +170,7 @@ function draw_profile_inspector!(
     )
     obs_title = lift(obs_idx_IB, obs_idx_istp, obs_idx_rep, obs_val_row, obs_val_col) do idx_IB_live, idx_istp_live, idx_rep_live, val_row_live, val_col_live
         @sprintf(
-            "IB idx=%d, istp=%s, rep=%d/%d, x_row=%.3f μm, x_col=%.3f μm",
+            "IB idx=%d, istp=%s, rep=%d/%d, y_row=%.3f μm, x_col=%.3f μm",
             idx_IB_live,
             string(val_istp[idx_istp_live]),
             idx_rep_live,
@@ -179,7 +180,7 @@ function draw_profile_inspector!(
         )
     end
     obs_title_row = lift(obs_val_row) do val_row_live
-        @sprintf("x_row=%.3f μm", val_row_live)
+        @sprintf("y_row=%.3f μm", val_row_live)
     end
     obs_title_col = lift(obs_val_col) do val_col_live
         @sprintf("x_col=%.3f μm", val_col_live)
@@ -217,9 +218,9 @@ function draw_profile_inspector!(
     catch err
         err isa KeyError || rethrow()
     end
-    lines!(ax_row, x_dens, obs_profile_row_mean; color=clr_mean, linewidth=2.2)
+    lines!(ax_row, x_dens, obs_profile_row_mean; color=clr_mean, linewidth=2.5)
     lines!(ax_row, x_dens, obs_profile_row; color=obs_clr_theme, linewidth=1.7)
-    lines!(ax_row, x_dens, obs_fit_row; color=clr_fit, linewidth=2.0)
+    lines!(ax_row, x_dens, obs_fit_row; color=clr_fit, linewidth=1.0)
     text!(
         ax_row,
         0.98,
@@ -244,7 +245,7 @@ function draw_profile_inspector!(
     catch err
         err isa KeyError || rethrow()
     end
-    lines!(ax_col, obs_profile_col_mean, x_dens; color=clr_mean, linewidth=2.2)
+    lines!(ax_col, obs_profile_col_mean, x_dens; color=clr_mean, linewidth=2.5)
     lines!(ax_col, obs_profile_col, x_dens; color=obs_clr_theme, linewidth=1.7)
     xlims!(ax_col, ylims_profile)
     ylims!(ax_col, extrema(x_dens))
@@ -260,7 +261,7 @@ function draw_profile_inspector!(
         obs_dens2d[] = dens2d_live
         obs_colorrange[] = (0.0, maximum(dens2d_live))
         obs_clrmap[] = gen_theme_clrmap(obs_idx_istp[])
-        obs_clr_theme[] = gen_theme_clr(obs_idx_istp[], 0.92)
+        obs_clr_theme[] = gen_theme_clr(obs_idx_istp[], 0.3)
         obs_clr_theme_faint[] = gen_theme_clr(obs_idx_istp[], 0.70)
         obs_profile_col[] = vec(@view dens2d_live[:, obs_idx_col[]])
         obs_profile_row[] = vec(@view dens2d_live[obs_idx_row[], :])
@@ -336,7 +337,7 @@ function draw_profile_inspector!(
         idx_rep=obs_idx_rep,
         idx_row=obs_idx_row,
         idx_col=obs_idx_col,
-        x_row=obs_val_row,
+        y_row=obs_val_row,
         x_col=obs_val_col,
         click_handler,
         button_handlers,
@@ -411,14 +412,14 @@ fit_peak = Array{Vector{NamedTuple}}(undef, n_IB, n_istp)
 for idx_IB in 1:n_IB, idx_istp in 1:n_istp
     fit_peak[idx_IB, idx_istp] = map(enumerate(dens_core[idx_IB, idx_istp])) do (idx_rep_valid, dens2d)
         profile = vec(mean(@view(dens2d[idxs_center, :]); dims=1))
-        y_fit_peak = Float64.(profile[mask_fit])
-        amp_init = max(maximum(y_fit_peak), eps(Float64))
-        p_init = [amp_init, sigma_peak_init, eta_peak_init, lambda_peak_init, phi_peak_init]
+        prfl_strip_mean = Float64.(profile[mask_fit])
+        amp_init = max(maximum(prfl_strip_mean), eps(Float64))
+        p_init = [amp_init, sigma_peak_init, eta_peak_init, lambda_peak_init, phi_peak_init+pi]
         p_lower = copy(fit_lower_peak)
         p_upper = copy(fit_upper_peak)
         p_upper[1] = 2 * amp_init
         try
-            fit = curve_fit(modl_peak_1d, x_fit_peak, y_fit_peak, p_init; lower=p_lower, upper=p_upper)
+            fit = curve_fit(modl_peak_1d, x_fit_peak, prfl_strip_mean, p_init; lower=p_lower, upper=p_upper)
             param_err = try
                 stderror(fit)
             catch err
@@ -469,7 +470,7 @@ profile_axes = draw_profile_inspector!(
     ib,
     istp,
     idx_rep,
-    x_row,
+    y_row,
     x_col,
     smidx_mean_profile=cfg_prfl.smh_dens_strip,
     ylims_profile,
