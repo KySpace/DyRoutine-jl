@@ -1,4 +1,3 @@
-## Prepare selected SSNTFR repeat collections for later analysis.
 using GLMakie
 using HDF5
 using ImageFiltering
@@ -46,8 +45,11 @@ mag = 22.06
 pixsz = 6.5
 bin = 1
 sigma_center_filter = 5
+use_common_xy_center = false
 x_max_fit = 10 # μm
+x_fit_offset = 0.0 # μm
 smh_dens_strip = 10
+y_strip_offset = 0.0 # μm
 amp_gauss_init = 6.0
 sigma_gauss_init = 12.0
 bg_gauss_init = 2.0
@@ -112,6 +114,7 @@ end
 function draw_profile_inspector!(
     fig::Figure,
     x_dens::AbstractVector{<:Real},
+    y_dens::AbstractVector{<:Real},
     dens_core::AbstractMatrix,
     fit_peak::AbstractMatrix,
     xy_center::AbstractArray{<:Tuple{Int,Int},3},
@@ -121,8 +124,10 @@ function draw_profile_inspector!(
     idx_rep::Integer,
     y_row::Real,
     smidx_mean_profile::Integer,
+    y_strip_offset::Real,
     ylims_profile::Tuple{<:Real,<:Real},
     x_max_fit::Real,
+    x_fit_offset::Real,
     hue_scheme::Symbol,
     lambda_hue_min::Real,
     lambda_hue_max::Real,
@@ -149,9 +154,9 @@ function draw_profile_inspector!(
         length(fit_peak[idx]) == length(dens_core[idx]) || throw(DimensionMismatch(
             "fit_peak[$(Tuple(idx)...)] length $(length(fit_peak[idx])) must match dens_core length $(length(dens_core[idx])).",
         ))
-        size(first(dens_core[idx])) == (length(x_dens), length(x_dens)) || throw(DimensionMismatch(
+        size(first(dens_core[idx])) == (length(y_dens), length(x_dens)) || throw(DimensionMismatch(
             "dens_core[$(Tuple(idx)...)] crop size $(size(first(dens_core[idx]))) must match " *
-            "(length(x_dens), length(x_dens)) $((length(x_dens), length(x_dens))).",
+            "(length(y_dens), length(x_dens)) $((length(y_dens), length(x_dens))).",
         ))
     end
 
@@ -159,10 +164,10 @@ function draw_profile_inspector!(
     isempty(dens_vec) && throw(ArgumentError("dens_core[$ib, $istp] has no selected crops."))
     n_rep_profile = length(dens_vec)
     idx_rep = mod1(idx_rep, length(dens_vec))
-    idx_row = argmin(abs.(x_dens .- y_row))
-    idx_center = cld(length(x_dens), 2)
-    idxs_center = max(1, idx_center - smidx_mean_profile):min(length(x_dens), idx_center + smidx_mean_profile)
-    mask_fit_plot = abs.(x_dens) .<= x_max_fit
+    idx_row = argmin(abs.(y_dens .- y_row))
+    idx_strip_center = argmin(abs.(y_dens .- y_strip_offset))
+    idxs_center = max(1, idx_strip_center - smidx_mean_profile):min(length(y_dens), idx_strip_center + smidx_mean_profile)
+    mask_fit_plot = abs.(x_dens .- x_fit_offset) .<= x_max_fit
     dens2d = dens_vec[idx_rep]
     fit_info = fit_peak[ib, istp][idx_rep]
     dens_mean = mean(dens_vec)
@@ -196,20 +201,20 @@ function draw_profile_inspector!(
     clr_mean = RGBAf(0.35, 0.35, 0.35, 0.62)
     clr_strip = RGBAf(0.86, 0.86, 0.86, 0.50)
     clr_fit = RGBAf(Oklch(0.60, 0.17, 145), 0.95)
-    step_dens = median(diff(x_dens))
-    x_strip_min = x_dens[first(idxs_center)] - step_dens / 2
-    x_strip_max = x_dens[last(idxs_center)] + step_dens / 2
-    y_strip_min, y_strip_max = x_strip_min, x_strip_max
-    x_fit_min, x_fit_max = (-x_max_fit, x_max_fit)
+    step_x = median(diff(x_dens))
+    step_y = median(diff(y_dens))
+    y_strip_min = y_dens[first(idxs_center)] - step_y / 2
+    y_strip_max = y_dens[last(idxs_center)] + step_y / 2
+    x_fit_min, x_fit_max = (x_fit_offset - x_max_fit, x_fit_offset + x_max_fit)
     gen_x_center_um(idx_IB::Integer, idx_istp::Integer) =
-        [(xy_center[idx_IB, idx_istp, idx][1] - x_center_px0) * step_dens for idx in 1:n_rep_profile]
+        [(xy_center[idx_IB, idx_istp, idx][1] - x_center_px0) * step_x for idx in 1:n_rep_profile]
 
     obs_idx_IB = Observable(ib)
     obs_idx_istp = Observable(istp)
     obs_idx_rep = Observable(idx_rep)
     obs_hue_scheme = Observable(hue_scheme)
     obs_idx_row = Observable(idx_row)
-    obs_val_row = Observable(x_dens[idx_row])
+    obs_val_row = Observable(y_dens[idx_row])
     obs_dens2d = Observable(dens2d)
     obs_dens2d_hm = lift(ds -> ds', obs_dens2d)
     obs_colorrange = Observable((0.0, maximum(dens2d)))
@@ -240,12 +245,13 @@ function draw_profile_inspector!(
     )
     obs_title = lift(obs_idx_IB, obs_idx_istp, obs_idx_rep, obs_val_row) do idx_IB_live, idx_istp_live, idx_rep_live, val_row_live
         @sprintf(
-            "IB idx=%d, istp=%s, rep=%d/%d, y_row=%.3f μm",
+            "IB idx=%d, istp=%s, rep=%d/%d, y_row=%.3f μm, strip_y=%.3f μm",
             idx_IB_live,
             string(val_istp[idx_istp_live]),
             idx_rep_live,
             length(dens_core[idx_IB_live, idx_istp_live]),
             val_row_live,
+            y_dens[idx_strip_center],
         )
     end
     obs_title_row = lift(obs_val_row) do val_row_live
@@ -275,7 +281,7 @@ function draw_profile_inspector!(
     end
     hspan!(ax_hm, y_strip_min, y_strip_max; color=clr_strip)
     vspan!(ax_hm, x_fit_min, x_fit_max; color=clr_strip)
-    hm = heatmap!(ax_hm, x_dens, x_dens, obs_dens2d_hm; colormap=obs_clrmap, colorrange=obs_colorrange, rasterize=true)
+    hm = heatmap!(ax_hm, x_dens, y_dens, obs_dens2d_hm; colormap=obs_clrmap, colorrange=obs_colorrange, rasterize=true)
     hlines!(ax_hm, lift(x -> [x], obs_val_row); color=obs_clr_theme, linewidth=0.9)
 
     ax_row = Axis(
@@ -391,9 +397,9 @@ function draw_profile_inspector!(
     end
 
     function update_cut_profiles!(x_click::Real, y_click::Real)
-        idx_row_live = argmin(abs.(x_dens .- y_click))
+        idx_row_live = argmin(abs.(y_dens .- y_click))
         obs_idx_row[] = idx_row_live
-        obs_val_row[] = x_dens[idx_row_live]
+        obs_val_row[] = y_dens[idx_row_live]
         update_profiles!()
         return nothing
     end
@@ -471,13 +477,16 @@ end
 function draw_phase_distro_table!(
     fig::Figure,
     x_dens::AbstractVector{<:Real},
+    y_dens::AbstractVector{<:Real},
     val_IB::AbstractVector,
     val_istp::AbstractVector,
     ntfr2d_mean::AbstractMatrix,
     fit_peak::AbstractMatrix,
     xy_center::AbstractArray{<:Tuple{Int,Int},3};
     x_max_fit::Real,
+    x_fit_offset::Real,
     smidx_mean_profile::Integer,
+    y_strip_offset::Real,
     x_center_px0::Real,
     lambda_hue_min::Real,
     lambda_hue_max::Real,
@@ -499,13 +508,13 @@ function draw_phase_distro_table!(
         "xy_center size $(size(xy_center)) must match (IB, istp, rep) $((n_IB, n_istp, n_rep)).",
     ))
 
-    step_dens = median(diff(x_dens))
-    idx_center = cld(length(x_dens), 2)
-    idxs_center = max(1, idx_center - smidx_mean_profile):min(length(x_dens), idx_center + smidx_mean_profile)
-    x_strip_min = x_dens[first(idxs_center)] - step_dens / 2
-    x_strip_max = x_dens[last(idxs_center)] + step_dens / 2
-    y_strip_min, y_strip_max = x_strip_min, x_strip_max
-    x_fit_min, x_fit_max = (-x_max_fit, x_max_fit)
+    step_x = median(diff(x_dens))
+    step_y = median(diff(y_dens))
+    idx_strip_center = argmin(abs.(y_dens .- y_strip_offset))
+    idxs_center = max(1, idx_strip_center - smidx_mean_profile):min(length(y_dens), idx_strip_center + smidx_mean_profile)
+    y_strip_min = y_dens[first(idxs_center)] - step_y / 2
+    y_strip_max = y_dens[last(idxs_center)] + step_y / 2
+    x_fit_min, x_fit_max = (x_fit_offset - x_max_fit, x_fit_offset + x_max_fit)
     clr_strip = RGBAf(0.86, 0.86, 0.86, 0.34)
     colorrange_dens = (0.0, maximum(maximum, ntfr2d_mean))
     radius_max = maximum([
@@ -516,7 +525,7 @@ function draw_phase_distro_table!(
     ])
     radius_max = max(radius_max, eps(Float64))
     center_vals = [
-        (xy_center[idx_IB, idx_istp, idx_rep][1] - x_center_px0) * step_dens
+        (xy_center[idx_IB, idx_istp, idx_rep][1] - x_center_px0) * step_x
         for idx_IB in 1:n_IB, idx_istp in 1:n_istp, idx_rep in 1:n_rep
     ]
     center_ylim = extrema(center_vals)
@@ -552,9 +561,10 @@ function draw_phase_distro_table!(
     Label(
         fig[0, 1:idx_col_IB_right];
         text=@sprintf(
-            "%s phase distro: mean density, fit polar distributions, and x center; x fit ±%.1f μm, y strip %.1f..%.1f μm",
+            "%s phase distro: mean density, fit polar distributions, and x center; x fit %.1f..%.1f μm, y strip %.1f..%.1f μm",
             tag,
-            x_max_fit,
+            x_fit_min,
+            x_fit_max,
             y_strip_min,
             y_strip_max,
         ),
@@ -586,7 +596,7 @@ function draw_phase_distro_table!(
             clrmap = gen_clrmap_solo(hue_theme_istp[string(val_istp[idx_istp])]; alpha_base=0.2, thres_alpha=0.1)
             hspan!(ax_dens, y_strip_min, y_strip_max; color=clr_strip)
             vspan!(ax_dens, x_fit_min, x_fit_max; color=clr_strip)
-            heatmap!(ax_dens, x_dens, x_dens, ntfr2d_mean[idx_IB, idx_istp]'; colormap=clrmap, colorrange=colorrange_dens, rasterize=true)
+            heatmap!(ax_dens, x_dens, y_dens, ntfr2d_mean[idx_IB, idx_istp]'; colormap=clrmap, colorrange=colorrange_dens, rasterize=true)
             hidexdecorations!(ax_dens; label=!is_bottom_row, ticklabels=!is_bottom_row, ticks=!is_bottom_row, grid=false)
             hideydecorations!(ax_dens; label=idx_istp != 1, ticklabels=true, ticks=true, grid=false)
 
@@ -617,7 +627,7 @@ function draw_phase_distro_table!(
             ylabel="x center (μm)",
         )
         for idx_istp in 1:n_istp
-            center_x = [(xy_center[idx_IB, idx_istp, idx_rep][1] - x_center_px0) * step_dens for idx_rep in 1:n_rep]
+            center_x = [(xy_center[idx_IB, idx_istp, idx_rep][1] - x_center_px0) * step_x for idx_rep in 1:n_rep]
             lines!(ax_center, 1:n_rep, center_x; color=gen_theme_clr(idx_istp, 0.88), linewidth=1.0)
         end
         xlims!(ax_center, 1, n_rep)
@@ -650,7 +660,9 @@ println("  [$tag] formatted densities as (IB, istp, rep)=$(size(dens_raw_fmt)), 
 length(val_IB_ref) == n_IB || throw(DimensionMismatch("val_IB_ref length $(length(val_IB_ref)) must match IB count $n_IB."))
 length(val_istp) == n_istp || throw(DimensionMismatch("val_istp length $(length(val_istp)) must match istp count $n_istp."))
 
-x_dens = (pixsz * bin / mag) .* collect(-smwh[2]:smwh[2])
+step_dens = pixsz * bin / mag
+x_dens = step_dens .* collect(-smwh[2]:smwh[2])
+y_dens = step_dens .* collect(-smwh[1]:smwh[1])
 val_IB = copy(val_IB_ref)
 
 num = Array{Float64}(undef, n_IB, n_istp, n_rep)
@@ -672,6 +684,14 @@ for idx_IB in 1:n_IB, idx_istp in 1:n_istp, idx_rep in 1:n_rep
     num[idx_IB, idx_istp, idx_rep] = sum(dens)
     xy_center[idx_IB, idx_istp, idx_rep] = round.(Int, (x_center, y_center))
 end
+if use_common_xy_center
+    for idx_IB in 1:n_IB, idx_istp in 1:n_istp
+        x_common = round(Int, mean(first.(xy_center[idx_IB, idx_istp, :])))
+        y_common = round(Int, mean(last.(xy_center[idx_IB, idx_istp, :])))
+        xy_center[idx_IB, idx_istp, :] .= Ref((x_common, y_common))
+    end
+    println("  [$tag] using common xy_center repeated over reps for each IB, istp")
+end
 
 mask_valid_duet = trues(n_IB, n_rep)
 
@@ -688,9 +708,9 @@ for idx_IB in 1:n_IB, idx_istp in 1:n_istp
     ]
 end
 
-idx_center = cld(length(x_dens), 2)
-idxs_center = max(1, idx_center - smh_dens_strip):min(length(x_dens), idx_center + smh_dens_strip)
-mask_fit = abs.(x_dens) .<= x_max_fit
+idx_strip_center = argmin(abs.(y_dens .- y_strip_offset))
+idxs_center = max(1, idx_strip_center - smh_dens_strip):min(length(y_dens), idx_strip_center + smh_dens_strip)
+mask_fit = abs.(x_dens .- x_fit_offset) .<= x_max_fit
 x_fit_peak = x_dens[mask_fit]
 
 fit_peak = Array{Vector{NamedTuple}}(undef, n_IB, n_istp)
@@ -805,6 +825,7 @@ ntfr2d_mean = map(dens_core) do ds
 end
 
 isdir(path_output) || mkpath(path_output)
+cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 fit_config = (;
     tag,
     path_data,
@@ -814,8 +835,11 @@ fit_config = (;
     pixsz,
     bin,
     sigma_center_filter,
+    use_common_xy_center,
     x_max_fit,
+    x_fit_offset,
     smh_dens_strip,
+    y_strip_offset,
     x_center_px0,
     amp_gauss_init,
     sigma_gauss_init,
@@ -830,20 +854,23 @@ fit_config = (;
     fit_lower_modl,
     fit_upper_modl,
 )
-JLD2.@save path_fit_jld2 fit_config x_dens val_IB val_istp num xy_center mask_valid_duet ids_rep_valid dens_core ntfr2d_mean fit_peak
+JLD2.@save path_fit_jld2 fit_config x_dens y_dens val_IB val_istp num xy_center mask_valid_duet ids_rep_valid ntfr2d_mean fit_peak
 println("  [$tag] saved phase distro fit data to $path_fit_jld2")
 
 fig_phase_distro = Figure(fontsize=12)
 draw_phase_distro_table!(
     fig_phase_distro,
     x_dens,
+    y_dens,
     val_IB,
     val_istp,
     ntfr2d_mean,
     fit_peak,
     xy_center;
     x_max_fit,
+    x_fit_offset,
     smidx_mean_profile=smh_dens_strip,
+    y_strip_offset,
     x_center_px0,
     lambda_hue_min,
     lambda_hue_max,
@@ -861,6 +888,7 @@ fig_live = Figure(fontsize=14)
 profile_axes = draw_profile_inspector!(
     fig_live,
     x_dens,
+    y_dens,
     dens_core,
     fit_peak,
     xy_center,
@@ -870,8 +898,10 @@ profile_axes = draw_profile_inspector!(
     idx_rep,
     y_row,
     smidx_mean_profile=smh_dens_strip,
+    y_strip_offset,
     ylims_profile,
     x_max_fit,
+    x_fit_offset,
     hue_scheme,
     lambda_hue_min,
     lambda_hue_max,
