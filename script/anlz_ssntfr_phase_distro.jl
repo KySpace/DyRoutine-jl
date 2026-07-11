@@ -2,7 +2,8 @@ using GLMakie
 using HDF5
 using ImageFiltering
 using JLD2
-using LsqFit: curve_fit, stderror
+using LinearAlgebra: norm
+using LsqFit: curve_fit, residuals, stderror
 using Printf
 using Statistics
 import CairoMakie
@@ -15,7 +16,10 @@ include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
 path_data = joinpath(path_root, "0204_interference", "result", "data.h5")
-path_output = joinpath(path_root, "AnlzRoutine", "36.PhaseDistro")
+
+# commit 3fac8e26d92906b0bcbafb3385246222f7cad9eb
+# The allow to move the center in y, and fit region is shifted
+path_output = joinpath(path_root, "AnlzRoutine", "39.PhaseDistro.MovingCentY.LowerStripFit")
 path_fit_jld2 = joinpath(path_output, "SSNTFR_phase_distro_fit.jld2")
 
 tag = "SSNTFR"
@@ -45,11 +49,12 @@ mag = 22.06
 pixsz = 6.5
 bin = 1
 sigma_center_filter = 5
-use_common_xy_center = false
-x_max_fit = 10 # μm
+use_common_xy_center = :fixed_x # :free, :fixed_x, or :fixed_xy
+x_max_fit_peak = 10 # μm
+x_max_fit_modl = 3 # μm
 x_fit_offset = 0.0 # μm
 smh_dens_strip = 10
-y_strip_offset = 0.0 # μm
+y_strip_offset = -5.0 # μm
 amp_gauss_init = 6.0
 sigma_gauss_init = 12.0
 bg_gauss_init = 2.0
@@ -69,6 +74,12 @@ lambda_hue_max = 6.0
 lambda_hue_span = 260.0
 polar_lightness = 0.74
 polar_chroma = 0.12
+polar_alpha = 1.0
+polar_lightness_rss_bad = 0.92
+polar_chroma_rss_bad = 0.04
+polar_alpha_rss_bad = 0.1
+rss_rel_ramp_start = 0.3
+rss_rel_ramp_end = 0.8
 markersize_fit = 7
 markersize_fit_selected = 13
 
@@ -126,7 +137,8 @@ function draw_profile_inspector!(
     smidx_mean_profile::Integer,
     y_strip_offset::Real,
     ylims_profile::Tuple{<:Real,<:Real},
-    x_max_fit::Real,
+    x_max_fit_peak::Real,
+    x_max_fit_modl::Real,
     x_fit_offset::Real,
     hue_scheme::Symbol,
     lambda_hue_min::Real,
@@ -134,6 +146,12 @@ function draw_profile_inspector!(
     lambda_hue_span::Real,
     polar_lightness::Real,
     polar_chroma::Real,
+    polar_alpha::Real,
+    polar_lightness_rss_bad::Real,
+    polar_chroma_rss_bad::Real,
+    polar_alpha_rss_bad::Real,
+    rss_rel_ramp_start::Real,
+    rss_rel_ramp_end::Real,
     markersize_fit::Real,
     markersize_fit_selected::Real,
     x_center_px0::Real,
@@ -167,10 +185,9 @@ function draw_profile_inspector!(
     idx_row = argmin(abs.(y_dens .- y_row))
     idx_strip_center = argmin(abs.(y_dens .- y_strip_offset))
     idxs_center = max(1, idx_strip_center - smidx_mean_profile):min(length(y_dens), idx_strip_center + smidx_mean_profile)
-    mask_fit_plot = abs.(x_dens .- x_fit_offset) .<= x_max_fit
+    mask_fit_peak_plot = abs.(x_dens .- x_fit_offset) .<= x_max_fit_peak
     dens2d = dens_vec[idx_rep]
     fit_info = fit_peak[ib, istp][idx_rep]
-    dens_mean = mean(dens_vec)
 
     gen_theme_clr(idx_istp::Integer, alpha::Real) =
         RGBAf(Oklch(0.52, 0.14, hue_theme_istp[string(val_istp[idx_istp])]), alpha)
@@ -185,29 +202,70 @@ function draw_profile_inspector!(
         else
             throw(ArgumentError("Unknown hue_scheme $hue_scheme_live. Expected :lambda or :rep."))
         end
+    gen_fit_color(fit_info, hue_scheme_live::Symbol) = begin
+        rss_norm = clamp(
+            (fit_info.fit_modl.rss_rel - rss_rel_ramp_start) / (rss_rel_ramp_end - rss_rel_ramp_start),
+            0,
+            1,
+        )
+        lightness = polar_lightness + rss_norm * (polar_lightness_rss_bad - polar_lightness)
+        chroma = polar_chroma + rss_norm * (polar_chroma_rss_bad - polar_chroma)
+        alpha = polar_alpha + rss_norm * (polar_alpha_rss_bad - polar_alpha)
+        RGBAf(Oklch(lightness, chroma, gen_hue_fit(fit_info, hue_scheme_live)), alpha)
+    end
     gen_fit_polar_payload(idx_IB::Integer, idx_istp::Integer, idx_rep_selected::Integer, hue_scheme_live::Symbol) = begin
         fits = fit_peak[idx_IB, idx_istp]
         ids_success = findall(f -> f.success, fits)
         theta = [mod(fits[idx].fit_modl.params[5], 2pi) for idx in ids_success]
         radius = [abs(fits[idx].fit_modl.params[1]) for idx in ids_success]
+        radius_outer = fill(polar_radius_outer, length(theta))
         color = map(ids_success) do idx
-            fit_info = fits[idx]
-            RGBAf(Oklch(polar_lightness, polar_chroma, gen_hue_fit(fit_info, hue_scheme_live)), 0.92)
+            gen_fit_color(fits[idx], hue_scheme_live)
         end
         markersize = [idx == idx_rep_selected ? markersize_fit_selected : markersize_fit for idx in ids_success]
-        return (; theta, radius, color, markersize)
+        return (; theta, radius, radius_outer, color, markersize)
     end
 
     clr_mean = RGBAf(0.35, 0.35, 0.35, 0.62)
     clr_strip = RGBAf(0.86, 0.86, 0.86, 0.50)
+    clr_fit_peak_span = RGBAf(0.86, 0.86, 0.86, 0.18)
+    clr_fit_modl_span = RGBAf(0.86, 0.86, 0.86, 0.42)
     clr_fit = RGBAf(Oklch(0.60, 0.17, 145), 0.95)
+    polar_radius_max = maximum([
+        abs(fit.fit_modl.params[1])
+        for fits in fit_peak
+        for fit in fits
+        if fit.success
+    ])
+    polar_radius_max = max(polar_radius_max, eps(Float64))
+    polar_radius_outer = 1.08 * polar_radius_max
+    polar_radius_limit = 1.20 * polar_radius_max
+    polar_rticks = (0:2:6, string.(0:2:6))
     step_x = median(diff(x_dens))
     step_y = median(diff(y_dens))
     y_strip_min = y_dens[first(idxs_center)] - step_y / 2
     y_strip_max = y_dens[last(idxs_center)] + step_y / 2
-    x_fit_min, x_fit_max = (x_fit_offset - x_max_fit, x_fit_offset + x_max_fit)
+    x_fit_peak_min, x_fit_peak_max = (x_fit_offset - x_max_fit_peak, x_fit_offset + x_max_fit_peak)
+    x_fit_modl_min, x_fit_modl_max = (x_fit_offset - x_max_fit_modl, x_fit_offset + x_max_fit_modl)
     gen_x_center_um(idx_IB::Integer, idx_istp::Integer) =
         [(xy_center[idx_IB, idx_istp, idx][1] - x_center_px0) * step_x for idx in 1:n_rep_profile]
+    gen_fit_gauss_text(fit_info_live) = @sprintf(
+        "A=%.2f\nσ=%.1f\nbg=%.3f",
+        fit_info_live.fit_gauss.params...,
+    )
+    gen_fit_modl_text_left(fit_info_live) = @sprintf(
+        "M=%g\na=%g\nb=%g",
+        fit_info_live.fit_modl.params[1],
+        fit_info_live.fit_modl.params[2],
+        fit_info_live.fit_modl.params[3],
+    )
+    gen_fit_modl_text_right(fit_info_live) = @sprintf(
+        "λ=%.2f\nφ=%.2f (%.2f)",
+        fit_info_live.fit_modl.params[4],
+        fit_info_live.fit_modl.params[5],
+        fit_info_live.fit_modl.params[5] / 2pi,
+    )
+    gen_fit_modl_text_rss(fit_info_live) = @sprintf("rss=%.2f", fit_info_live.fit_modl.rss_rel)
 
     obs_idx_IB = Observable(ib)
     obs_idx_istp = Observable(istp)
@@ -222,27 +280,20 @@ function draw_profile_inspector!(
     obs_clr_theme = Observable(gen_theme_clr(istp, 0.3))
     obs_profile_row = Observable(vec(@view dens2d[idx_row, :]))
     obs_profile_row_mean = Observable(vec(mean(@view(dens2d[idxs_center, :]); dims=1)))
-    obs_profile_modl = Observable(fit_info.profile_modl[mask_fit_plot])
-    obs_fit_gauss = Observable(fit_info.fit_gauss.fit[mask_fit_plot])
-    obs_fit_modl = Observable(fit_info.fit_modl.fit[mask_fit_plot])
+    obs_profile_modl = Observable(fit_info.profile_modl[mask_fit_peak_plot])
+    obs_fit_gauss = Observable(fit_info.fit_gauss.fit[mask_fit_peak_plot])
+    obs_fit_modl = Observable(fit_info.fit_modl.fit[mask_fit_peak_plot])
     obs_xy_center_x = Observable(gen_x_center_um(ib, istp))
     payload_fit_polar = gen_fit_polar_payload(ib, istp, idx_rep, hue_scheme)
     obs_fit_theta = Observable(payload_fit_polar.theta)
     obs_fit_eta = Observable(payload_fit_polar.radius)
+    obs_fit_outer_radius = Observable(payload_fit_polar.radius_outer)
     obs_fit_color = Observable(payload_fit_polar.color)
     obs_fit_markersize = Observable(payload_fit_polar.markersize)
-    obs_fit_gauss_text = Observable(
-        @sprintf(
-            "A=%.3g\nσ=%.3g\nbg=%.3g",
-            fit_info.fit_gauss.params...,
-        ),
-    )
-    obs_fit_modl_text = Observable(
-        @sprintf(
-            "M=%.3g\na=%.3g\nb=%.3g\nλ=%.3g\nφ=%.3g",
-            fit_info.fit_modl.params...,
-        ),
-    )
+    obs_fit_gauss_text = Observable(gen_fit_gauss_text(fit_info))
+    obs_fit_modl_text_left = Observable(gen_fit_modl_text_left(fit_info))
+    obs_fit_modl_text_right = Observable(gen_fit_modl_text_right(fit_info))
+    obs_fit_modl_text_rss = Observable(gen_fit_modl_text_rss(fit_info))
     obs_title = lift(obs_idx_IB, obs_idx_istp, obs_idx_rep, obs_val_row) do idx_IB_live, idx_istp_live, idx_rep_live, val_row_live
         @sprintf(
             "IB idx=%d, istp=%s, rep=%d/%d, y_row=%.3f μm, strip_y=%.3f μm",
@@ -280,7 +331,8 @@ function draw_profile_inspector!(
         err isa KeyError || rethrow()
     end
     hspan!(ax_hm, y_strip_min, y_strip_max; color=clr_strip)
-    vspan!(ax_hm, x_fit_min, x_fit_max; color=clr_strip)
+    vspan!(ax_hm, x_fit_peak_min, x_fit_peak_max; color=clr_fit_peak_span)
+    vspan!(ax_hm, x_fit_modl_min, x_fit_modl_max; color=clr_fit_modl_span)
     hm = heatmap!(ax_hm, x_dens, y_dens, obs_dens2d_hm; colormap=obs_clrmap, colorrange=obs_colorrange, rasterize=true)
     hlines!(ax_hm, lift(x -> [x], obs_val_row); color=obs_clr_theme, linewidth=0.9)
 
@@ -297,7 +349,7 @@ function draw_profile_inspector!(
     end
     lines!(ax_row, x_dens, obs_profile_row_mean; color=clr_mean, linewidth=2.5)
     lines!(ax_row, x_dens, obs_profile_row; color=obs_clr_theme, linewidth=1.7)
-    lines!(ax_row, x_dens[mask_fit_plot], obs_fit_gauss; color=clr_fit, linewidth=1.0)
+    lines!(ax_row, x_dens[mask_fit_peak_plot], obs_fit_gauss; color=clr_fit, linewidth=1.0)
     text!(
         ax_row,
         0.98,
@@ -306,6 +358,7 @@ function draw_profile_inspector!(
         space=:relative,
         align=(:right, :top),
         color=clr_fit,
+        font="Consolas",
         fontsize=13,
     )
     xlims!(ax_row, extrema(x_dens))
@@ -322,19 +375,43 @@ function draw_profile_inspector!(
     catch err
         err isa KeyError || rethrow()
     end
-    lines!(ax_modl, x_dens[mask_fit_plot], obs_profile_modl; color=clr_mean, linewidth=2.5)
-    lines!(ax_modl, x_dens[mask_fit_plot], obs_fit_modl; color=clr_fit, linewidth=1.0)
+    vspan!(ax_modl, x_fit_modl_min, x_fit_modl_max; color=clr_fit_modl_span)
+    lines!(ax_modl, x_dens[mask_fit_peak_plot], obs_profile_modl; color=clr_mean, linewidth=2.5)
+    lines!(ax_modl, x_dens[mask_fit_peak_plot], obs_fit_modl; color=clr_fit, linewidth=1.0)
+    text!(
+        ax_modl,
+        0.02,
+        0.96;
+        text=obs_fit_modl_text_left,
+        space=:relative,
+        align=(:left, :top),
+        color=clr_fit,
+        font="Consolas",
+        fontsize=13,
+    )
     text!(
         ax_modl,
         0.98,
         0.96;
-        text=obs_fit_modl_text,
+        text=obs_fit_modl_text_right,
         space=:relative,
         align=(:right, :top),
         color=clr_fit,
+        font="Consolas",
         fontsize=13,
     )
-    xlims!(ax_modl, extrema(x_dens[mask_fit_plot]))
+    text!(
+        ax_modl,
+        0.98,
+        0.04;
+        text=obs_fit_modl_text_rss,
+        space=:relative,
+        align=(:right, :bottom),
+        color=clr_fit,
+        font="Consolas",
+        fontsize=13,
+    )
+    xlims!(ax_modl, extrema(x_dens[mask_fit_peak_plot]))
     ylims!(ax_modl, (-5, 5))
 
     ax_fit_polar = PolarAxis(
@@ -342,6 +419,7 @@ function draw_profile_inspector!(
         title=obs_title_fit_polar,
         thetaticklabelsize=9,
         rticklabelsize=9,
+        rticks=polar_rticks,
     )
     scatter!(
         ax_fit_polar,
@@ -352,6 +430,16 @@ function draw_profile_inspector!(
         strokecolor=(:black, 0.40),
         strokewidth=0.35,
     )
+    scatter!(
+        ax_fit_polar,
+        obs_fit_theta,
+        obs_fit_outer_radius;
+        color=obs_fit_color,
+        markersize=obs_fit_markersize,
+        strokecolor=(:black, 0.40),
+        strokewidth=0.35,
+    )
+    rlims!(ax_fit_polar, 0, polar_radius_limit)
 
     ax_center = Axis(
         fig[3, 2];
@@ -369,30 +457,26 @@ function draw_profile_inspector!(
         obs_idx_rep[] = mod1(obs_idx_rep[], length(dens_vec_live))
         dens2d_live = dens_vec_live[obs_idx_rep[]]
         fit_info_live = fit_peak[obs_idx_IB[], obs_idx_istp[]][obs_idx_rep[]]
-        dens_mean_live = mean(dens_vec_live)
         obs_dens2d[] = dens2d_live
         obs_colorrange[] = (0.0, maximum(dens2d_live))
         obs_clrmap[] = gen_theme_clrmap(obs_idx_istp[])
         obs_clr_theme[] = gen_theme_clr(obs_idx_istp[], 0.3)
         obs_profile_row[] = vec(@view dens2d_live[obs_idx_row[], :])
         obs_profile_row_mean[] = vec(mean(@view(dens2d_live[idxs_center, :]); dims=1))
-        obs_profile_modl[] = fit_info_live.profile_modl[mask_fit_plot]
-        obs_fit_gauss[] = fit_info_live.fit_gauss.fit[mask_fit_plot]
-        obs_fit_modl[] = fit_info_live.fit_modl.fit[mask_fit_plot]
+        obs_profile_modl[] = fit_info_live.profile_modl[mask_fit_peak_plot]
+        obs_fit_gauss[] = fit_info_live.fit_gauss.fit[mask_fit_peak_plot]
+        obs_fit_modl[] = fit_info_live.fit_modl.fit[mask_fit_peak_plot]
         obs_xy_center_x[] = gen_x_center_um(obs_idx_IB[], obs_idx_istp[])
         payload_fit_polar_live = gen_fit_polar_payload(obs_idx_IB[], obs_idx_istp[], obs_idx_rep[], obs_hue_scheme[])
         obs_fit_theta[] = payload_fit_polar_live.theta
         obs_fit_eta[] = payload_fit_polar_live.radius
+        obs_fit_outer_radius[] = payload_fit_polar_live.radius_outer
         obs_fit_color[] = payload_fit_polar_live.color
         obs_fit_markersize[] = payload_fit_polar_live.markersize
-        obs_fit_gauss_text[] = @sprintf(
-            "A=%.3g\nσ=%.3g\nbg=%.3g",
-            fit_info_live.fit_gauss.params...,
-        )
-        obs_fit_modl_text[] = @sprintf(
-            "M=%.3g\na=%.3g\nb=%.3g\nλ=%.3g\nφ=%.3g",
-            fit_info_live.fit_modl.params...,
-        )
+        obs_fit_gauss_text[] = gen_fit_gauss_text(fit_info_live)
+        obs_fit_modl_text_left[] = gen_fit_modl_text_left(fit_info_live)
+        obs_fit_modl_text_right[] = gen_fit_modl_text_right(fit_info_live)
+        obs_fit_modl_text_rss[] = gen_fit_modl_text_rss(fit_info_live)
         return nothing
     end
 
@@ -451,8 +535,8 @@ function draw_profile_inspector!(
     end
 
     colsize!(fig.layout, 1, Fixed(360))
-    colsize!(fig.layout, 2, Fixed(300))
-    rowsize!(fig.layout, 1, Fixed(360))
+    colsize!(fig.layout, 2, Fixed(380))
+    rowsize!(fig.layout, 1, Fixed(380))
     rowsize!(fig.layout, 2, Fixed(260))
     rowsize!(fig.layout, 3, Fixed(220))
     resize_to_layout!(fig)
@@ -483,7 +567,8 @@ function draw_phase_distro_table!(
     ntfr2d_mean::AbstractMatrix,
     fit_peak::AbstractMatrix,
     xy_center::AbstractArray{<:Tuple{Int,Int},3};
-    x_max_fit::Real,
+    x_max_fit_peak::Real,
+    x_max_fit_modl::Real,
     x_fit_offset::Real,
     smidx_mean_profile::Integer,
     y_strip_offset::Real,
@@ -493,6 +578,12 @@ function draw_phase_distro_table!(
     lambda_hue_span::Real,
     polar_lightness::Real,
     polar_chroma::Real,
+    polar_alpha::Real,
+    polar_lightness_rss_bad::Real,
+    polar_chroma_rss_bad::Real,
+    polar_alpha_rss_bad::Real,
+    rss_rel_ramp_start::Real,
+    rss_rel_ramp_end::Real,
     markersize_fit::Real,
 )
     n_IB = length(val_IB)
@@ -514,8 +605,11 @@ function draw_phase_distro_table!(
     idxs_center = max(1, idx_strip_center - smidx_mean_profile):min(length(y_dens), idx_strip_center + smidx_mean_profile)
     y_strip_min = y_dens[first(idxs_center)] - step_y / 2
     y_strip_max = y_dens[last(idxs_center)] + step_y / 2
-    x_fit_min, x_fit_max = (x_fit_offset - x_max_fit, x_fit_offset + x_max_fit)
+    x_fit_peak_min, x_fit_peak_max = (x_fit_offset - x_max_fit_peak, x_fit_offset + x_max_fit_peak)
+    x_fit_modl_min, x_fit_modl_max = (x_fit_offset - x_max_fit_modl, x_fit_offset + x_max_fit_modl)
     clr_strip = RGBAf(0.86, 0.86, 0.86, 0.34)
+    clr_fit_peak_span = RGBAf(0.86, 0.86, 0.86, 0.14)
+    clr_fit_modl_span = RGBAf(0.86, 0.86, 0.86, 0.32)
     colorrange_dens = (0.0, maximum(maximum, ntfr2d_mean))
     radius_max = maximum([
         abs(fit.fit_modl.params[1])
@@ -524,6 +618,9 @@ function draw_phase_distro_table!(
         if fit.success
     ])
     radius_max = max(radius_max, eps(Float64))
+    radius_outer = 1.08 * radius_max
+    radius_limit = 1.20 * radius_max
+    polar_rticks = (0:2:6, string.(0:2:6))
     center_vals = [
         (xy_center[idx_IB, idx_istp, idx_rep][1] - x_center_px0) * step_x
         for idx_IB in 1:n_IB, idx_istp in 1:n_istp, idx_rep in 1:n_rep
@@ -543,13 +640,24 @@ function draw_phase_distro_table!(
         else
             throw(ArgumentError("Unknown hue_scheme $hue_scheme."))
         end
+    gen_fit_color(fit_info, hue_scheme::Symbol) = begin
+        rss_norm = clamp(
+            (fit_info.fit_modl.rss_rel - rss_rel_ramp_start) / (rss_rel_ramp_end - rss_rel_ramp_start),
+            0,
+            1,
+        )
+        lightness = polar_lightness + rss_norm * (polar_lightness_rss_bad - polar_lightness)
+        chroma = polar_chroma + rss_norm * (polar_chroma_rss_bad - polar_chroma)
+        alpha = polar_alpha + rss_norm * (polar_alpha_rss_bad - polar_alpha)
+        RGBAf(Oklch(lightness, chroma, gen_fit_hue(fit_info, hue_scheme)), alpha)
+    end
     gen_polar_payload(idx_IB::Integer, idx_istp::Integer, hue_scheme::Symbol) = begin
         fits = fit_peak[idx_IB, idx_istp]
         ids_success = findall(f -> f.success, fits)
         theta = [mod(fits[idx].fit_modl.params[5], 2pi) for idx in ids_success]
         radius = [abs(fits[idx].fit_modl.params[1]) for idx in ids_success]
         color = [
-            RGBAf(Oklch(polar_lightness, polar_chroma, gen_fit_hue(fits[idx], hue_scheme)), 0.92)
+            gen_fit_color(fits[idx], hue_scheme)
             for idx in ids_success
         ]
         return (; theta, radius, color)
@@ -561,10 +669,12 @@ function draw_phase_distro_table!(
     Label(
         fig[0, 1:idx_col_IB_right];
         text=@sprintf(
-            "%s phase distro: mean density, fit polar distributions, and x center; x fit %.1f..%.1f μm, y strip %.1f..%.1f μm",
+            "%s phase distro: mean density, fit polar distributions, and x center; peak fit %.1f..%.1f μm, mod fit %.1f..%.1f μm, y strip %.1f..%.1f μm",
             tag,
-            x_fit_min,
-            x_fit_max,
+            x_fit_peak_min,
+            x_fit_peak_max,
+            x_fit_modl_min,
+            x_fit_modl_max,
             y_strip_min,
             y_strip_max,
         ),
@@ -595,7 +705,8 @@ function draw_phase_distro_table!(
             )
             clrmap = gen_clrmap_solo(hue_theme_istp[string(val_istp[idx_istp])]; alpha_base=0.2, thres_alpha=0.1)
             hspan!(ax_dens, y_strip_min, y_strip_max; color=clr_strip)
-            vspan!(ax_dens, x_fit_min, x_fit_max; color=clr_strip)
+            vspan!(ax_dens, x_fit_peak_min, x_fit_peak_max; color=clr_fit_peak_span)
+            vspan!(ax_dens, x_fit_modl_min, x_fit_modl_max; color=clr_fit_modl_span)
             heatmap!(ax_dens, x_dens, y_dens, ntfr2d_mean[idx_IB, idx_istp]'; colormap=clrmap, colorrange=colorrange_dens, rasterize=true)
             hidexdecorations!(ax_dens; label=!is_bottom_row, ticklabels=!is_bottom_row, ticks=!is_bottom_row, grid=false)
             hideydecorations!(ax_dens; label=idx_istp != 1, ticklabels=true, ticks=true, grid=false)
@@ -606,6 +717,7 @@ function draw_phase_distro_table!(
                     fig[row, idx_col];
                     thetaticklabelsize=7,
                     rticklabelsize=7,
+                    rticks=polar_rticks,
                 )
                 payload = gen_polar_payload(idx_IB, idx_istp, hue_scheme)
                 scatter!(
@@ -617,7 +729,16 @@ function draw_phase_distro_table!(
                     strokecolor=(:black, 0.36),
                     strokewidth=0.25,
                 )
-                rlims!(ax_polar, 0, radius_max)
+                scatter!(
+                    ax_polar,
+                    payload.theta,
+                    fill(radius_outer, length(payload.theta));
+                    color=payload.color,
+                    markersize=markersize_fit,
+                    strokecolor=(:black, 0.36),
+                    strokewidth=0.25,
+                )
+                rlims!(ax_polar, 0, radius_limit)
             end
         end
 
@@ -639,7 +760,7 @@ function draw_phase_distro_table!(
     end
 
     for idx_col in 1:(3 * n_istp)
-        colsize!(fig.layout, idx_col, Fixed(idx_col <= n_istp ? 360 : 300))
+        colsize!(fig.layout, idx_col, Fixed(idx_col <= n_istp ? 360 : 340))
     end
     colsize!(fig.layout, idx_col_center, Fixed(360))
     colsize!(fig.layout, idx_col_IB_right, Fixed(55))
@@ -664,6 +785,9 @@ step_dens = pixsz * bin / mag
 x_dens = step_dens .* collect(-smwh[2]:smwh[2])
 y_dens = step_dens .* collect(-smwh[1]:smwh[1])
 val_IB = copy(val_IB_ref)
+use_common_xy_center in (:free, :fixed_x, :fixed_xy) || throw(ArgumentError(
+    "use_common_xy_center must be :free, :fixed_x, or :fixed_xy, got $use_common_xy_center.",
+))
 
 num = Array{Float64}(undef, n_IB, n_istp, n_rep)
 xy_center = Array{Tuple{Int,Int}}(undef, n_IB, n_istp, n_rep)
@@ -684,13 +808,22 @@ for idx_IB in 1:n_IB, idx_istp in 1:n_istp, idx_rep in 1:n_rep
     num[idx_IB, idx_istp, idx_rep] = sum(dens)
     xy_center[idx_IB, idx_istp, idx_rep] = round.(Int, (x_center, y_center))
 end
-if use_common_xy_center
+if use_common_xy_center == :fixed_xy
     for idx_IB in 1:n_IB, idx_istp in 1:n_istp
         x_common = round(Int, mean(first.(xy_center[idx_IB, idx_istp, :])))
         y_common = round(Int, mean(last.(xy_center[idx_IB, idx_istp, :])))
         xy_center[idx_IB, idx_istp, :] .= Ref((x_common, y_common))
     end
-    println("  [$tag] using common xy_center repeated over reps for each IB, istp")
+    println("  [$tag] using fixed xy_center repeated over reps for each IB, istp")
+elseif use_common_xy_center == :fixed_x
+    for idx_IB in 1:n_IB, idx_istp in 1:n_istp
+        x_common = round(Int, mean(first.(xy_center[idx_IB, idx_istp, :])))
+        for idx_rep in 1:n_rep
+            _, y_fit = xy_center[idx_IB, idx_istp, idx_rep]
+            xy_center[idx_IB, idx_istp, idx_rep] = (x_common, y_fit)
+        end
+    end
+    println("  [$tag] using fixed x center and fitted y centers")
 end
 
 mask_valid_duet = trues(n_IB, n_rep)
@@ -710,14 +843,16 @@ end
 
 idx_strip_center = argmin(abs.(y_dens .- y_strip_offset))
 idxs_center = max(1, idx_strip_center - smh_dens_strip):min(length(y_dens), idx_strip_center + smh_dens_strip)
-mask_fit = abs.(x_dens .- x_fit_offset) .<= x_max_fit
-x_fit_peak = x_dens[mask_fit]
+mask_fit_peak = abs.(x_dens .- x_fit_offset) .<= x_max_fit_peak
+mask_fit_modl = abs.(x_dens .- x_fit_offset) .<= x_max_fit_modl
+x_fit_peak = x_dens[mask_fit_peak]
+x_fit_modl = x_dens[mask_fit_modl]
 
 fit_peak = Array{Vector{NamedTuple}}(undef, n_IB, n_istp)
 for idx_IB in 1:n_IB, idx_istp in 1:n_istp
     fit_peak[idx_IB, idx_istp] = map(enumerate(dens_core[idx_IB, idx_istp])) do (idx_rep_valid, dens2d)
         profile = vec(mean(@view(dens2d[idxs_center, :]); dims=1))
-        prfl_strip_mean = Float64.(profile[mask_fit])
+        prfl_strip_mean = Float64.(profile[mask_fit_peak])
         p_init_gauss = [amp_gauss_init, sigma_gauss_init, bg_gauss_init]
         try
             fit_gauss = curve_fit(
@@ -736,7 +871,7 @@ for idx_IB in 1:n_IB, idx_istp in 1:n_istp
             end
             fit_gauss_full = gauss_1d_model(x_dens, fit_gauss.param)
             profile_modl = profile .- fit_gauss_full
-            prfl_modl_mean = Float64.(profile_modl[mask_fit])
+            prfl_modl_mean = Float64.(profile_modl[mask_fit_modl])
 
             fit_trials = NamedTuple[]
             for phi_modl_seed in phi_modl_init
@@ -744,7 +879,7 @@ for idx_IB in 1:n_IB, idx_istp in 1:n_istp
                 try
                     fit_modl = curve_fit(
                         modl_vary_1d_model,
-                        x_fit_peak,
+                        x_fit_modl,
                         prfl_modl_mean,
                         p_init_modl;
                         lower=copy(fit_lower_modl),
@@ -764,6 +899,7 @@ for idx_IB in 1:n_IB, idx_istp in 1:n_istp
                 err isa SingularException || rethrow()
                 fill(NaN, length(fit_modl.param))
             end
+            rss_rel_modl = norm(residuals(fit_modl)) / min(norm(prfl_modl_mean), norm(modl_vary_1d_model(x_fit_modl, fit_modl.param)))
             (;
                 idx_rep=ids_rep_valid[idx_IB][idx_rep_valid],
                 success=true,
@@ -784,6 +920,7 @@ for idx_IB in 1:n_IB, idx_istp in 1:n_istp
                     fit=modl_vary_1d_model(x_dens, fit_modl.param),
                     resid=copy(fit_modl.resid),
                     rss=best_trial.rss,
+                    rss_rel=rss_rel_modl,
                     phi_modl_init=best_trial.phi_modl_init,
                 ),
             )
@@ -807,8 +944,9 @@ for idx_IB in 1:n_IB, idx_istp in 1:n_istp
                     params=fill(NaN, length(fit_lower_modl)),
                     param_err=fill(NaN, length(fit_lower_modl)),
                     fit=fill(NaN, length(x_dens)),
-                    resid=fill(NaN, length(x_fit_peak)),
+                    resid=fill(NaN, length(x_fit_modl)),
                     rss=NaN,
+                    rss_rel=NaN,
                     phi_modl_init=NaN,
                 ),
             )
@@ -836,7 +974,8 @@ fit_config = (;
     bin,
     sigma_center_filter,
     use_common_xy_center,
-    x_max_fit,
+    x_max_fit_peak,
+    x_max_fit_modl,
     x_fit_offset,
     smh_dens_strip,
     y_strip_offset,
@@ -853,6 +992,14 @@ fit_config = (;
     phi_modl_init,
     fit_lower_modl,
     fit_upper_modl,
+    polar_lightness,
+    polar_chroma,
+    polar_alpha,
+    polar_lightness_rss_bad,
+    polar_chroma_rss_bad,
+    polar_alpha_rss_bad,
+    rss_rel_ramp_start,
+    rss_rel_ramp_end,
 )
 JLD2.@save path_fit_jld2 fit_config x_dens y_dens val_IB val_istp num xy_center mask_valid_duet ids_rep_valid ntfr2d_mean fit_peak
 println("  [$tag] saved phase distro fit data to $path_fit_jld2")
@@ -867,7 +1014,8 @@ draw_phase_distro_table!(
     ntfr2d_mean,
     fit_peak,
     xy_center;
-    x_max_fit,
+    x_max_fit_peak,
+    x_max_fit_modl,
     x_fit_offset,
     smidx_mean_profile=smh_dens_strip,
     y_strip_offset,
@@ -877,6 +1025,12 @@ draw_phase_distro_table!(
     lambda_hue_span,
     polar_lightness,
     polar_chroma,
+    polar_alpha,
+    polar_lightness_rss_bad,
+    polar_chroma_rss_bad,
+    polar_alpha_rss_bad,
+    rss_rel_ramp_start,
+    rss_rel_ramp_end,
     markersize_fit,
 )
 for ext in ("png", "pdf")
@@ -900,7 +1054,8 @@ profile_axes = draw_profile_inspector!(
     smidx_mean_profile=smh_dens_strip,
     y_strip_offset,
     ylims_profile,
-    x_max_fit,
+    x_max_fit_peak,
+    x_max_fit_modl,
     x_fit_offset,
     hue_scheme,
     lambda_hue_min,
@@ -908,6 +1063,12 @@ profile_axes = draw_profile_inspector!(
     lambda_hue_span,
     polar_lightness,
     polar_chroma,
+    polar_alpha,
+    polar_lightness_rss_bad,
+    polar_chroma_rss_bad,
+    polar_alpha_rss_bad,
+    rss_rel_ramp_start,
+    rss_rel_ramp_end,
     markersize_fit,
     markersize_fit_selected,
     x_center_px0,
