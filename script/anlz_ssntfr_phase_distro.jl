@@ -133,12 +133,20 @@ function gaussian_offset_1d(x, p)
 end
 
 ##
+function shader_cmpx(ampl, phase; l_max=0.7438, c_max=0.1255, hue_offset=0, prescale=(t -> t), alpha_base=0.1, thres_alpha=0.05)
+    l = @pipe ampl |> prescale |> clamp(_, 0, 1) |> 1 - _
+    alpha = 1 - l |> u -> u > thres_alpha ? 1.0 : (u / thres_alpha * (1 - alpha_base) + alpha_base)
+    c = l < l_max ? (l / l_max * c_max) : ((1 - l) / (1 - l_max) * c_max)
+    hue = @pipe mod(phase, 2pi)/2pi*360 + hue_offset |> mod(_, 360)
+    RGBAf(Oklch(l, c, hue), alpha)
+end
 function draw_profile_inspector!(
     fig::Figure,
     x_dens::AbstractVector{<:Real},
     y_dens::AbstractVector{<:Real},
     dens_core::AbstractMatrix,
-    dens_core_ft::AbstractMatrix,
+    dens_core_ft_amp::AbstractMatrix,
+    dens_core_ft_phs::AbstractMatrix,
     kx_ft::AbstractVector{<:Real},
     ky_ft::AbstractVector{<:Real},
     fit_peak::AbstractMatrix,
@@ -178,8 +186,11 @@ function draw_profile_inspector!(
     size(fit_peak) == size(dens_core) || throw(DimensionMismatch(
         "fit_peak size $(size(fit_peak)) must match dens_core size $(size(dens_core)).",
     ))
-    size(dens_core_ft) == size(dens_core) || throw(DimensionMismatch(
-        "dens_core_ft size $(size(dens_core_ft)) must match dens_core size $(size(dens_core)).",
+    size(dens_core_ft_amp) == size(dens_core) || throw(DimensionMismatch(
+        "dens_core_ft_amp size $(size(dens_core_ft_amp)) must match dens_core size $(size(dens_core)).",
+    ))
+    size(dens_core_ft_phs) == size(dens_core) || throw(DimensionMismatch(
+        "dens_core_ft_phs size $(size(dens_core_ft_phs)) must match dens_core size $(size(dens_core)).",
     ))
     size(cohr) == size(dens_core) || throw(DimensionMismatch(
         "cohr size $(size(cohr)) must match dens_core size $(size(dens_core)).",
@@ -192,21 +203,29 @@ function draw_profile_inspector!(
         length(fit_peak[idx]) == length(dens_core[idx]) || throw(DimensionMismatch(
             "fit_peak[$(Tuple(idx)...)] length $(length(fit_peak[idx])) must match dens_core length $(length(dens_core[idx])).",
         ))
-        length(dens_core_ft[idx]) == length(dens_core[idx]) || throw(DimensionMismatch(
-            "dens_core_ft[$(Tuple(idx)...)] length $(length(dens_core_ft[idx])) must match dens_core length $(length(dens_core[idx])).",
+        length(dens_core_ft_amp[idx]) == length(dens_core[idx]) || throw(DimensionMismatch(
+            "dens_core_ft_amp[$(Tuple(idx)...)] length $(length(dens_core_ft_amp[idx])) must match dens_core length $(length(dens_core[idx])).",
+        ))
+        length(dens_core_ft_phs[idx]) == length(dens_core[idx]) || throw(DimensionMismatch(
+            "dens_core_ft_phs[$(Tuple(idx)...)] length $(length(dens_core_ft_phs[idx])) must match dens_core length $(length(dens_core[idx])).",
         ))
         size(first(dens_core[idx])) == (length(y_dens), length(x_dens)) || throw(DimensionMismatch(
             "dens_core[$(Tuple(idx)...)] crop size $(size(first(dens_core[idx]))) must match " *
             "(length(y_dens), length(x_dens)) $((length(y_dens), length(x_dens))).",
         ))
-        size(first(dens_core_ft[idx])) == (length(ky_ft), length(kx_ft)) || throw(DimensionMismatch(
-            "dens_core_ft[$(Tuple(idx)...)] crop FT size $(size(first(dens_core_ft[idx]))) must match " *
+        size(first(dens_core_ft_amp[idx])) == (length(ky_ft), length(kx_ft)) || throw(DimensionMismatch(
+            "dens_core_ft_amp[$(Tuple(idx)...)] crop FT size $(size(first(dens_core_ft_amp[idx]))) must match " *
+            "(length(ky_ft), length(kx_ft)) $((length(ky_ft), length(kx_ft))).",
+        ))
+        size(first(dens_core_ft_phs[idx])) == (length(ky_ft), length(kx_ft)) || throw(DimensionMismatch(
+            "dens_core_ft_phs[$(Tuple(idx)...)] crop FT size $(size(first(dens_core_ft_phs[idx]))) must match " *
             "(length(ky_ft), length(kx_ft)) $((length(ky_ft), length(kx_ft))).",
         ))
     end
 
     dens_vec = dens_core[ib, istp]
-    dens_ft_vec = dens_core_ft[ib, istp]
+    dens_ft_amp_vec = dens_core_ft_amp[ib, istp]
+    dens_ft_phs_vec = dens_core_ft_phs[ib, istp]
     isempty(dens_vec) && throw(ArgumentError("dens_core[$ib, $istp] has no selected crops."))
     n_rep_profile = length(dens_vec)
     idx_rep = mod1(idx_rep, length(dens_vec))
@@ -299,8 +318,13 @@ function draw_profile_inspector!(
     y_strip_max = y_dens[last(idxs_center)] + step_y / 2
     x_fit_peak_min, x_fit_peak_max = (x_fit_offset - x_max_fit_peak, x_fit_offset + x_max_fit_peak)
     x_fit_modl_min, x_fit_modl_max = (x_fit_offset - x_max_fit_modl, x_fit_offset + x_max_fit_modl)
+    mask_sidepeak = [sqrt(x^2 + y^2) > 0.1 for y in ky_ft, x in kx_ft]
     gen_x0_peak(idx_IB::Integer, idx_istp::Integer) =
         [fit_peak[idx_IB, idx_istp][idx].fit_gauss.params.x0 for idx in 1:n_rep_profile]
+    gen_ft_rgba(amp, phs) = begin
+        amp_max = amp[mask_sidepeak] |> vec |> maximum
+        shader_cmpx.(amp ./ amp_max, phs; prescale=ampl_prescaler)
+    end
     gen_fit_gauss_text(fit_info_live) = @sprintf(
         "A=%.2f\nx0=%.2f\nσ=%.1f\nbg=%.3f",
         fit_info_live.fit_gauss.params.A,
@@ -333,9 +357,8 @@ function draw_profile_inspector!(
     obs_val_row = Observable(y_dens[idx_row])
     obs_dens2d = Observable(dens2d)
     obs_dens2d_hm = lift(ds -> ds', obs_dens2d)
-    obs_dens2d_ft = Observable(dens_ft_vec[idx_rep]')
+    obs_dens2d_ft = Observable(gen_ft_rgba(dens_ft_amp_vec[idx_rep], dens_ft_phs_vec[idx_rep])')
     obs_colorrange = Observable((0.0, maximum(dens2d)))
-    obs_colorrange_ft = Observable((0.0, 1e7))
     obs_clrmap = Observable(gen_theme_clrmap(istp))
     obs_clr_theme = Observable(gen_theme_clr(istp, 0.3))
     obs_profile_row = Observable(vec(@view dens2d[idx_row, :]))
@@ -406,15 +429,12 @@ function draw_profile_inspector!(
         xlabel="kx (μm⁻¹)",
         ylabel="ky (μm⁻¹)",
         aspect=DataAspect(),
-        title="ROI FT",
     )
     heatmap!(
         ax_ft,
         kx_ft,
         ky_ft,
         obs_dens2d_ft;
-        colormap=obs_clrmap,
-        colorrange=obs_colorrange_ft,
         rasterize=true,
     )
     xlims!(ax_ft, 0, 0.5)
@@ -552,16 +572,17 @@ function draw_profile_inspector!(
 
     function update_profiles!()
         dens_vec_live = dens_core[obs_idx_IB[], obs_idx_istp[]]
-        dens_ft_vec_live = dens_core_ft[obs_idx_IB[], obs_idx_istp[]]
+        dens_ft_amp_vec_live = dens_core_ft_amp[obs_idx_IB[], obs_idx_istp[]]
+        dens_ft_phs_vec_live = dens_core_ft_phs[obs_idx_IB[], obs_idx_istp[]]
         isempty(dens_vec_live) && return nothing
         obs_idx_rep[] = mod1(obs_idx_rep[], length(dens_vec_live))
         dens2d_live = dens_vec_live[obs_idx_rep[]]
-        dens2d_ft_live = dens_ft_vec_live[obs_idx_rep[]]
+        dens2d_ft_amp_live = dens_ft_amp_vec_live[obs_idx_rep[]]
+        dens2d_ft_phs_live = dens_ft_phs_vec_live[obs_idx_rep[]]
         fit_info_live = fit_peak[obs_idx_IB[], obs_idx_istp[]][obs_idx_rep[]]
         obs_dens2d[] = dens2d_live
-        obs_dens2d_ft[] = dens2d_ft_live'
+        obs_dens2d_ft[] = gen_ft_rgba(dens2d_ft_amp_live, dens2d_ft_phs_live)'
         obs_colorrange[] = (0.0, maximum(dens2d_live))
-        obs_colorrange_ft[] = (0.0, 1e7)
         obs_clrmap[] = gen_theme_clrmap(obs_idx_istp[])
         obs_clr_theme[] = gen_theme_clr(obs_idx_istp[], 0.3)
         obs_profile_row[] = vec(@view dens2d_live[obs_idx_row[], :])
@@ -1123,10 +1144,14 @@ tukey_dens_ft = tukey1d(smwh_dens_ft[1]; alpha=0.2) * tukey1d(smwh_dens_ft[2]; a
 
 dens_core_ft = map(dens_core) do dens_vec
     map(dens_vec) do dens2d
-        dens_roi = @view dens2d[idxs_ft_y, idxs_ft_x]
-        abs2.(fftshift(fft(dens_roi .* tukey_dens_ft)))[mask_ft_ky, mask_ft_kx] |> copy
+        @pipe (@view dens2d[idxs_ft_y, idxs_ft_x]) |> 
+            _.* tukey_dens_ft |> 
+            ifftshift |> fft |> fftshift |> 
+            _[mask_ft_ky, mask_ft_kx] |> copy
     end
 end
+dens_core_ft_amp = map(ft_vec -> map(u -> abs.(u), ft_vec), dens_core_ft)
+dens_core_ft_phs = map(ft_vec -> map(u -> angle.(u), ft_vec), dens_core_ft)
 
 
 fit_peak = Array{Vector{NamedTuple}}(undef, n_IB, n_istp)
@@ -1322,7 +1347,7 @@ fit_config = (;
     rss_rel_ramp,
     phase_mode,
 )
-JLD2.@save path_fit_jld2 fit_config x_dens y_dens kx_ft ky_ft val_IB val_istp num xy_center_nvlp_px xy_center_shift mask_valid_duet ids_rep_valid ntfr2d_mean dens_core_ft fit_peak cohr
+JLD2.@save path_fit_jld2 fit_config x_dens y_dens kx_ft ky_ft val_IB val_istp num xy_center_nvlp_px xy_center_shift mask_valid_duet ids_rep_valid ntfr2d_mean dens_core_ft_amp dens_core_ft_phs fit_peak cohr
 println("  [$tag] saved phase distro fit data to $path_fit_jld2")
 
 fig_phase_distro = Figure(fontsize=12)
@@ -1360,13 +1385,15 @@ end
 println("  [$tag] saved phase distro table to $(joinpath(path_output, "$filename_plot_phase_distro.png"))")
 
 ##
+ampl_prescaler = a -> a^2 * 0.4
 fig_live = Figure(fontsize=14)
 profile_axes = draw_profile_inspector!(
     fig_live,
     x_dens,
     y_dens,
     dens_core,
-    dens_core_ft,
+    dens_core_ft_amp,
+    dens_core_ft_phs,
     kx_ft,
     ky_ft,
     fit_peak,
