@@ -1,4 +1,5 @@
 using GLMakie
+using FFTW: fft, fftshift
 using HDF5
 using ImageFiltering
 using JLD2
@@ -50,6 +51,7 @@ val_IB_ref = [
     5.342,
 ]
 smwh = (150, 150)
+smwh_dens_ft = (80, 80)
 mag = 22.06
 pixsz = 6.5
 bin = 1
@@ -63,10 +65,10 @@ y_strip_offset = -0.0 # μm
 amp_gauss_init = 6.0
 x0_gauss_init = 0.0
 sigma_gauss_init = 12.0
-bg_gauss_init = 2.0
+bg_gauss_init = 0.5
 # [amp_gauss, x0_gauss, sigma_gauss, bg_gauss]
 fit_lower_gauss = [0.0, -10.0, 6.0, -2.0]
-fit_upper_gauss = [25.0, 10.0, 20.0, 2.0]
+fit_upper_gauss = [25.0, 10.0, 20.0, 1.0]
 amp_modl_init = 1.0
 slope_modl_init = 0.0
 quad_modl_init = 0.0
@@ -130,11 +132,15 @@ function gaussian_offset_1d(x, p)
     return @. p[1] * exp(-((x - p[2])^2) / (2 * p[3]^2)) + p[4]
 end
 
+##
 function draw_profile_inspector!(
     fig::Figure,
     x_dens::AbstractVector{<:Real},
     y_dens::AbstractVector{<:Real},
     dens_core::AbstractMatrix,
+    dens_core_ft::AbstractMatrix,
+    kx_ft::AbstractVector{<:Real},
+    ky_ft::AbstractVector{<:Real},
     fit_peak::AbstractMatrix,
     xy_center::AbstractArray{<:Tuple{Int,Int},3},
     val_istp::AbstractVector;
@@ -162,6 +168,7 @@ function draw_profile_inspector!(
     markersize_fit::Real,
     markersize_fit_selected::Real,
     x_center_px0::Real,
+    cohr::AbstractArray{<:NamedTuple},
 )
     ib in axes(dens_core, 1) || throw(ArgumentError("ib must be in $(axes(dens_core, 1)), got $ib."))
     istp in axes(dens_core, 2) || throw(ArgumentError("istp must be in $(axes(dens_core, 2)), got $istp."))
@@ -171,6 +178,12 @@ function draw_profile_inspector!(
     size(fit_peak) == size(dens_core) || throw(DimensionMismatch(
         "fit_peak size $(size(fit_peak)) must match dens_core size $(size(dens_core)).",
     ))
+    size(dens_core_ft) == size(dens_core) || throw(DimensionMismatch(
+        "dens_core_ft size $(size(dens_core_ft)) must match dens_core size $(size(dens_core)).",
+    ))
+    size(cohr) == size(dens_core) || throw(DimensionMismatch(
+        "cohr size $(size(cohr)) must match dens_core size $(size(dens_core)).",
+    ))
     size(xy_center) == (size(dens_core, 1), size(dens_core, 2), length(first(dens_core))) || throw(DimensionMismatch(
         "xy_center size $(size(xy_center)) must match (IB, istp, rep) $((size(dens_core, 1), size(dens_core, 2), length(first(dens_core)))).",
     ))
@@ -179,13 +192,21 @@ function draw_profile_inspector!(
         length(fit_peak[idx]) == length(dens_core[idx]) || throw(DimensionMismatch(
             "fit_peak[$(Tuple(idx)...)] length $(length(fit_peak[idx])) must match dens_core length $(length(dens_core[idx])).",
         ))
+        length(dens_core_ft[idx]) == length(dens_core[idx]) || throw(DimensionMismatch(
+            "dens_core_ft[$(Tuple(idx)...)] length $(length(dens_core_ft[idx])) must match dens_core length $(length(dens_core[idx])).",
+        ))
         size(first(dens_core[idx])) == (length(y_dens), length(x_dens)) || throw(DimensionMismatch(
             "dens_core[$(Tuple(idx)...)] crop size $(size(first(dens_core[idx]))) must match " *
             "(length(y_dens), length(x_dens)) $((length(y_dens), length(x_dens))).",
         ))
+        size(first(dens_core_ft[idx])) == (length(ky_ft), length(kx_ft)) || throw(DimensionMismatch(
+            "dens_core_ft[$(Tuple(idx)...)] crop FT size $(size(first(dens_core_ft[idx]))) must match " *
+            "(length(ky_ft), length(kx_ft)) $((length(ky_ft), length(kx_ft))).",
+        ))
     end
 
     dens_vec = dens_core[ib, istp]
+    dens_ft_vec = dens_core_ft[ib, istp]
     isempty(dens_vec) && throw(ArgumentError("dens_core[$ib, $istp] has no selected crops."))
     n_rep_profile = length(dens_vec)
     idx_rep = mod1(idx_rep, length(dens_vec))
@@ -248,12 +269,19 @@ function draw_profile_inspector!(
         markersize = [idx == idx_rep_selected ? markersize_fit_selected : markersize_fit for idx in ids_success]
         return (; theta, radius, radius_outer, color, markersize)
     end
+    gen_moment_payload(idx_IB::Integer, idx_istp::Integer) = begin
+        moment = cohr[idx_IB, idx_istp]
+        theta = [mod(moment.moment_angel, 2pi)]
+        radius = [clamp(moment.moment_length, 0, 1) * moment_radius_scale]
+        return (; theta, radius)
+    end
 
     clr_mean = RGBAf(0.35, 0.35, 0.35, 0.62)
     clr_strip = RGBAf(0.86, 0.86, 0.86, 0.50)
     clr_fit_peak_span = RGBAf(0.86, 0.86, 0.86, 0.18)
     clr_fit_modl_span = RGBAf(0.86, 0.86, 0.86, 0.42)
     clr_fit = RGBAf(Oklch(0.60, 0.17, 145), 0.95)
+    clr_moment = RGBAf(0.02, 0.02, 0.02, 0.92)
     polar_radius_max = maximum([
         abs(fit.fit_modl.params.M)
         for fits in fit_peak
@@ -261,6 +289,7 @@ function draw_profile_inspector!(
         if fit.success
     ])
     polar_radius_max = max(polar_radius_max, eps(Float64))
+    moment_radius_scale = polar_radius_max
     polar_radius_outer = 1.08 * polar_radius_max
     polar_radius_limit = 1.20 * polar_radius_max
     polar_rticks = (0:2:6, string.(0:2:6))
@@ -304,7 +333,9 @@ function draw_profile_inspector!(
     obs_val_row = Observable(y_dens[idx_row])
     obs_dens2d = Observable(dens2d)
     obs_dens2d_hm = lift(ds -> ds', obs_dens2d)
+    obs_dens2d_ft = Observable(dens_ft_vec[idx_rep]')
     obs_colorrange = Observable((0.0, maximum(dens2d)))
+    obs_colorrange_ft = Observable((0.0, 1e7))
     obs_clrmap = Observable(gen_theme_clrmap(istp))
     obs_clr_theme = Observable(gen_theme_clr(istp, 0.3))
     obs_profile_row = Observable(vec(@view dens2d[idx_row, :]))
@@ -320,6 +351,9 @@ function draw_profile_inspector!(
     obs_fit_outer_radius = Observable(payload_fit_polar.radius_outer)
     obs_fit_color = Observable(payload_fit_polar.color)
     obs_fit_markersize = Observable(payload_fit_polar.markersize)
+    payload_moment = gen_moment_payload(ib, istp)
+    obs_moment_theta = Observable(payload_moment.theta)
+    obs_moment_radius = Observable(payload_moment.radius)
     obs_fit_gauss_text = Observable(gen_fit_gauss_text(fit_info))
     obs_fit_modl_text_left = Observable(gen_fit_modl_text_left(fit_info))
     obs_fit_modl_text_right = Observable(gen_fit_modl_text_right(fit_info))
@@ -347,8 +381,9 @@ function draw_profile_inspector!(
 
     Label(fig[0, 1:2]; text=obs_title, tellwidth=false, halign=:left)
 
+    gl_dens_live = GridLayout(fig[1, 1])
     ax_hm = Axis(
-        fig[1, 1];
+        gl_dens_live[1, 1];
         xlabel="x (μm)",
         ylabel="y (μm)",
         aspect=DataAspect(),
@@ -365,6 +400,27 @@ function draw_profile_inspector!(
     vspan!(ax_hm, x_fit_modl_min, x_fit_modl_max; color=clr_fit_modl_span)
     hm = heatmap!(ax_hm, x_dens, y_dens, obs_dens2d_hm; colormap=obs_clrmap, colorrange=obs_colorrange, rasterize=true)
     hlines!(ax_hm, lift(x -> [x], obs_val_row); color=obs_clr_theme, linewidth=0.9)
+
+    ax_ft = Axis(
+        gl_dens_live[2, 1];
+        xlabel="kx (μm⁻¹)",
+        ylabel="ky (μm⁻¹)",
+        aspect=DataAspect(),
+        title="ROI FT",
+    )
+    heatmap!(
+        ax_ft,
+        kx_ft,
+        ky_ft,
+        obs_dens2d_ft;
+        colormap=obs_clrmap,
+        colorrange=obs_colorrange_ft,
+        rasterize=true,
+    )
+    xlims!(ax_ft, 0, 0.5)
+    ylims!(ax_ft, -0.2, 0.2)
+    rowsize!(gl_dens_live, 1, Relative(0.68))
+    rowgap!(gl_dens_live, 6)
 
     ax_row = Axis(
         fig[2, 1];
@@ -453,6 +509,7 @@ function draw_profile_inspector!(
         rticklabelsize=9,
         rticks=polar_rticks,
     )
+
     scatter!(
         ax_fit_polar,
         obs_fit_theta,
@@ -471,6 +528,16 @@ function draw_profile_inspector!(
         strokecolor=(:black, 0.40),
         strokewidth=0.35,
     )
+    scatter!(
+        ax_fit_polar,
+        obs_moment_theta,
+        obs_moment_radius;
+        color=clr_moment,
+        marker=:diamond,
+        markersize=13,
+        strokecolor=:white,
+        strokewidth=0.8,
+    )
     rlims!(ax_fit_polar, 0, polar_radius_limit)
 
     ax_center = Axis(
@@ -485,12 +552,16 @@ function draw_profile_inspector!(
 
     function update_profiles!()
         dens_vec_live = dens_core[obs_idx_IB[], obs_idx_istp[]]
+        dens_ft_vec_live = dens_core_ft[obs_idx_IB[], obs_idx_istp[]]
         isempty(dens_vec_live) && return nothing
         obs_idx_rep[] = mod1(obs_idx_rep[], length(dens_vec_live))
         dens2d_live = dens_vec_live[obs_idx_rep[]]
+        dens2d_ft_live = dens_ft_vec_live[obs_idx_rep[]]
         fit_info_live = fit_peak[obs_idx_IB[], obs_idx_istp[]][obs_idx_rep[]]
         obs_dens2d[] = dens2d_live
+        obs_dens2d_ft[] = dens2d_ft_live'
         obs_colorrange[] = (0.0, maximum(dens2d_live))
+        obs_colorrange_ft[] = (0.0, 1e7)
         obs_clrmap[] = gen_theme_clrmap(obs_idx_istp[])
         obs_clr_theme[] = gen_theme_clr(obs_idx_istp[], 0.3)
         obs_profile_row[] = vec(@view dens2d_live[obs_idx_row[], :])
@@ -506,6 +577,9 @@ function draw_profile_inspector!(
         obs_fit_outer_radius[] = payload_fit_polar_live.radius_outer
         obs_fit_color[] = payload_fit_polar_live.color
         obs_fit_markersize[] = payload_fit_polar_live.markersize
+        payload_moment_live = gen_moment_payload(obs_idx_IB[], obs_idx_istp[])
+        obs_moment_theta[] = payload_moment_live.theta
+        obs_moment_radius[] = payload_moment_live.radius
         obs_fit_gauss_text[] = gen_fit_gauss_text(fit_info_live)
         obs_fit_modl_text_left[] = gen_fit_modl_text_left(fit_info_live)
         obs_fit_modl_text_right[] = gen_fit_modl_text_right(fit_info_live)
@@ -601,6 +675,7 @@ function draw_profile_inspector!(
     resize_to_layout!(fig)
     return (;
         ax_hm,
+        ax_ft,
         ax_row,
         ax_modl,
         ax_fit_polar,
@@ -618,6 +693,7 @@ function draw_profile_inspector!(
         rss_rel_ramp_handler,
     )
 end
+##
 
 function draw_phase_distro_table!(
     fig::Figure,
@@ -645,6 +721,7 @@ function draw_phase_distro_table!(
     polar_alpha_rss_bad::Real,
     rss_rel_ramp::Tuple{<:Real,<:Real},
     markersize_fit::Real,
+    cohr::AbstractArray{<:NamedTuple},
 )
     n_IB = length(val_IB)
     n_istp = length(val_istp)
@@ -654,6 +731,9 @@ function draw_phase_distro_table!(
     ))
     size(fit_peak) == (n_IB, n_istp) || throw(DimensionMismatch(
         "fit_peak size $(size(fit_peak)) must match (IB, istp) $((n_IB, n_istp)).",
+    ))
+    size(cohr) == (n_IB, n_istp) || throw(DimensionMismatch(
+        "cohr size $(size(cohr)) must match (IB, istp) $((n_IB, n_istp)).",
     ))
     size(xy_center) == (n_IB, n_istp, n_rep) || throw(DimensionMismatch(
         "xy_center size $(size(xy_center)) must match (IB, istp, rep) $((n_IB, n_istp, n_rep)).",
@@ -678,6 +758,7 @@ function draw_phase_distro_table!(
         if fit.success
     ])
     radius_max = max(radius_max, eps(Float64))
+    moment_radius_scale = radius_max
     radius_outer = 1.08 * radius_max
     radius_limit = 1.20 * radius_max
     polar_rticks = (0:2:6, string.(0:2:6))
@@ -730,6 +811,12 @@ function draw_phase_distro_table!(
             for idx in ids_success
         ]
         return (; theta, radius, color)
+    end
+    gen_moment_payload(idx_IB::Integer, idx_istp::Integer) = begin
+        moment = cohr[idx_IB, idx_istp]
+        theta = [mod(moment.moment_angel, 2pi)]
+        radius = [clamp(moment.moment_length, 0, 1) * moment_radius_scale]
+        return (; theta, radius)
     end
 
     idx_col_dens = 1
@@ -818,6 +905,17 @@ function draw_phase_distro_table!(
                 markersize=markersize_fit,
                 strokecolor=(:black, 0.36),
                 strokewidth=0.25,
+            )
+            payload_moment = gen_moment_payload(idx_IB, idx_istp)
+            scatter!(
+                ax_polar,
+                payload_moment.theta,
+                payload_moment.radius;
+                color=RGBAf(0.02, 0.02, 0.02, 0.92),
+                marker=:diamond,
+                markersize=9,
+                strokecolor=:white,
+                strokewidth=0.55,
             )
             rlims!(ax_polar, 0, radius_limit)
         end
@@ -924,7 +1022,7 @@ println("  [$tag] loading densities from $path_data")
 dens_raw_fmt = load_density_payload(path_data, val_istp)
 n_IB, n_istp, n_rep = size(dens_raw_fmt)
 wh_raw = size(dens_raw_fmt[1, 1, 1])
-x_center_px0 = (wh_raw[2] + 1) / 2
+(x_center_px0, y_center_px0) = (wh_raw .+ 1) ./ 2
 println("  [$tag] formatted densities as (IB, istp, rep)=$(size(dens_raw_fmt)), image size=$wh_raw")
 length(val_IB_ref) == n_IB || throw(DimensionMismatch("val_IB_ref length $(length(val_IB_ref)) must match IB count $n_IB."))
 length(val_istp) == n_istp || throw(DimensionMismatch("val_istp length $(length(val_istp)) must match istp count $n_istp."))
@@ -938,7 +1036,7 @@ use_common_xy_center in (:free, :fixed_x, :fixed_xy) || throw(ArgumentError(
 ))
 
 num = Array{Float64}(undef, n_IB, n_istp, n_rep)
-xy_center = Array{Tuple{Int,Int}}(undef, n_IB, n_istp, n_rep)
+xy_center_nvlp_px = Array{Tuple{Float64, Float64}}(undef, n_IB, n_istp, n_rep)
 for idx_IB in 1:n_IB, idx_istp in 1:n_istp, idx_rep in 1:n_rep
     dens = dens_raw_fmt[idx_IB, idx_istp, idx_rep]
     dens_smooth = imfilter(dens, Kernel.gaussian(sigma_center_filter))
@@ -954,25 +1052,31 @@ for idx_IB in 1:n_IB, idx_istp in 1:n_istp, idx_rep in 1:n_rep
     y_center = curve_fit(gaussian_offset_1d, y_fit, Float64.(prfl_y), p0_y).param[2]
 
     num[idx_IB, idx_istp, idx_rep] = sum(dens)
-    xy_center[idx_IB, idx_istp, idx_rep] = round.(Int, (x_center, y_center))
+    xy_center_nvlp_px[idx_IB, idx_istp, idx_rep] = (x_center, y_center)
 end
+xy_center_shift = Array{Tuple{Int,Int}}(undef, n_IB, n_istp, n_rep)
 if use_common_xy_center == :fixed_xy
     for idx_IB in 1:n_IB, idx_istp in 1:n_istp
-        x_common = round(Int, mean(first.(xy_center[idx_IB, idx_istp, :])))
-        y_common = round(Int, mean(last.(xy_center[idx_IB, idx_istp, :])))
-        xy_center[idx_IB, idx_istp, :] .= Ref((x_common, y_common))
+        x_common = round(Int, mean(first.(xy_center_nvlp_px[idx_IB, idx_istp, :])))
+        y_common = round(Int, mean(last.(xy_center_nvlp_px[idx_IB, idx_istp, :])))
+        xy_center_shift[idx_IB, idx_istp, :] .= Ref((x_common, y_common))
     end
     println("  [$tag] using fixed xy_center repeated over reps for each IB, istp")
 elseif use_common_xy_center == :fixed_x
     for idx_IB in 1:n_IB, idx_istp in 1:n_istp
-        x_common = round(Int, mean(first.(xy_center[idx_IB, idx_istp, :])))
+        x_common = round(Int, mean(first.(xy_center_nvlp_px[idx_IB, idx_istp, :])))
         for idx_rep in 1:n_rep
-            _, y_fit = xy_center[idx_IB, idx_istp, idx_rep]
-            xy_center[idx_IB, idx_istp, idx_rep] = (x_common, y_fit)
+            _, y_fit = xy_center_nvlp_px[idx_IB, idx_istp, idx_rep]
+            xy_center_shift[idx_IB, idx_istp, idx_rep] = (x_common, round(Int, y_fit))
         end
     end
     println("  [$tag] using fixed x center and fitted y centers")
+else
+    xy_center_shift =  round.(Int, xy_center_nvlp_px)
+    println("  [$tag] using fitted xy center")
 end
+
+xy_peak_nvlp = map(c -> (c .- x_center_px0) .* step_dens, xy_center_nvlp_px)
 
 mask_valid_duet = trues(n_IB, n_rep)
 
@@ -983,7 +1087,7 @@ ids_rep_valid = [findall(@view mask_valid_duet[idx_IB, :]) for idx_IB in 1:n_IB]
 dens_core = Array{Vector{Matrix{Float64}}}(undef, n_IB, n_istp)
 for idx_IB in 1:n_IB, idx_istp in 1:n_istp
     dens_core[idx_IB, idx_istp] = [
-        crop_center(dens_raw_fmt[idx_IB, idx_istp, idx_rep], xy_center[idx_IB, idx_istp, idx_rep], smwh) |> copy
+        crop_center(dens_raw_fmt[idx_IB, idx_istp, idx_rep], xy_center_shift[idx_IB, idx_istp, idx_rep], smwh) |> copy
         for idx_rep in 1:n_rep
         if mask_valid_duet[idx_IB, idx_rep]
     ]
@@ -995,6 +1099,34 @@ mask_fit_peak = abs.(x_dens .- x_fit_offset) .<= x_max_fit_peak
 mask_fit_modl = abs.(x_dens .- x_fit_offset) .<= x_max_fit_modl
 x_fit_peak = x_dens[mask_fit_peak]
 x_fit_modl = x_dens[mask_fit_modl]
+
+gen_freq_shifted(n::Integer, step::Real) =
+    iseven(n) ? collect((-n ÷ 2):(n ÷ 2 - 1)) ./ (n * step) :
+    collect((-(n ÷ 2)):(n ÷ 2)) ./ (n * step)
+idx_ft_x_center = argmin(abs.(x_dens))
+idx_ft_y_center = argmin(abs.(y_dens))
+idxs_ft_x = (idx_ft_x_center - smwh_dens_ft[2]):(idx_ft_x_center + smwh_dens_ft[2])
+idxs_ft_y = (idx_ft_y_center - smwh_dens_ft[1]):(idx_ft_y_center + smwh_dens_ft[1])
+first(idxs_ft_x) >= firstindex(x_dens) && last(idxs_ft_x) <= lastindex(x_dens) || throw(ArgumentError(
+    "smwh_dens_ft=$smwh_dens_ft exceeds x_dens bounds around x=0.",
+))
+first(idxs_ft_y) >= firstindex(y_dens) && last(idxs_ft_y) <= lastindex(y_dens) || throw(ArgumentError(
+    "smwh_dens_ft=$smwh_dens_ft exceeds y_dens bounds around y=0.",
+))
+kx_ft_full = gen_freq_shifted(length(idxs_ft_x), step_dens)
+ky_ft_full = gen_freq_shifted(length(idxs_ft_y), step_dens)
+mask_ft_kx = (kx_ft_full .>= 0) .& (kx_ft_full .<= 0.5)
+mask_ft_ky = (ky_ft_full .>= -0.2) .& (ky_ft_full .<= 0.2)
+kx_ft = kx_ft_full[mask_ft_kx]
+ky_ft = ky_ft_full[mask_ft_ky]
+tukey_dens_ft = tukey1d(smwh_dens_ft[1]; alpha=0.2) * tukey1d(smwh_dens_ft[2]; alpha=0.2)'
+
+dens_core_ft = map(dens_core) do dens_vec
+    map(dens_vec) do dens2d
+        dens_roi = @view dens2d[idxs_ft_y, idxs_ft_x]
+        abs2.(fftshift(fft(dens_roi .* tukey_dens_ft)))[mask_ft_ky, mask_ft_kx] |> copy
+    end
+end
 
 
 fit_peak = Array{Vector{NamedTuple}}(undef, n_IB, n_istp)
@@ -1108,24 +1240,30 @@ count_fit = sum(sum(f.success for f in fits) for fits in fit_peak)
 count_fit_err = sum(sum(f.success && (any(isnan, f.fit_gauss.param_err) || any(isnan, f.fit_modl.param_err)) for f in fits) for fits in fit_peak)
 println("  [$tag] fitted two-step profiles for $count_fit crops; singular error estimates for $count_fit_err crops")
 
-cohr = map(fit_peak) do fit_reps
+function calc_circ_moment(φ, weight)
+    cmpn = map(φ, weight) do φ, w
+        (w * cos(φ), w * sin(φ))
+    end
+    @pipe cmpn |>
+            reduce((a, b) -> a .+ b, _) |>
+            m -> (hypot(m...) / sum(weight), atan(reverse(m)...))
+end
+
+cohr = map(CartesianIndices(fit_peak), fit_peak) do ids, fit_reps
     φ_0 = @pipe fit_reps |> map(f -> f.fit_modl.params.φ, _)
     M = @pipe fit_reps |> map(f -> f.fit_modl.params.M, _)
     λ = @pipe fit_reps |> map(f -> f.fit_modl.params.λ, _)
     x_p = @pipe fit_reps |> map(f -> f.fit_gauss.params.x0, _)
+    x_n = @pipe xy_peak_nvlp[Tuple(ids)..., :] |> map(xy -> xy[1], _)
     φ_p = @. φ_0 - 2pi * x_p / λ
+    φ_n = @. φ_0 - 2pi * x_n / λ
+
     rss_rel = @pipe fit_reps |> map(f -> f.fit_modl.rss, _)
-    cmpn = map(φ_0, φ_p, rss_rel, λ) do φ_0, φ_p, rss_rel, λ
-        r = ((rss_rel > 0.5) | (λ > 6)) ? 0 : 1
-        φ = φ_p
-        (r * cos(φ), r * sin(φ))
-    end
+
     ampl_modl = map(M, rss_rel) do M, rss_rel
         rss_rel > 0.5 ? 0 : M
     end |> skipmissing |> mean
-    moment_circ = @pipe cmpn |> 
-                    reduce((a, b) -> a .+ b, _) |> 
-                    m -> (hypot(m...) / length(fit_reps), atan(reverse(m)...))
+    moment_circ = calc_circ_moment(φ_p, Float64.(rss_rel .< 0.5))
     (; ampl_modl, moment_length=moment_circ[1], moment_angel=moment_circ[2])
 end
 
@@ -1141,6 +1279,7 @@ ntfr2d_mean = map(dens_core) do ds
     isempty(ds) && throw(ArgumentError("No valid densities available for a condition."))
     dropdims(mean(stack(ds); dims=3); dims=3)
 end
+##
 
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
@@ -1149,6 +1288,7 @@ fit_config = (;
     path_data,
     path_output,
     smwh,
+    smwh_dens_ft,
     mag,
     pixsz,
     bin,
@@ -1182,7 +1322,7 @@ fit_config = (;
     rss_rel_ramp,
     phase_mode,
 )
-JLD2.@save path_fit_jld2 fit_config x_dens y_dens val_IB val_istp num xy_center mask_valid_duet ids_rep_valid ntfr2d_mean fit_peak
+JLD2.@save path_fit_jld2 fit_config x_dens y_dens kx_ft ky_ft val_IB val_istp num xy_center_nvlp_px xy_center_shift mask_valid_duet ids_rep_valid ntfr2d_mean dens_core_ft fit_peak cohr
 println("  [$tag] saved phase distro fit data to $path_fit_jld2")
 
 fig_phase_distro = Figure(fontsize=12)
@@ -1194,7 +1334,7 @@ draw_phase_distro_table!(
     val_istp,
     ntfr2d_mean,
     fit_peak,
-    xy_center;
+    xy_center_shift;
     x_max_fit_peak,
     x_max_fit_modl,
     x_fit_offset,
@@ -1212,20 +1352,25 @@ draw_phase_distro_table!(
     polar_alpha_rss_bad,
     rss_rel_ramp,
     markersize_fit,
+    cohr,
 )
 for ext in ("png", "pdf")
     save(joinpath(path_output, "$filename_plot_phase_distro.$ext"), fig_phase_distro; backend=CairoMakie)
 end
 println("  [$tag] saved phase distro table to $(joinpath(path_output, "$filename_plot_phase_distro.png"))")
 
+##
 fig_live = Figure(fontsize=14)
 profile_axes = draw_profile_inspector!(
     fig_live,
     x_dens,
     y_dens,
     dens_core,
+    dens_core_ft,
+    kx_ft,
+    ky_ft,
     fit_peak,
-    xy_center,
+    xy_center_shift,
     val_istp;
     ib,
     istp,
@@ -1251,5 +1396,6 @@ profile_axes = draw_profile_inspector!(
     markersize_fit,
     markersize_fit_selected,
     x_center_px0,
+    cohr,
 )
 display(fig_live)

@@ -526,7 +526,7 @@ function fit_centered_density_profiles(
     return (; fit_density, profile_fits=(profile_column, profile_row))
 end
 
-function tucky1d(sml; alpha=0.2)
+function tukey1d(sml; alpha=0.2)
     [abs(x) - 1 + alpha |> x -> x < 0 ? 1.0 : (1 + cos(pi * x / alpha)) / 2
      for x in (-sml:sml) ./ sml]
 end
@@ -547,12 +547,12 @@ function calc_prfl_modl_cmpx_1d(dens::AbstractMatrix{<:Real}, smwh::Tuple{<:Inte
         "smwh $smwh expects density size $wh_expected, got $(size(dens)).",
     ))
     cfg = get_prfl_modl_1d_config(smwh)
-    tucky_prfl = tucky1d(smw; alpha=0.2)
+    tukey_prfl = tukey1d(smw; alpha=0.2)
     idx_strip = (cfg.smh_dens_strip |> s -> (-s:1:s) .+ smh .+ 1)
     idx_modl = (cfg.smw_modl |> s -> (-s:1:s) .+ smw .+ 1)
     dens_strip = @view dens[idx_strip, :]
     prfl_dens = imfilter(dens_strip, Kernel.gaussian(cfg.radius_blur)) |> ds -> vec(mean(ds; dims=1))
-    modl_cmpx = fftshift(fft(prfl_dens .* tucky_prfl))[idx_modl]
+    modl_cmpx = fftshift(fft(prfl_dens .* tukey_prfl))[idx_modl]
     norm_modl = sum(abs.(modl_cmpx)) * step_modl / 2
     norm_modl > 0 || throw(ArgumentError("modulation profile normalization must be positive, got $norm_modl."))
     return modl_cmpx ./ norm_modl
