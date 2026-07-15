@@ -30,6 +30,7 @@ path_fit_jld2 = joinpath(path_output, "SSNTFR_phase_distro_fit.jld2")
 
 tag = "SSNTFR"
 filename_plot_phase_distro = "$(tag)_phase_distro_table"
+filename_plot_cohr_modl = "$(tag)_cohr_modl"
 val_istp = ["162", "164"]
 val_IB_ref = [
     5.310,
@@ -179,6 +180,7 @@ function draw_profile_inspector!(
     polar_alpha_rss_bad::Real,
     rss_rel_ramp::Tuple{<:Real,<:Real},
     clrrng_ft2d_absl_mean::Tuple{<:Real,<:Real},
+    clrrng_ft2d_cmpx_mean::Tuple{<:Real,<:Real},
     markersize_fit::Real,
     markersize_fit_selected::Real,
     x_center_px0::Real,
@@ -352,17 +354,19 @@ function draw_profile_inspector!(
     mask_sidepeak = [sqrt(x^2 + y^2) > 0.1 for y in ky_ft, x in kx_ft]
     gen_x0_peak(idx_IB::Integer, idx_istp::Integer) =
         [fit_peak[idx_IB, idx_istp][idx].fit_gauss.params.x0 for idx in 1:n_rep_profile]
-    gen_ft_rgba(amp, phs) = begin
-        amp_max = max(amp[mask_sidepeak] |> vec |> maximum, eps(Float64))
+    gen_ft_rgba(amp, phs; rng_amp=clrrng_ft2d_cmpx_mean) = begin
+        amp_max = isnothing(rng_amp) ? 
+            max(amp[mask_sidepeak] |> vec |> maximum, eps(Float64)) :
+            rng_amp[2] / 2
         rgba = shader_cmpx.(amp ./ amp_max, phs; prescale=ampl_prescaler)
         phs_sample = range(-π, π, 256)
         amp_sample = range(0, 2amp_max, 256)
-        clrmp = [shader_cmpx.(a, φ; prescale=ampl_prescaler) for a in amp_sample, φ in phs_sample]
+        clrmp = [shader_cmpx.(a ./ amp_max, φ; prescale=ampl_prescaler) for a in amp_sample, φ in phs_sample]
         (rgba, (;amp=amp_sample, phs=phs_sample, colormap=clrmp))
     end
-    gen_ft_rgba(ft::AbstractMatrix{<:Complex}) = gen_ft_rgba(abs.(ft), angle.(ft))
-    gen_ft_rgba_img(args...) = first(gen_ft_rgba(args...))
-    gen_ft_rgba_clr(args...) = last(gen_ft_rgba(args...))
+    gen_ft_rgba(ft::AbstractMatrix{<:Complex}; kwargs...) = gen_ft_rgba(abs.(ft), angle.(ft); kwargs...)
+    gen_ft_rgba_img(args...; kwargs...) = first(gen_ft_rgba(args...; kwargs...))
+    gen_ft_rgba_clr(args...; kwargs...) = last(gen_ft_rgba(args...; kwargs...))
     gen_fit_gauss_text(fit_info_live) = @sprintf(
         "A=%.2f\nx0=%.2f\nσ=%.1f\nbg=%.3f",
         fit_info_live.fit_gauss.params.A,
@@ -391,24 +395,30 @@ function draw_profile_inspector!(
     obs_idx_rep = Observable(idx_rep)
     obs_hue_scheme = Observable(hue_scheme)
     obs_phase_mode = Observable(phase_mode)
+    obs_ft_cmpx_view = Observable(:complex)
     obs_idx_row = Observable(idx_row)
     obs_val_row = Observable(y_dens[idx_row])
     obs_dens2d = Observable(dens2d)
     obs_dens2d_hm = lift(ds -> ds', obs_dens2d)
     obs_dens2d_ft_masked = Observable(dens_ft_masked_vec[idx_rep]')
-    ft_clr = gen_ft_rgba_clr(dens_ft_amp_vec[idx_rep], dens_ft_phs_vec[idx_rep])
-    obs_dens2d_ft = Observable(gen_ft_rgba_img(dens_ft_amp_vec[idx_rep], dens_ft_phs_vec[idx_rep])')
+    ft_clr = gen_ft_rgba_clr(dens_ft_amp_vec[idx_rep], dens_ft_phs_vec[idx_rep]; rng_amp=nothing)
+    obs_dens2d_ft = Observable(gen_ft_rgba_img(dens_ft_amp_vec[idx_rep], dens_ft_phs_vec[idx_rep]; rng_amp=nothing)')
+    obs_dens2d_ft_amp = Observable(dens_ft_amp_vec[idx_rep]')
     obs_dens2d_ft_clr = Observable(ft_clr.colormap')
     ft_cmpx_mean = dens_core_ft_cmpx_mean[ib, istp]
     ft_cmpx_mean_clr = gen_ft_rgba_clr(ft_cmpx_mean)
     obs_dens2d_ft_cmpx_mean = Observable(gen_ft_rgba_img(ft_cmpx_mean)')
+    obs_dens2d_ft_cmpx_mean_amp = Observable(abs.(ft_cmpx_mean)')
     obs_dens2d_ft_cmpx_mean_clr = Observable(ft_cmpx_mean_clr.colormap')
     obs_dens2d_ft_cmpx_mean_clr_amp = Observable(collect(ft_cmpx_mean_clr.amp))
     obs_dens2d_ft_cmpx_mean_clr_phs = Observable(collect(ft_cmpx_mean_clr.phs))
+    obs_dens2d_ft_cmpx_mean_clr_amp_max = Observable(maximum(ft_cmpx_mean_clr.amp))
     obs_dens2d_ft_absl_mean = Observable(dens_core_ft_absl_mean[ib, istp]')
     ft_absl_cb_x = [0.0, 1.0]
     ft_absl_cb_y = collect(range(clrrng_ft2d_absl_mean...; length=256))
     ft_absl_cb = [y for _ in ft_absl_cb_x, y in ft_absl_cb_y]
+    obs_ft_cmpx_visible = lift(view -> view == :complex, obs_ft_cmpx_view)
+    obs_ft_amp_visible = lift(view -> view == :amp, obs_ft_cmpx_view)
     obs_colorrange = Observable((0.0, maximum(dens2d)))
     obs_clrmap = Observable(gen_theme_clrmap(istp))
     obs_clr_theme = Observable(gen_theme_clr(istp, 0.3))
@@ -506,6 +516,17 @@ function draw_profile_inspector!(
         kx_ft,
         ky_ft,
         obs_dens2d_ft;
+        visible=obs_ft_cmpx_visible,
+        rasterize=true,
+    )
+    heatmap!(
+        ax_ft,
+        kx_ft,
+        ky_ft,
+        obs_dens2d_ft_amp;
+        colormap=obs_clrmap,
+        colorrange=clrrng_ft2d_absl_mean,
+        visible=obs_ft_amp_visible,
         rasterize=true,
     )
     xlims!(ax_ft, 0, 0.5)
@@ -524,6 +545,17 @@ function draw_profile_inspector!(
         kx_ft,
         ky_ft,
         obs_dens2d_ft_cmpx_mean;
+        visible=obs_ft_cmpx_visible,
+        rasterize=true,
+    )
+    heatmap!(
+        ax_ft_cmpx_mean,
+        kx_ft,
+        ky_ft,
+        obs_dens2d_ft_cmpx_mean_amp;
+        colormap=obs_clrmap,
+        colorrange=clrrng_ft2d_absl_mean,
+        visible=obs_ft_amp_visible,
         rasterize=true,
     )
     xlims!(ax_ft_cmpx_mean, 0, 0.5)
@@ -541,9 +573,24 @@ function draw_profile_inspector!(
         obs_dens2d_ft_cmpx_mean_clr_phs,
         obs_dens2d_ft_cmpx_mean_clr_amp,
         obs_dens2d_ft_cmpx_mean_clr;
+        visible=obs_ft_cmpx_visible,
+        rasterize=true,
+    )
+    heatmap!(
+        ax_ft_cmpx_clr,
+        ft_absl_cb_x,
+        ft_absl_cb_y,
+        ft_absl_cb;
+        colormap=obs_clrmap,
+        colorrange=clrrng_ft2d_absl_mean,
+        visible=obs_ft_amp_visible,
         rasterize=true,
     )
     xlims!(ax_ft_cmpx_clr, -π, π)
+    ylims!(ax_ft_cmpx_clr, clrrng_ft2d_cmpx_mean)
+    ft_cmpx_clr_ylim_handler = on(obs_dens2d_ft_cmpx_mean_clr_amp_max) do amp_max_live
+        ylims!(ax_ft_cmpx_clr, 0, amp_max_live)
+    end
 
     ax_ft_absl_mean = Axis(
         gl_ft_live[1, 5];
@@ -731,11 +778,14 @@ function draw_profile_inspector!(
         fit_info_live = fit_peak[obs_idx_IB[], obs_idx_istp[]][obs_idx_rep[]]
         obs_dens2d[] = dens2d_live
         obs_dens2d_ft_masked[] = dens2d_ft_masked_live'
-        obs_dens2d_ft[] = gen_ft_rgba_img(dens2d_ft_amp_live, dens2d_ft_phs_live)'
+        obs_dens2d_ft[] = gen_ft_rgba_img(dens2d_ft_amp_live, dens2d_ft_phs_live; rng_amp=nothing)'
+        obs_dens2d_ft_amp[] = dens2d_ft_amp_live'
         obs_dens2d_ft_cmpx_mean[] = gen_ft_rgba_img(ft_cmpx_mean_live)'
+        obs_dens2d_ft_cmpx_mean_amp[] = abs.(ft_cmpx_mean_live)'
         obs_dens2d_ft_cmpx_mean_clr[] = ft_cmpx_mean_clr_live.colormap'
         obs_dens2d_ft_cmpx_mean_clr_amp[] = collect(ft_cmpx_mean_clr_live.amp)
         obs_dens2d_ft_cmpx_mean_clr_phs[] = collect(ft_cmpx_mean_clr_live.phs)
+        obs_dens2d_ft_cmpx_mean_clr_amp_max[] = maximum(ft_cmpx_mean_clr_live.amp)
         obs_dens2d_ft_absl_mean[] = dens_core_ft_absl_mean[obs_idx_IB[], obs_idx_istp[]]'
         obs_colorrange[] = (0.0, maximum(dens2d_live))
         obs_clrmap[] = gen_theme_clrmap(obs_idx_istp[])
@@ -793,6 +843,11 @@ function draw_profile_inspector!(
         return nothing
     end
 
+    function cycle_ft_cmpx_view!()
+        obs_ft_cmpx_view[] = obs_ft_cmpx_view[] == :complex ? :amp : :complex
+        return nothing
+    end
+
     click_handler = on(events(fig).mousebutton) do event
         if event.button == Mouse.left && event.action == Mouse.press && is_mouseinside(ax_hm.scene)
             xy_click = mouseposition(ax_hm)
@@ -828,15 +883,19 @@ function draw_profile_inspector!(
     phase_handler = on(btn_phase.clicks) do _
         cycle_phase_mode!()
     end
+    btn_ft_cmpx_view = Button(gl_ctrl_tune[3, 1]; label=lift(s -> "FT: $(s)", obs_ft_cmpx_view), height=30)
+    ft_cmpx_view_handler = on(btn_ft_cmpx_view.clicks) do _
+        cycle_ft_cmpx_view!()
+    end
     Label(
-        gl_ctrl_tune[3, 1];
+        gl_ctrl_tune[4, 1];
         text=lift(r -> @sprintf("rss ramp %.2f..%.2f", r[1], r[2]), obs_rss_rel_ramp),
         tellwidth=false,
         tellheight=true,
         halign=:center,
     )
     slider_rss_rel_ramp = IntervalSlider(
-        gl_ctrl_tune[4, 1];
+        gl_ctrl_tune[5, 1];
         range=0.0:0.01:2.0,
         startvalues=obs_rss_rel_ramp[],
     )
@@ -874,11 +933,12 @@ function draw_profile_inspector!(
         button_handlers,
         hue_handler,
         phase_handler,
+        ft_cmpx_view_handler,
         rss_rel_ramp_handler,
+        ft_cmpx_clr_ylim_handler,
     )
 end
 ##
-
 function draw_phase_distro_table!(
     fig::Figure,
     x_dens::AbstractVector{<:Real},
@@ -909,6 +969,7 @@ function draw_phase_distro_table!(
     polar_alpha_rss_bad::Real,
     rss_rel_ramp::Tuple{<:Real,<:Real},
     clrrng_ft2d_absl_mean::Tuple{<:Real,<:Real},
+    clrrng_ft2d_cmpx_mean::Tuple{<:Real,<:Real},
     markersize_fit::Real,
     cohr::AbstractArray{<:NamedTuple},
 )
@@ -1024,14 +1085,15 @@ function draw_phase_distro_table!(
         return (; theta, radius)
     end
     mask_sidepeak = [sqrt(x^2 + y^2) > 0.1 for y in ky_ft, x in kx_ft]
-    gen_ft_rgba_table(ft::AbstractMatrix{<:Complex}) = begin
+    gen_ft_rgba_table(ft::AbstractMatrix{<:Complex}; rng_amp=clrrng_ft2d_cmpx_mean) = begin
         amp = abs.(ft)
         phs = angle.(ft)
-        amp_max = max(maximum(vec(amp[mask_sidepeak])), eps(Float64))
+        # amp_max = max(maximum(vec(amp[mask_sidepeak])), eps(Float64))
+        amp_max = rng_amp[2] / 2
         rgba = shader_cmpx.(amp ./ amp_max, phs; prescale=ampl_prescaler)
         phs_sample = range(-π, π, 256)
-        amp_sample = range(0, 2amp_max, 256)
-        clrmp = [shader_cmpx.(a, φ; prescale=ampl_prescaler) for a in amp_sample, φ in phs_sample]
+        amp_sample = range(rng_amp..., 256)
+        clrmp = [shader_cmpx.(a ./ amp_max, φ; prescale=ampl_prescaler) for a in amp_sample, φ in phs_sample]
         return (rgba, (; amp=collect(amp_sample), phs=collect(phs_sample), colormap=clrmp))
     end
     gen_ft_rgba_table_img(ft::AbstractMatrix{<:Complex}) = first(gen_ft_rgba_table(ft))
@@ -1049,8 +1111,9 @@ function draw_phase_distro_table!(
     idx_col_peak = 7
     idx_col_lambda_hist = 8
     idx_col_ft_cmpx = 9
-    idx_col_ft_absl = 10
-    idx_col_IB_right = 11
+    idx_col_ft_cmpx_amp = 10
+    idx_col_ft_absl = 11
+    idx_col_IB_right = 12
     lambda_hist_min, lambda_hist_max = fit_lower_modl[4], fit_upper_modl[4]
     lambda_hist_bins = range(lambda_hist_min, lambda_hist_max; length=24)
 
@@ -1078,6 +1141,7 @@ function draw_phase_distro_table!(
     Label(fig[1, idx_col_peak]; text="peak position", tellwidth=false, tellheight=true, halign=:center, font=:bold)
     Label(fig[1, idx_col_lambda_hist]; text="λ hist", tellwidth=false, tellheight=true, halign=:center, font=:bold)
     Label(fig[1, idx_col_ft_cmpx]; text="mean FT complex", tellwidth=false, tellheight=true, halign=:center, font=:bold)
+    Label(fig[1, idx_col_ft_cmpx_amp]; text="mean FT amp", tellwidth=false, tellheight=true, halign=:center, font=:bold)
     Label(fig[1, idx_col_ft_absl]; text="mean |FT|", tellwidth=false, tellheight=true, halign=:center, font=:bold)
     Label(fig[1, idx_col_IB_right]; text="IB", tellwidth=true, tellheight=true, halign=:left, font=:bold)
     Box(
@@ -1175,6 +1239,17 @@ function draw_phase_distro_table!(
                     gen_ft_rgba_table_img(dens_core_ft_cmpx_mean[idx_IB, idx_istp])';
                     rasterize=true,
                 )
+            elseif kind == :complex_amp
+                clrmap = gen_clrmap_solo(hue_theme_istp[string(val_istp[idx_istp])]; alpha_base=0.2, thres_alpha=0.1)
+                heatmap!(
+                    ax_ft,
+                    kx_ft,
+                    ky_ft,
+                    abs.(dens_core_ft_cmpx_mean[idx_IB, idx_istp])';
+                    colormap=clrmap,
+                    colorrange=clrrng_ft2d_absl_mean,
+                    rasterize=true,
+                )
             elseif kind == :absolute
                 clrmap = gen_clrmap_solo(hue_theme_istp[string(val_istp[idx_istp])]; alpha_base=0.2, thres_alpha=0.1)
                 heatmap!(
@@ -1191,7 +1266,6 @@ function draw_phase_distro_table!(
             end
             xlims!(ax_ft, extrema(kx_ft))
             ylims!(ax_ft, extrema(ky_ft))
-            hidexdecorations!(ax_ft; grid=false)
             hideydecorations!(ax_ft; grid=false)
         end
         if kind == :complex
@@ -1210,8 +1284,8 @@ function draw_phase_distro_table!(
                 rasterize=true,
             )
             xlims!(ax_ft_clr, -π, π)
-            hidexdecorations!(ax_ft_clr; grid=false, label=false, ticklabels=false, ticks=false)
-            hideydecorations!(ax_ft_clr; grid=false, label=false, ticklabels=true, ticks=true)
+            ylims!(ax_ft_clr, clrrng_ft2d_cmpx_mean)
+            ax_ft_clr.xticks = ([-π, 0, π], ["-π", "0", "+π"])
             colsize!(gl_ft, n_istp + 1, Fixed(80))
         elseif kind == :absolute
             gl_ft_cb = GridLayout(gl_ft[2, n_istp + 1])
@@ -1231,11 +1305,13 @@ function draw_phase_distro_table!(
                     colorrange=clrrng_ft2d_absl_mean,
                     rasterize=true,
                 )
-                hidexdecorations!(ax_ft_cb; grid=false)
+                hidexdecorations!(ax_ft_cb)
                 hideydecorations!(ax_ft_cb; grid=false, label=idx_istp != 1, ticklabels=idx_istp != 1, ticks=idx_istp != 1)
             end
             colgap!(gl_ft_cb, 2)
             colsize!(gl_ft, n_istp + 1, Fixed(78))
+        elseif kind == :complex_amp
+            colgap!(gl_ft, 4)
         end
         return gl_ft
     end
@@ -1261,7 +1337,6 @@ function draw_phase_distro_table!(
             vspan!(ax_dens, x_fit_peak_min, x_fit_peak_max; color=clr_fit_peak_span)
             vspan!(ax_dens, x_fit_modl_min, x_fit_modl_max; color=clr_fit_modl_span)
             heatmap!(ax_dens, x_dens, y_dens, ntfr2d_mean[idx_IB, idx_istp]'; colormap=clrmap, colorrange=colorrange_dens, rasterize=true)
-            hidexdecorations!(ax_dens; label=!is_bottom_row, ticklabels=!is_bottom_row, ticks=!is_bottom_row, grid=false)
             hideydecorations!(ax_dens; label=idx_istp != 1, ticklabels=true, ticks=true, grid=false)
 
         end
@@ -1285,7 +1360,6 @@ function draw_phase_distro_table!(
         end
         xlims!(ax_peak, 1, n_rep)
         ylims!(ax_peak, center_ylim)
-        !is_bottom_row && hidexdecorations!(ax_peak; grid=false)
         hideydecorations!(ax_peak; label=false, ticklabels=false, ticks=false, grid=false)
 
         gl_lambda_hist = GridLayout(fig[row, idx_col_lambda_hist])
@@ -1312,6 +1386,7 @@ function draw_phase_distro_table!(
         hideydecorations!(ax_lambda_hist; label=false, ticklabels=false, ticks=false, grid=false)
 
         draw_ft_group!(row, idx_col_ft_cmpx, idx_IB, @sprintf("IB=%.3f A", IB), :complex)
+        draw_ft_group!(row, idx_col_ft_cmpx_amp, idx_IB, "", :complex_amp)
         draw_ft_group!(row, idx_col_ft_absl, idx_IB, "", :absolute)
 
         rowsize!(fig.layout, row, Fixed(360))
@@ -1326,6 +1401,7 @@ function draw_phase_distro_table!(
     colsize!(fig.layout, idx_col_peak, Fixed(370))
     colsize!(fig.layout, idx_col_lambda_hist, Fixed(310))
     colsize!(fig.layout, idx_col_ft_cmpx, Fixed(560))
+    colsize!(fig.layout, idx_col_ft_cmpx_amp, Fixed(470))
     colsize!(fig.layout, idx_col_ft_absl, Fixed(560))
     colsize!(fig.layout, idx_col_IB_right, Fixed(55))
     colgap!(fig.layout, idx_col_dens, 14)
@@ -1338,12 +1414,14 @@ function draw_phase_distro_table!(
     colgap!(fig.layout, idx_col_peak, 14)
     colgap!(fig.layout, idx_col_lambda_hist, 14)
     colgap!(fig.layout, idx_col_ft_cmpx, 10)
+    colgap!(fig.layout, idx_col_ft_cmpx_amp, 10)
     colgap!(fig.layout, idx_col_ft_absl, 14)
     rowgap!(fig.layout, 0)
     resize_to_layout!(fig)
     return fig
 end
 
+##
 println("  [$tag] loading densities from $path_data")
 dens_raw_fmt = load_density_payload(path_data, val_istp)
 n_IB, n_istp, n_rep = size(dens_raw_fmt)
@@ -1460,7 +1538,7 @@ dens_core_ft_cmpx = map(dens_core_ft_masked) do dens_vec_masked
         @pipe dens_masked |>
             ifftshift |> fft |> fftshift |>
             _[mask_ft_ky, mask_ft_kx] |> copy |>
-            ft2d -> ft2d ./ sum(abs.(ft2d)) .* prod(step_ft) ./ 4
+            ft2d -> ft2d ./ (sum(abs.(ft2d)) .* prod(step_ft) ./ 4)
     end
 end
 dens_core_ft_amp = map(ft_vec -> map(u -> abs.(u), ft_vec), dens_core_ft_cmpx)
@@ -1471,6 +1549,10 @@ end
 dens_core_ft_absl_mean = map(dens_core_ft_cmpx) do ft2d_cmpx_vec
     reduce(+, map(ft -> abs.(ft), ft2d_cmpx_vec)) ./ length(ft2d_cmpx_vec)
 end
+mask_sidepeak = [sqrt((x/0.12)^2 + (y/0.12)^2) > 1 for y in ky_ft, x in kx_ft]
+mask_sidepeak = [sqrt(((abs(x)-0.2)/0.08)^2 + (y/0.08)^2) < 1 for y in ky_ft, x in kx_ft]
+sum_absl_mean2d = @pipe dens_core_ft_cmpx_mean |> map(u -> abs.(u) |> w -> sum(w[mask_sidepeak]) / sum(w), _)
+sum_mean_absl2d = @pipe dens_core_ft_absl_mean |> map(u ->       u |> w -> sum(w[mask_sidepeak]) / sum(w), _)
 
 fit_peak = Array{Vector{NamedTuple}}(undef, n_IB, n_istp)
 for idx_IB in 1:n_IB, idx_istp in 1:n_istp
@@ -1610,22 +1692,34 @@ end
 #     (; ampl_modl, moment_length=moment_circ[1], moment_angel=moment_circ[2])
 # end
 
-mask_sidepeak = [sqrt((x/0.12)^2 + (y/0.12)^2) > 1 for y in ky_ft, x in kx_ft]
-sum_absl_mean2d = @pipe dens_core_ft_cmpx_mean |> map(u -> abs.(u)[mask_sidepeak] |> sum, _)
-sum_mean_absl2d = @pipe dens_core_ft_absl_mean |> map(u -> u[mask_sidepeak] |> sum, _)
-
-fig_cohr = Figure()
-axs_cohr = Axis(fig_cohr[1, 1])
-axs_modl = Axis(fig_cohr[2, 1])
-for (i, istp) in enumerate(["162", "164"])
-    lines!(axs_cohr, val_IB_ref, sum_absl_mean2d[:,i]; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
-    lines!(axs_modl, val_IB_ref, sum_mean_absl2d[:,i]; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
-end
 
 # for (i, istp) in enumerate(["162", "164"])
 #     lines!(axs_cohr, val_IB_ref, getfield.(cohr[:, i], :moment_length); color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
 #     lines!(axs_modl, val_IB_ref, getfield.(cohr[:, i], :ampl_modl);     color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
 # end
+if !@isdefined(cohr)
+    cohr = map(fit_peak) do fit_reps
+        ids_good = findall(f -> f.success && isfinite(f.fit_modl.params.φ) && isfinite(f.fit_modl.params.M), fit_reps)
+        if isempty(ids_good)
+            (; ampl_modl=NaN, moment_length=0.0, moment_angel=0.0)
+        else
+            φ = [fit_reps[idx].fit_modl.params.φ for idx in ids_good]
+            weight = [abs(fit_reps[idx].fit_modl.params.M) for idx in ids_good]
+            weight_sum = sum(weight)
+            if weight_sum <= eps(Float64)
+                (; ampl_modl=0.0, moment_length=0.0, moment_angel=0.0)
+            else
+                moment_x = sum(w * cos(θ) for (θ, w) in zip(φ, weight))
+                moment_y = sum(w * sin(θ) for (θ, w) in zip(φ, weight))
+                (;
+                    ampl_modl=mean(weight),
+                    moment_length=hypot(moment_x, moment_y) / weight_sum,
+                    moment_angel=atan(moment_y, moment_x),
+                )
+            end
+        end
+    end
+end
 
 ntfr2d_mean = map(dens_core) do ds
     isempty(ds) && throw(ArgumentError("No valid densities available for a condition."))
@@ -1636,7 +1730,8 @@ end
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 ampl_prescaler = a -> a^2 * 0.4
-clrrng_ft2d_absl_mean = (0, 0.2)
+clrrng_ft2d_absl_mean = (0, 50)
+clrrng_ft2d_cmpx_mean = (0, 30)
 fit_config = (;
     tag,
     path_data,
@@ -1711,6 +1806,7 @@ draw_phase_distro_table!(
     polar_alpha_rss_bad,
     rss_rel_ramp,
     clrrng_ft2d_absl_mean,
+    clrrng_ft2d_cmpx_mean,
     markersize_fit,
     cohr,
 )
@@ -1760,9 +1856,22 @@ profile_axes = draw_profile_inspector!(
     polar_alpha_rss_bad,
     rss_rel_ramp,
     clrrng_ft2d_absl_mean,
+    clrrng_ft2d_cmpx_mean,
     markersize_fit,
     markersize_fit_selected,
     x_center_px0,
     cohr,
 )
 display(fig_live)
+
+fig_cohr = Figure()
+axs_cohr = Axis(fig_cohr[1, 1]; title="coherent 2D modulation spectral weight within mask")
+axs_modl = Axis(fig_cohr[2, 1]; title="averaged 2D modulation spectral weight within mask")
+for (i, istp) in enumerate(["162", "164"])
+    lines!(axs_cohr, val_IB_ref, sum_absl_mean2d[:,i]; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
+    lines!(axs_modl, val_IB_ref, sum_mean_absl2d[:,i]; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
+end
+for ext in ("png", "pdf")
+    save(joinpath(path_output, "$filename_plot_cohr_modl.$ext"), fig_cohr; backend=CairoMakie)
+end
+println("  [$tag] saved phase distro table to $(joinpath(path_output, "$filename_plot_cohr_modl.png"))")
