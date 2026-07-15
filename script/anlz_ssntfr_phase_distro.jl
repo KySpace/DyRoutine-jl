@@ -18,14 +18,9 @@ include(joinpath(@__DIR__, "..", "src", "modlntfr.jl"))
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
 path_data = joinpath(path_root, "0204_interference", "result", "data.h5")
 
-# commit 3fac8e26d92906b0bcbafb3385246222f7cad9eb
-# The allow to move the center in y, and fit region is shifted
-# Having a narrow y range to average from, a density max blob near the center often affects the
-# fitting of modulation, and acts as a fake peak. This may also be the reason for the perculiar
-# correlation between the phase and the modulation wavelength: the local blob tends to be appearing on the local right
-# of the general density peak. But this doesn't explain why the short-wavelengths phases concetrates on the opposite side.
-# We now try to alleviate this effect by increasing the range in y.
-path_output = joinpath(path_root, "AnlzRoutine", "40.MeanAbsl2D")
+# commit 57d2e69f9017be9957b38674e01e6fbc3aae013d
+# Slightly larger width but with more tukey parameter
+path_output = joinpath(path_root, "AnlzRoutine", "42.MeanAbsl2D.Narrow")
 path_fit_jld2 = joinpath(path_output, "SSNTFR_phase_distro_fit.jld2")
 
 tag = "SSNTFR"
@@ -52,7 +47,8 @@ val_IB_ref = [
     5.342,
 ]
 smwh = (150, 150)
-smwh_dens_ft = (80, 80)
+smwh_dens_ft = (50, 50)
+alpha_tukey = (0.2, 1.0)
 mag = 22.06
 pixsz = 6.5
 bin = 1
@@ -1510,8 +1506,8 @@ gen_freq_shifted(n::Integer, step::Real) =
     collect((-(n ÷ 2)):(n ÷ 2)) ./ (n * step)
 idx_ft_x_center = argmin(abs.(x_dens))
 idx_ft_y_center = argmin(abs.(y_dens))
-idxs_ft_x = (idx_ft_x_center - smwh_dens_ft[2]):(idx_ft_x_center + smwh_dens_ft[2])
-idxs_ft_y = (idx_ft_y_center - smwh_dens_ft[1]):(idx_ft_y_center + smwh_dens_ft[1])
+idxs_ft_x = (idx_ft_x_center - smwh_dens_ft[1]):(idx_ft_x_center + smwh_dens_ft[1])
+idxs_ft_y = (idx_ft_y_center - smwh_dens_ft[2]):(idx_ft_y_center + smwh_dens_ft[2])
 first(idxs_ft_x) >= firstindex(x_dens) && last(idxs_ft_x) <= lastindex(x_dens) || throw(ArgumentError(
     "smwh_dens_ft=$smwh_dens_ft exceeds x_dens bounds around x=0.",
 ))
@@ -1526,7 +1522,7 @@ kx_ft = kx_ft_full[mask_ft_kx]
 ky_ft = ky_ft_full[mask_ft_ky]
 x_dens_ft = x_dens[idxs_ft_x]
 y_dens_ft = y_dens[idxs_ft_y]
-tukey_dens_ft = tukey1d(smwh_dens_ft[1]; alpha=0.8) * tukey1d(smwh_dens_ft[2]; alpha=0.8)'
+tukey_dens_ft = tukey1d(smwh_dens_ft[2]; alpha=alpha_tukey[2]) * tukey1d(smwh_dens_ft[1]; alpha=alpha_tukey[1])'
 
 dens_core_ft_masked = map(dens_core) do dens_vec
     map(dens_vec) do dens2d
@@ -1731,7 +1727,7 @@ isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 ampl_prescaler = a -> a^2 * 0.4
 clrrng_ft2d_absl_mean = (0, 50)
-clrrng_ft2d_cmpx_mean = (0, 30)
+clrrng_ft2d_cmpx_mean = (0, 50)
 fit_config = (;
     tag,
     path_data,
