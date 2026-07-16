@@ -19,8 +19,8 @@ path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
 path_data = joinpath(path_root, "0204_interference", "result", "data.h5")
 
 # commit 57d2e69f9017be9957b38674e01e6fbc3aae013d
-# Slightly larger width but with more tukey parameter
-path_output = joinpath(path_root, "AnlzRoutine", "42.MeanAbsl2D.Narrow")
+# Try masking with the abls mean sidepeak
+path_output = joinpath(path_root, "AnlzRoutine", "43.MeanAbsl2D.Narrow")
 path_fit_jld2 = joinpath(path_output, "SSNTFR_phase_distro_fit.jld2")
 
 tag = "SSNTFR"
@@ -47,8 +47,8 @@ val_IB_ref = [
     5.342,
 ]
 smwh = (150, 150)
-smwh_dens_ft = (50, 50)
-alpha_tukey = (0.2, 1.0)
+smwh_dens_ft = (80, 80)
+alpha_tukey = (1.0, 1.0)
 mag = 22.06
 pixsz = 6.5
 bin = 1
@@ -86,6 +86,10 @@ polar_alpha_rss_bad = 0.1
 rss_rel_ramp = (0.4, 0.5)
 markersize_fit = 7
 markersize_fit_selected = 13
+
+vis_cmpx_ampl_prescaler = a -> a^2 * 0.4
+clrrng_ft2d_absl_mean = (0, 50)
+clrrng_ft2d_cmpx_mean = (0, 30)
 
 # live inspector selections
 ib, istp, idx_rep = (5, 1, 1)
@@ -354,10 +358,10 @@ function draw_profile_inspector!(
         amp_max = isnothing(rng_amp) ? 
             max(amp[mask_sidepeak] |> vec |> maximum, eps(Float64)) :
             rng_amp[2] / 2
-        rgba = shader_cmpx.(amp ./ amp_max, phs; prescale=ampl_prescaler)
+        rgba = shader_cmpx.(amp ./ amp_max, phs; prescale=vis_cmpx_ampl_prescaler)
         phs_sample = range(-π, π, 256)
         amp_sample = range(0, 2amp_max, 256)
-        clrmp = [shader_cmpx.(a ./ amp_max, φ; prescale=ampl_prescaler) for a in amp_sample, φ in phs_sample]
+        clrmp = [shader_cmpx.(a ./ amp_max, φ; prescale=vis_cmpx_ampl_prescaler) for a in amp_sample, φ in phs_sample]
         (rgba, (;amp=amp_sample, phs=phs_sample, colormap=clrmp))
     end
     gen_ft_rgba(ft::AbstractMatrix{<:Complex}; kwargs...) = gen_ft_rgba(abs.(ft), angle.(ft); kwargs...)
@@ -1086,10 +1090,10 @@ function draw_phase_distro_table!(
         phs = angle.(ft)
         # amp_max = max(maximum(vec(amp[mask_sidepeak])), eps(Float64))
         amp_max = rng_amp[2] / 2
-        rgba = shader_cmpx.(amp ./ amp_max, phs; prescale=ampl_prescaler)
+        rgba = shader_cmpx.(amp ./ amp_max, phs; prescale=vis_cmpx_ampl_prescaler)
         phs_sample = range(-π, π, 256)
         amp_sample = range(rng_amp..., 256)
-        clrmp = [shader_cmpx.(a ./ amp_max, φ; prescale=ampl_prescaler) for a in amp_sample, φ in phs_sample]
+        clrmp = [shader_cmpx.(a ./ amp_max, φ; prescale=vis_cmpx_ampl_prescaler) for a in amp_sample, φ in phs_sample]
         return (rgba, (; amp=collect(amp_sample), phs=collect(phs_sample), colormap=clrmp))
     end
     gen_ft_rgba_table_img(ft::AbstractMatrix{<:Complex}) = first(gen_ft_rgba_table(ft))
@@ -1545,8 +1549,15 @@ end
 dens_core_ft_absl_mean = map(dens_core_ft_cmpx) do ft2d_cmpx_vec
     reduce(+, map(ft -> abs.(ft), ft2d_cmpx_vec)) ./ length(ft2d_cmpx_vec)
 end
-mask_sidepeak = [sqrt((x/0.12)^2 + (y/0.12)^2) > 1 for y in ky_ft, x in kx_ft]
-mask_sidepeak = [sqrt(((abs(x)-0.2)/0.08)^2 + (y/0.08)^2) < 1 for y in ky_ft, x in kx_ft]
+# mask_sidepeak = [sqrt((x/0.12)^2 + (y/0.12)^2) > 1 for y in ky_ft, x in kx_ft]
+# mask_sidepeak = [sqrt(((abs(x)-0.2)/0.08)^2 + (y/0.08)^2) < 1 for y in ky_ft, x in kx_ft]
+mask_sidepeak = begin 
+    arg_seed = argmin([hypot(y, x .- 0.2) for y in ky_ft, x in kx_ft])
+    ft_mean = dens_core_ft_absl_mean |> mean
+    mask = ft_mean |> ft -> ft .>= (0.45 * ft[arg_seed])
+    labels = label_components(mask, trues(3, 3))
+    labels .== labels[arg_seed]
+end
 sum_absl_mean2d = @pipe dens_core_ft_cmpx_mean |> map(u -> abs.(u) |> w -> sum(w[mask_sidepeak]) / sum(w), _)
 sum_mean_absl2d = @pipe dens_core_ft_absl_mean |> map(u ->       u |> w -> sum(w[mask_sidepeak]) / sum(w), _)
 
@@ -1725,9 +1736,7 @@ end
 
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
-ampl_prescaler = a -> a^2 * 0.4
-clrrng_ft2d_absl_mean = (0, 50)
-clrrng_ft2d_cmpx_mean = (0, 50)
+
 fit_config = (;
     tag,
     path_data,

@@ -1,0 +1,52 @@
+using ImageMorphology
+ib, istp = (4, 1)
+# ft_eg = abs.(dens_core_ft_cmpx_mean[ib, istp])
+clrmap = gen_clrmap_solo(hue_theme_istp[string(val_istp[istp])]; alpha_base=0.2, thres_alpha=0.1)
+# 
+# fig = Figure()
+# axs_2d = Axis(fig[1,1]; aspect=DataAspect(), width=200, height=150)
+# axs_1d = Axis(fig[2,1]; width=200, height=150)
+# heatmap!(axs_2d, kx_ft, ky_ft, ft_eg'; colorrange=clrrng_ft2d_cmpx_mean, colormap=clrmap)
+# lines!(axs_1d, kx_ft, vec(mean(ft_eg; dims=1)))
+# ylims!(axs_1d, (0, 10))
+# linkxaxes!(axs_1d, axs_2d)
+# fig |> display
+
+ft_eg = abs.(ft2d_absl_mean[ib, istp])
+ft_eg_x = abs.(ft2d_cmpx_mean[ib, istp])
+
+
+mask_sidepeak = begin 
+    arg_seed = argmin([hypot(y, x .- 0) for y in ky_ft, x in kx_ft])
+    ft_mean = dens_core_ft_absl_mean |> mean
+    mask = ft_mean |> ft -> ft .>= (0.023 * ft[arg_seed])
+    labels = label_components(mask, Bool[
+    0 1 0
+    1 1 1
+    0 1 0
+    ])
+    labels .!= labels[arg_seed]
+end
+
+function to_masked_clr(dens, mask, hue; sat_max=0.24, max=16, thres_alpha=0.1, l_max=1.0, l_min=0.0, alpha_base=0.1)
+    size(dens) == size(mask) || throw(DimensionMismatch("dens size $(size(dens)) does not match mask size $(size(mask))."))
+    dens_norm = clamp.(dens, 0, max) ./ max
+    alpha = (n, m) -> m ? (thres_alpha <= 0 ? (n > 0 ? 1.0 : alpha_base) : (n > thres_alpha ? 1.0 : (n / thres_alpha * (1 - alpha_base) + alpha_base))) : 0.0
+    shader = (n, m) -> Oklch(l_max - (l_max - l_min) * abs(n), sat_max * abs(n), hue) |> c -> RGBAf(c, alpha(n, m))
+    return [shader(dens_norm[x, y], mask[x, y]) for x in 1:size(dens, 1), y in 1:size(dens, 2)]
+end
+
+fig = Figure()
+axs_2d = Axis(fig[1,1]; aspect=DataAspect(), width=200, height=150)
+axs_mask = Axis(fig[2,1]; aspect=DataAspect(), width=200, height=150)
+cohr_masked = to_masked_clr(ft_eg_x, mask_sidepeak, hue_theme_istp[string(val_istp[istp])], max=30)
+cohr_nonmasked = to_masked_clr(ft_eg_x, .!mask_sidepeak, 0; sat_max=0.0, max=30)
+
+inco_masked = to_masked_clr(ft_eg, mask_sidepeak, hue_theme_istp[string(val_istp[istp])], max=80)
+inco_nonmasked = to_masked_clr(ft_eg, .!mask_sidepeak, 0; sat_max=0.0, max=80)
+heatmap!(axs_2d, kx_ft, ky_ft, inco_nonmasked')
+heatmap!(axs_2d, kx_ft, ky_ft, inco_masked')
+heatmap!(axs_mask, kx_ft, ky_ft, cohr_nonmasked')
+heatmap!(axs_mask, kx_ft, ky_ft, cohr_masked')
+fig |> display
+(ft_eg_x[mask_sidepeak] |> sum) / (ft_eg_x |> sum)
