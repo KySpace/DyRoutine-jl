@@ -9,6 +9,8 @@ using LsqFit
 using Printf
 using Statistics
 import CairoMakie
+using ImageSegmentation
+
 
 GLMakie.activate!()
 
@@ -20,9 +22,9 @@ path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
 path_data = joinpath(path_root, "0204_interference", "result", "data.h5")
 
 # commit 57d2e69f9017be9957b38674e01e6fbc3aae013d
-# Form FT1D profile after FT2D
-# Adjusting the selected area
-path_output = joinpath(path_root, "AnlzRoutine", "45.MeanAbsl2D.Mask")
+# different sidepeak masks for different conditions with watershed
+# narrower sum region
+path_output = joinpath(path_root, "AnlzRoutine", "48.MeanAbsl2D.VaryMask.Narrow")
 path_fit_jld2 = joinpath(path_output, "SSNTFR_ft2d_fit.jld2")
 
 tag = "SSNTFR"
@@ -61,7 +63,7 @@ vis_cmpx_ampl_prescaler = a -> a^vis_cmpx_ampl_prescaler_power * vis_cmpx_ampl_p
 clrrng_ft2d_absl_mean = (0, 50)
 clrrng_ft2d_cmpx_mean = (0, 30)
 use_mask_sidepeak = true
-ky_max_modl = 0.1
+ky_max_modl = 0.05
 
 # reconstructed envelope and tail-removal settings
 r_tail_min_profile = 20.0
@@ -320,12 +322,12 @@ end
 function calc_prfl_modl1d(
     ft2d_absl::AbstractMatrix{<:Real},
     mask_modl_ft_ky;
-    mask_sidepeak=nothing,
+    mask=nothing,
 )
-    isnothing(mask_sidepeak) || size(ft2d_absl) == size(mask_sidepeak) || throw(DimensionMismatch(
-        "ft2d size $(size(ft2d_absl)) must match mask size $(size(mask_sidepeak)).",
+    isnothing(mask) || size(ft2d_absl) == size(mask) || throw(DimensionMismatch(
+        "ft2d size $(size(ft2d_absl)) must match mask size $(size(mask)).",
     ))
-    ft2d_selected = isnothing(mask_sidepeak) ? ft2d_absl : ft2d_absl .* mask_sidepeak
+    ft2d_selected = isnothing(mask) ? ft2d_absl : ft2d_absl .* mask
     prfl_selected = vec(sum(@view(ft2d_selected[mask_modl_ft_ky, :]); dims=1))
     prfl_unmasked = vec(sum(@view(ft2d_absl[mask_modl_ft_ky, :]); dims=1))
     norm_unmasked = sum(prfl_unmasked[2:end]) + prfl_unmasked[1] / 2
@@ -345,29 +347,28 @@ ft2d_absl_mean = map(ft2d_cmpx) do ft2d_cmpx_reps
     reduce(+, map(ft -> abs.(ft), ft2d_cmpx_reps)) ./ length(ft2d_cmpx_reps)
 end
 
-mask_sidepeak = begin
-    arg_seed = argmin([hypot(y, x .- 0) for y in ky_ft, x in kx_ft])
-    ft_mean = reduce(+, vec(ft2d_absl_mean)) ./ length(ft2d_absl_mean)
-    mask = ft_mean |> ft -> ft .>= (0.023 * ft[arg_seed])
-    labels = label_components(mask, Bool[
-    0 1 0
-    1 1 1
-    0 1 0
-    ])
-    labels .!= labels[arg_seed]
-end
+mask_sidepeak = [ begin
+        arg_seed_main = argmin([hypot(y, x .- 0) for y in ky_ft, x in kx_ft])
+        arg_seed_side = argmin([hypot(y, x .- 0.2) for y in ky_ft, x in kx_ft])
+        ft_this = ft2d_absl_mean[ib, istp]
+        markers = zeros(Int, size(ft_this)); markers[arg_seed_main] = 1; markers[arg_seed_side] = 2
+        seg = watershed(.-ft_this, markers)
+        labels_map(seg) .== 2
+    end
+    for ib in 1:length(val_IB), istp in 1:length(val_istp)
+    ]
 
-prfl_modl1d_cohr_unmasked = map(ft2d_cmpx_mean) do ft2d
+prfl_modl1d_cohr_unmasked = map(enumerate(ft2d_cmpx_mean)) do (ids, ft2d)
     calc_prfl_modl1d(abs.(ft2d), mask_modl_ft_ky)
 end
-prfl_modl1d_inco_unmasked = map(ft2d_absl_mean) do ft2d
+prfl_modl1d_inco_unmasked = map(enumerate(ft2d_absl_mean)) do (ids, ft2d)
     calc_prfl_modl1d(ft2d, mask_modl_ft_ky)
 end
-prfl_modl1d_cohr_masked = map(ft2d_cmpx_mean) do ft2d
-    calc_prfl_modl1d(abs.(ft2d), mask_modl_ft_ky; mask_sidepeak=mask_sidepeak)
+prfl_modl1d_cohr_masked = map(enumerate(ft2d_cmpx_mean)) do (ids, ft2d)
+    calc_prfl_modl1d(abs.(ft2d), mask_modl_ft_ky; mask=mask_sidepeak[ids])
 end
-prfl_modl1d_inco_masked = map(ft2d_absl_mean) do ft2d
-    calc_prfl_modl1d(ft2d, mask_modl_ft_ky; mask_sidepeak=mask_sidepeak)
+prfl_modl1d_inco_masked = map(enumerate(ft2d_absl_mean)) do (ids, ft2d)
+    calc_prfl_modl1d(ft2d, mask_modl_ft_ky; mask=mask_sidepeak[ids])
 end
 prfl_modl1d_cohr = use_mask_sidepeak ? prfl_modl1d_cohr_masked : prfl_modl1d_cohr_unmasked
 prfl_modl1d_inco = use_mask_sidepeak ? prfl_modl1d_inco_masked : prfl_modl1d_inco_unmasked
@@ -375,8 +376,8 @@ prfl_modl1d_inco = use_mask_sidepeak ? prfl_modl1d_inco_masked : prfl_modl1d_inc
 ft2d_reconstr = map(ntfr2d_reconstr) do dens2d
     calc_ft2d_cmpx(dens2d, idxs_ft_y, idxs_ft_x, tukey_dens_ft, mask_ft_ky, mask_ft_kx, step_ft)
 end
-prfl_modl_fit = map(ft2d_reconstr) do ft2d
-    calc_prfl_modl1d(abs.(ft2d), mask_modl_ft_ky; mask_sidepeak=use_mask_sidepeak ? mask_sidepeak : nothing)
+prfl_modl_fit = map(enumerate(ft2d_reconstr)) do (ids, ft2d)
+    calc_prfl_modl1d(abs.(ft2d), mask_modl_ft_ky; mask=use_mask_sidepeak ? mask_sidepeak[ids] : nothing)
 end
 prfl_modl_fit_fmt = Array{Float64}(undef, length(kx_ft), n_istp, n_IB)
 prfl_modl1d_cohr_fmt = similar(prfl_modl_fit_fmt)
@@ -415,8 +416,8 @@ fit_config = (;
     kx_max_scale_reconstr, use_mask_sidepeak, ky_max_modl,
     range_kx_ft_plot, range_ky_ft_plot, lims_kx_ft_plot, lims_ky_ft_plot,
 )
-JLD2.@save path_fit_jld2 fit_config x_dens y_dens x_dens_ft y_dens_ft kx_ft ky_ft kx_ft_plot ky_ft_plot val_IB val_istp num xy_center_nvlp_px xy_center_shift mask_valid_duet ids_rep_valid dens_core ntfr2d_mean fit_envelope ntfr2d_reconstr mask_sidepeak ft2d_cmpx ft2d_cmpx_mean ft2d_absl_mean prfl_modl_fit prfl_modl1d_cohr_unmasked prfl_modl1d_inco_unmasked prfl_modl1d_cohr_masked prfl_modl1d_inco_masked prfl_modl1d_cohr prfl_modl1d_inco prfl_modl1d_cohr_tailess prfl_modl1d_inco_tailess prfl_modl_fit_scaled_cohr prfl_modl_fit_scaled_inco
-println("  [$tag] saved FT data to $path_fit_jld2")
+# JLD2.@save path_fit_jld2 fit_config x_dens y_dens x_dens_ft y_dens_ft kx_ft ky_ft kx_ft_plot ky_ft_plot val_IB val_istp num xy_center_nvlp_px xy_center_shift mask_valid_duet ids_rep_valid dens_core ntfr2d_mean fit_envelope ntfr2d_reconstr mask_sidepeak ft2d_cmpx ft2d_cmpx_mean ft2d_absl_mean prfl_modl_fit prfl_modl1d_cohr_unmasked prfl_modl1d_inco_unmasked prfl_modl1d_cohr_masked prfl_modl1d_inco_masked prfl_modl1d_cohr prfl_modl1d_inco prfl_modl1d_cohr_tailess prfl_modl1d_inco_tailess prfl_modl_fit_scaled_cohr prfl_modl_fit_scaled_inco
+# println("  [$tag] saved FT data to $path_fit_jld2")
 
 function to_masked_clr(
     dens::AbstractMatrix{<:Real},
@@ -436,17 +437,17 @@ function to_masked_clr(
     return [shader(dens_norm[x, y], mask[x, y]) for x in axes(dens, 1), y in axes(dens, 2)]
 end
 
-gen_amp_masked_clr(dens, idx_istp; max=clrrng_ft2d_absl_mean[2]) = (
-    to_masked_clr(dens, .!mask_sidepeak, 0; sat_max=0.0, max),
-    to_masked_clr(dens, mask_sidepeak, hue_theme_istp[string(val_istp[idx_istp])]; max),
+gen_amp_masked_clr(dens, idx_istp, mask; max=clrrng_ft2d_absl_mean[2]) = (
+    to_masked_clr(dens, .!mask, 0; sat_max=0.0, max),
+    to_masked_clr(dens, mask, hue_theme_istp[string(val_istp[idx_istp])]; max),
 )
 
 clr_theme(idx_istp; alpha=1.0) = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[string(val_istp[idx_istp])]), alpha)
 clrmap_theme(idx_istp) = gen_clrmap_solo(hue_theme_istp[string(val_istp[idx_istp])]; alpha_base=0.2, thres_alpha=0.04)
-gen_ft_rgba(ft; rng_amp=clrrng_ft2d_cmpx_mean) = begin
+gen_ft_rgba(ft, mask; rng_amp=clrrng_ft2d_cmpx_mean) = begin
     amp = abs.(ft)
     phs = angle.(ft)
-    amp_max = isnothing(rng_amp) ? max(maximum(vec(amp[mask_sidepeak])), eps(Float64)) : rng_amp[2] / 2
+    amp_max = isnothing(rng_amp) ? max(maximum(vec(amp[mask])), eps(Float64)) : rng_amp[2] / 2
     phase = shader_cmpx.(amp ./ amp_max, phs; prescale=vis_cmpx_ampl_prescaler)
     phase_axis = collect(range(-pi, pi; length=256))
     amp_axis = isnothing(rng_amp) ? collect(range(0, 2amp_max; length=256)) : collect(range(rng_amp...; length=256))
@@ -494,11 +495,11 @@ function draw_ft_table!(fig)
             heatmap!(ax_dens, x_dens, y_dens, ntfr2d_mean[idx_IB, idx_istp]'; colormap=clrmap, rasterize=true)
             hideydecorations!(ax_dens; label=idx_istp != 1, grid=false)
             ax_cmpx = Axis(gl_cmpx[3, idx_istp]; aspect=DataAspect(), xlabel=bottom ? "kx (μm⁻¹)" : "", ylabel=idx_istp == 1 ? "ky (μm⁻¹)" : "")
-            heatmap!(ax_cmpx, kx_ft_plot, ky_ft_plot, first(gen_ft_rgba(ft2d_cmpx_mean[idx_IB, idx_istp]))[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
+            heatmap!(ax_cmpx, kx_ft_plot, ky_ft_plot, first(gen_ft_rgba(ft2d_cmpx_mean[idx_IB, idx_istp], mask_sidepeak[idx_IB, idx_istp]))[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
             xlims!(ax_cmpx, lims_kx_ft_plot); ylims!(ax_cmpx, lims_ky_ft_plot)
             hideydecorations!(ax_cmpx; label=idx_istp != 1, grid=false)
             ax_cohr = Axis(gl_cohr[3, idx_istp]; aspect=DataAspect(), xlabel="", ylabel=idx_istp == 1 ? "ky (μm⁻¹)" : "")
-            amp_cohr_nonmasked, amp_cohr_masked = gen_amp_masked_clr(abs.(ft2d_cmpx_mean[idx_IB, idx_istp]), idx_istp; max=clrrng_ft2d_cmpx_mean[2])
+            amp_cohr_nonmasked, amp_cohr_masked = gen_amp_masked_clr(abs.(ft2d_cmpx_mean[idx_IB, idx_istp]), idx_istp, mask_sidepeak[idx_IB, idx_istp]; max=clrrng_ft2d_cmpx_mean[2])
             heatmap!(ax_cohr, kx_ft_plot, ky_ft_plot, amp_cohr_nonmasked[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
             heatmap!(ax_cohr, kx_ft_plot, ky_ft_plot, amp_cohr_masked[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
             hlines!(ax_cohr, [-ky_max_modl, ky_max_modl]; color=(:black, 0.55), linewidth=0.7, linestyle=:dash)
@@ -511,7 +512,7 @@ function draw_ft_table!(fig)
             hideydecorations!(ax_cohr; label=idx_istp != 1, grid=false)
             hideydecorations!(ax_cohr_profile; label=idx_istp != 1, grid=false)
             ax_inco = Axis(gl_inco[3, idx_istp]; aspect=DataAspect(), xlabel="", ylabel=idx_istp == 1 ? "ky (μm⁻¹)" : "")
-            amp_inco_nonmasked, amp_inco_masked = gen_amp_masked_clr(ft2d_absl_mean[idx_IB, idx_istp], idx_istp; max=clrrng_ft2d_absl_mean[2])
+            amp_inco_nonmasked, amp_inco_masked = gen_amp_masked_clr(ft2d_absl_mean[idx_IB, idx_istp], idx_istp, mask_sidepeak[idx_IB, idx_istp]; max=clrrng_ft2d_absl_mean[2])
             heatmap!(ax_inco, kx_ft_plot, ky_ft_plot, amp_inco_nonmasked[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
             heatmap!(ax_inco, kx_ft_plot, ky_ft_plot, amp_inco_masked[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
             hlines!(ax_inco, [-ky_max_modl, ky_max_modl]; color=(:black, 0.55), linewidth=0.7, linestyle=:dash)
@@ -545,7 +546,7 @@ function draw_ft_table!(fig)
         colsize!(gl_inco, 1, Fixed(285)); colsize!(gl_inco, 2, Fixed(285))
         colsize!(gl_tail, 1, Fixed(285)); colsize!(gl_tail, 2, Fixed(285))
         ax_cmpx_cb = Axis(gl_cmpx[3, 3]; xlabel="φ", ylabel="amp", titlesize=8)
-        cmpx_cb = gen_ft_rgba(ft2d_cmpx_mean[idx_IB, 1])[2]
+        cmpx_cb = gen_ft_rgba(ft2d_cmpx_mean[idx_IB, 1], mask_sidepeak[idx_IB, 1])[2]
         heatmap!(ax_cmpx_cb, cmpx_cb.phase_axis, cmpx_cb.amp_axis, cmpx_cb.legend'; rasterize=true)
         xlims!(ax_cmpx_cb, -pi, pi); ylims!(ax_cmpx_cb, 0, maximum(cmpx_cb.amp_axis))
         draw_theme_colorbar!(gl_cohr, 3:4; colorrange=clrrng_ft2d_cmpx_mean)
@@ -651,10 +652,10 @@ function draw_ft_live!(fig)
     ft_mean_live() = ft2d_cmpx_mean[obs_ib[], obs_istp[]]
     inco_mean_live() = ft2d_absl_mean[obs_ib[], obs_istp[]]
     obs_density = Observable(dens_live()')
-    obs_ft_shot = Observable(first(gen_ft_rgba(ft_live(); rng_amp=nothing))[mask_ky_ft_plot, mask_kx_ft_plot]')
-    obs_ft_mean = Observable(first(gen_ft_rgba(ft_mean_live()))[mask_ky_ft_plot, mask_kx_ft_plot]')
-    mean_amp_nonmasked, mean_amp_masked = gen_amp_masked_clr(abs.(ft_mean_live()), istp; max=clrrng_ft2d_cmpx_mean[2])
-    inco_amp_nonmasked, inco_amp_masked = gen_amp_masked_clr(inco_mean_live(), istp)
+    obs_ft_shot = Observable(first(gen_ft_rgba(ft_live(), mask_sidepeak[obs_ib[], obs_istp[]]; rng_amp=nothing))[mask_ky_ft_plot, mask_kx_ft_plot]')
+    obs_ft_mean = Observable(first(gen_ft_rgba(ft_mean_live(), mask_sidepeak[obs_ib[], obs_istp[]]))[mask_ky_ft_plot, mask_kx_ft_plot]')
+    mean_amp_nonmasked, mean_amp_masked = gen_amp_masked_clr(abs.(ft_mean_live()), istp, mask_sidepeak[ib, istp]; max=clrrng_ft2d_cmpx_mean[2])
+    inco_amp_nonmasked, inco_amp_masked = gen_amp_masked_clr(inco_mean_live(), istp, mask_sidepeak[ib, istp])
     obs_ft_mean_amp_nonmasked = Observable(mean_amp_nonmasked[mask_ky_ft_plot, mask_kx_ft_plot]')
     obs_ft_mean_amp_masked = Observable(mean_amp_masked[mask_ky_ft_plot, mask_kx_ft_plot]')
     obs_ft_inco_nonmasked = Observable(inco_amp_nonmasked[mask_ky_ft_plot, mask_kx_ft_plot]')
@@ -679,7 +680,7 @@ function draw_ft_live!(fig)
     ax_mean = Axis(gl_mean[1, 1]; xlabel="kx (μm⁻¹)", ylabel="ky (μm⁻¹)", title="mean complex FT2D", aspect=DataAspect())
     heatmap!(ax_mean, kx_ft_plot, ky_ft_plot, obs_ft_mean; rasterize=true)
     xlims!(ax_mean, lims_kx_ft_plot); ylims!(ax_mean, lims_ky_ft_plot)
-    mean_rgba = gen_ft_rgba(ft_mean_live())[2]
+    mean_rgba = gen_ft_rgba(ft_mean_live(), mask_sidepeak[obs_ib[], obs_istp[]])[2]
     ax_mean_cb = Axis(gl_mean[1, 2]; xlabel="φ", ylabel="amp", title="FT shader")
     heatmap!(ax_mean_cb, mean_rgba.phase_axis, mean_rgba.amp_axis, mean_rgba.legend'; rasterize=true)
     xlims!(ax_mean_cb, -pi, pi); ylims!(ax_mean_cb, 0, maximum(mean_rgba.amp_axis))
@@ -724,10 +725,10 @@ function draw_ft_live!(fig)
         n = length(dens_core[obs_ib[], obs_istp[]])
         obs_rep[] = mod1(obs_rep[], n)
         obs_density[] = dens_live()'
-        obs_ft_shot[] = first(gen_ft_rgba(ft_live(); rng_amp=nothing))[mask_ky_ft_plot, mask_kx_ft_plot]'
-        obs_ft_mean[] = first(gen_ft_rgba(ft_mean_live()))[mask_ky_ft_plot, mask_kx_ft_plot]'
-        mean_amp_nonmasked_live, mean_amp_masked_live = gen_amp_masked_clr(abs.(ft_mean_live()), obs_istp[]; max=clrrng_ft2d_cmpx_mean[2])
-        inco_amp_nonmasked_live, inco_amp_masked_live = gen_amp_masked_clr(inco_mean_live(), obs_istp[])
+        obs_ft_shot[] = first(gen_ft_rgba(ft_live(), mask_sidepeak[obs_ib[], obs_istp[]]; rng_amp=nothing))[mask_ky_ft_plot, mask_kx_ft_plot]'
+        obs_ft_mean[] = first(gen_ft_rgba(ft_mean_live(), mask_sidepeak[obs_ib[], obs_istp[]]))[mask_ky_ft_plot, mask_kx_ft_plot]'
+        mean_amp_nonmasked_live, mean_amp_masked_live = gen_amp_masked_clr(abs.(ft_mean_live()), obs_istp[], mask_sidepeak[obs_ib[], obs_istp[]]; max=clrrng_ft2d_cmpx_mean[2])
+        inco_amp_nonmasked_live, inco_amp_masked_live = gen_amp_masked_clr(inco_mean_live(), obs_istp[], mask_sidepeak[obs_ib[], obs_istp[]])
         obs_ft_mean_amp_nonmasked[] = mean_amp_nonmasked_live[mask_ky_ft_plot, mask_kx_ft_plot]'
         obs_ft_mean_amp_masked[] = mean_amp_masked_live[mask_ky_ft_plot, mask_kx_ft_plot]'
         obs_ft_inco_nonmasked[] = inco_amp_nonmasked_live[mask_ky_ft_plot, mask_kx_ft_plot]'

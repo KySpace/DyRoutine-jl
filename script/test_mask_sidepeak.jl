@@ -1,6 +1,6 @@
 using ImageMorphology
 using ImageSegmentation
-ib, istp = (17, 2)
+ib, istp = (5, 2)
 # ft_eg = abs.(dens_core_ft_cmpx_mean[ib, istp])
 clrmap = gen_clrmap_solo(hue_theme_istp[string(val_istp[istp])]; alpha_base=0.2, thres_alpha=0.1)
 # 
@@ -20,9 +20,9 @@ ft_eg_x = abs.(ft2d_cmpx_mean[ib, istp])
 mask_sidepeak = begin 
     arg_seed_main = argmin([hypot(y, x .- 0) for y in ky_ft, x in kx_ft])
     arg_seed_side = argmin([hypot(y, x .- 0.2) for y in ky_ft, x in kx_ft])
-    ft_mean = dens_core_ft_absl_mean |> mean
-    markers = zeros(Int, size(ft_mean)); markers[arg_seed_main] = 1; markers[arg_seed_side] = 2
-    seg = watershed(.-ft_mean, markers)
+    ft_this = ft2d_absl_mean[ib, istp]
+    markers = zeros(Int, size(ft_this)); markers[arg_seed_main] = 1; markers[arg_seed_side] = 2
+    seg = watershed(.-ft_this, markers)
     labels_map(seg) .== 2
 end
 
@@ -35,8 +35,8 @@ function to_masked_clr(dens, mask, hue; sat_max=0.24, max=16, thres_alpha=0.1, l
 end
 
 fig = Figure()
-axs_2d = Axis(fig[1,1]; aspect=DataAspect(), width=200, height=150)
-axs_mask = Axis(fig[2,1]; aspect=DataAspect(), width=200, height=150)
+axs_2d = Axis(fig[1,1]; aspect=DataAspect(), width=400, height=300)
+axs_mask = Axis(fig[2,1]; aspect=DataAspect(), width=400, height=300)
 cohr_masked = to_masked_clr(ft_eg_x, mask_sidepeak, hue_theme_istp[string(val_istp[istp])], max=30)
 cohr_nonmasked = to_masked_clr(ft_eg_x, .!mask_sidepeak, 0; sat_max=0.0, max=30)
 
@@ -46,5 +46,9 @@ heatmap!(axs_2d, kx_ft, ky_ft, inco_nonmasked')
 heatmap!(axs_2d, kx_ft, ky_ft, inco_masked')
 heatmap!(axs_mask, kx_ft, ky_ft, cohr_nonmasked')
 heatmap!(axs_mask, kx_ft, ky_ft, cohr_masked')
+limits!(axs_2d, (0, 0.5), (-0.2, 0.2))
+limits!(axs_mask, (0, 0.5), (-0.2, 0.2))
+
+fig |> resize_to_layout!
 fig |> display
 (ft_eg_x[mask_sidepeak] |> sum) / (ft_eg_x |> sum)
