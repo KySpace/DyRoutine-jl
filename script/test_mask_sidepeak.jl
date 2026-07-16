@@ -1,5 +1,6 @@
 using ImageMorphology
-ib, istp = (4, 1)
+using ImageSegmentation
+ib, istp = (17, 2)
 # ft_eg = abs.(dens_core_ft_cmpx_mean[ib, istp])
 clrmap = gen_clrmap_solo(hue_theme_istp[string(val_istp[istp])]; alpha_base=0.2, thres_alpha=0.1)
 # 
@@ -17,15 +18,12 @@ ft_eg_x = abs.(ft2d_cmpx_mean[ib, istp])
 
 
 mask_sidepeak = begin 
-    arg_seed = argmin([hypot(y, x .- 0) for y in ky_ft, x in kx_ft])
+    arg_seed_main = argmin([hypot(y, x .- 0) for y in ky_ft, x in kx_ft])
+    arg_seed_side = argmin([hypot(y, x .- 0.2) for y in ky_ft, x in kx_ft])
     ft_mean = dens_core_ft_absl_mean |> mean
-    mask = ft_mean |> ft -> ft .>= (0.023 * ft[arg_seed])
-    labels = label_components(mask, Bool[
-    0 1 0
-    1 1 1
-    0 1 0
-    ])
-    labels .!= labels[arg_seed]
+    markers = zeros(Int, size(ft_mean)); markers[arg_seed_main] = 1; markers[arg_seed_side] = 2
+    seg = watershed(.-ft_mean, markers)
+    labels_map(seg) .== 2
 end
 
 function to_masked_clr(dens, mask, hue; sat_max=0.24, max=16, thres_alpha=0.1, l_max=1.0, l_min=0.0, alpha_base=0.1)
