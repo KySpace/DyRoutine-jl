@@ -22,7 +22,7 @@ path_data = joinpath(path_root, "0204_interference", "result", "data.h5")
 # commit 57d2e69f9017be9957b38674e01e6fbc3aae013d
 # Form FT1D profile after FT2D
 # Adjusting the selected area
-path_output = joinpath(path_root, "AnlzRoutine", "46.MeanAbsl2D.Mask")
+path_output = joinpath(path_root, "AnlzRoutine", "45.MeanAbsl2D.Mask")
 path_fit_jld2 = joinpath(path_output, "SSNTFR_ft2d_fit.jld2")
 
 tag = "SSNTFR"
@@ -61,7 +61,7 @@ vis_cmpx_ampl_prescaler = a -> a^vis_cmpx_ampl_prescaler_power * vis_cmpx_ampl_p
 clrrng_ft2d_absl_mean = (0, 50)
 clrrng_ft2d_cmpx_mean = (0, 30)
 use_mask_sidepeak = true
-ky_max_modl = 0.05
+ky_max_modl = 0.1
 
 # reconstructed envelope and tail-removal settings
 r_tail_min_profile = 20.0
@@ -116,7 +116,7 @@ function gaussian_offset_1d(x, p)
     return @. p[1] * exp(-((x - p[2])^2) / (2 * p[3]^2)) + p[4]
 end
 
-function shader_cmpx(ampl, phase; l_max=0.7438, c_max=0.1255, hue_offset=0, prescale=(t -> t), alpha_base=0.1, thres_alpha=0.05)
+function shader_cmpx(ampl, phase; l_max=0.7438, c_max=0.1255, hue_offset=0, prescale=(t -> t), alpha_base=0.1, thres_alpha=0.04)
     l = @pipe ampl |> prescale |> clamp(_, 0, 1) |> 1 - _
     alpha = 1 - l |> u -> u > thres_alpha ? 1.0 : (u / thres_alpha * (1 - alpha_base) + alpha_base)
     c = l < l_max ? (l / l_max * c_max) : ((1 - l) / (1 - l_max) * c_max)
@@ -424,7 +424,7 @@ function to_masked_clr(
     hue;
     sat_max=0.24,
     max=16,
-    thres_alpha=0.1,
+    thres_alpha=0.04,
     l_max=1.0,
     l_min=0.0,
     alpha_base=0.1,
@@ -442,7 +442,7 @@ gen_amp_masked_clr(dens, idx_istp; max=clrrng_ft2d_absl_mean[2]) = (
 )
 
 clr_theme(idx_istp; alpha=1.0) = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[string(val_istp[idx_istp])]), alpha)
-clrmap_theme(idx_istp) = gen_clrmap_solo(hue_theme_istp[string(val_istp[idx_istp])]; alpha_base=0.2, thres_alpha=0.1)
+clrmap_theme(idx_istp) = gen_clrmap_solo(hue_theme_istp[string(val_istp[idx_istp])]; alpha_base=0.2, thres_alpha=0.04)
 gen_ft_rgba(ft; rng_amp=clrrng_ft2d_cmpx_mean) = begin
     amp = abs.(ft)
     phs = angle.(ft)
@@ -588,14 +588,15 @@ function draw_stacked_profile_heatmaps!(
     colorrange,
 )
     Label(fig[row - 2, 1:length(val_istp)]; text=label_prfl, tellwidth=false, halign=:center, font=:bold)
-    hm = nothing
+    hm = Array{Heatmap}(undef, 2)
     for (idx_istp, istp_name) in enumerate(val_istp)
         ax = Axis(fig[row, idx_istp]; xlabel="kx (μm⁻¹)", ylabel="IB (A)", yaxisposition=idx_istp == 1 ? :left : :right, title="istp=$istp_name")
-        hm = heatmap!(ax, x_plot, val_IB, @view(prfl[:, idx_istp, :]); colormap=gen_clrmap_solo(hue_theme_istp[istp_name]), colorrange, rasterize=true)
+        hm[idx_istp] = heatmap!(ax, x_plot, val_IB, @view(prfl[:, idx_istp, :]); colormap=gen_clrmap_solo(hue_theme_istp[istp_name]), colorrange, rasterize=true)
         idx_istp == 1 ? xlims!(ax, reverse(range_x_plot)) : xlims!(ax, range_x_plot)
-        ax.xticks = idx_istp == 1 ? (last(range_x_plot):-0.1:first(range_x_plot)) : (first(range_x_plot):0.1:last(range_x_plot))
+        ax.xticks = 0 : 0.1 : 0.6
     end
-    Colorbar(fig[row, length(val_istp) + 1], hm; label="profile")
+    Colorbar(fig[row, length(val_istp) + 1], hm[1]; ticklabelsvisible = false, labelvisible = false,)
+    Colorbar(fig[row, length(val_istp) + 2], hm[2]; label="profile")
     rowsize!(fig.layout, row - 2, Fixed(24))
     rowsize!(fig.layout, row - 1, Fixed(24))
     rowsize!(fig.layout, row, Fixed(260))
@@ -603,6 +604,7 @@ function draw_stacked_profile_heatmaps!(
     colsize!(fig.layout, 2, Fixed(520))
     colsize!(fig.layout, 3, Fixed(80))
     rowgap!(fig.layout, 0)
+    colgap!(fig.layout, 0)
     resize_to_layout!(fig)
     fig
 end
@@ -627,6 +629,7 @@ profile_range_inco = (min(0.0, profile_tailess_min), max(profile_tailess_max, ep
 profile_tailess_cohr_min = minimum(prfl_tailess_masked_fmt_cohr[idx_x_plot, :, :])
 profile_tailess_cohr_max = maximum(prfl_tailess_masked_fmt_cohr[idx_x_plot, :, :])
 profile_range_cohr = (min(0.0, profile_tailess_cohr_min), max(profile_tailess_cohr_max, eps(Float64)))
+
 fig_profiles_tailed = Figure(fontsize=12)
 draw_stacked_profile_heatmaps!(fig_profiles_tailed, 3, prfl_tailed_unmasked_fmt[:, :, :], kx_ft, val_IB, val_istp, "tailed, unmasked incoherent profiles"; range_x_plot=range_profile_stack, colorrange=profile_range_inco)
 draw_stacked_profile_heatmaps!(fig_profiles_tailed, 6, prfl_tailed_unmasked_fmt_cohr[:, :, :], kx_ft, val_IB, val_istp, "tailed, unmasked coherent profiles"; range_x_plot=range_profile_stack, colorrange=profile_range_cohr)
