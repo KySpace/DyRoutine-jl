@@ -24,7 +24,7 @@ path_data = joinpath(path_root, "0204_interference", "result", "data.h5")
 # commit 57d2e69f9017be9957b38674e01e6fbc3aae013d
 # different sidepeak masks for different conditions with watershed
 # narrower sum region
-path_output = joinpath(path_root, "AnlzRoutine", "48.MeanAbsl2D.VaryMask.Narrow")
+path_output = joinpath(path_root, "AnlzRoutine", "50.MeanAbsl2D.VaryMask.Squared")
 path_fit_jld2 = joinpath(path_output, "SSNTFR_ft2d_fit.jld2")
 
 tag = "SSNTFR"
@@ -60,10 +60,10 @@ use_common_xy_center = :free # :free, :fixed_x, or :fixed_xy
 vis_cmpx_ampl_prescaler_power = 2
 vis_cmpx_ampl_prescaler_scale = 0.4
 vis_cmpx_ampl_prescaler = a -> a^vis_cmpx_ampl_prescaler_power * vis_cmpx_ampl_prescaler_scale
-clrrng_ft2d_absl_mean = (0, 50)
-clrrng_ft2d_cmpx_mean = (0, 30)
+clrrng_ft2d_absl_mean = (0, 400)
+clrrng_ft2d_cmpx_mean = (0, 75)
 use_mask_sidepeak = true
-ky_max_modl = 0.05
+ky_max_modl = 0.1
 
 # reconstructed envelope and tail-removal settings
 r_tail_min_profile = 20.0
@@ -327,9 +327,10 @@ function calc_prfl_modl1d(
     isnothing(mask) || size(ft2d_absl) == size(mask) || throw(DimensionMismatch(
         "ft2d size $(size(ft2d_absl)) must match mask size $(size(mask)).",
     ))
-    ft2d_selected = isnothing(mask) ? ft2d_absl : ft2d_absl .* mask
+    ft2d_weight = ft2d_absl.^2
+    ft2d_selected = isnothing(mask) ? ft2d_weight : ft2d_weight .* mask
     prfl_selected = vec(sum(@view(ft2d_selected[mask_modl_ft_ky, :]); dims=1))
-    prfl_unmasked = vec(sum(@view(ft2d_absl[mask_modl_ft_ky, :]); dims=1))
+    prfl_unmasked = vec(sum(@view(ft2d_weight[mask_modl_ft_ky, :]); dims=1))
     norm_unmasked = sum(prfl_unmasked[2:end]) + prfl_unmasked[1] / 2
     return prfl_selected ./ norm_unmasked
 end
@@ -404,8 +405,8 @@ prfl_modl_fit_scaled_inco = [vec(tail_inco.prfl_modl_fit_scaled[:, idx_istp, idx
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 
-ylims_profile_cohr = (-0.005, 0.045)
-ylims_profile_inco = (-0.005, 0.105)
+ylims_profile_cohr = (-0.0002, 0.0052)
+ylims_profile_inco = (-0.0001, 0.022)
 fit_config = (;
     tag, path_data, path_output, smwh, smwh_dens_ft, alpha_tukey, mag, pixsz, bin,
     sigma_center_filter, use_common_xy_center, clrrng_ft2d_cmpx_mean,
@@ -499,7 +500,7 @@ function draw_ft_table!(fig)
             xlims!(ax_cmpx, lims_kx_ft_plot); ylims!(ax_cmpx, lims_ky_ft_plot)
             hideydecorations!(ax_cmpx; label=idx_istp != 1, grid=false)
             ax_cohr = Axis(gl_cohr[3, idx_istp]; aspect=DataAspect(), xlabel="", ylabel=idx_istp == 1 ? "ky (μm⁻¹)" : "")
-            amp_cohr_nonmasked, amp_cohr_masked = gen_amp_masked_clr(abs.(ft2d_cmpx_mean[idx_IB, idx_istp]), idx_istp, mask_sidepeak[idx_IB, idx_istp]; max=clrrng_ft2d_cmpx_mean[2])
+            amp_cohr_nonmasked, amp_cohr_masked = gen_amp_masked_clr(abs.(ft2d_cmpx_mean[idx_IB, idx_istp]).^2, idx_istp, mask_sidepeak[idx_IB, idx_istp]; max=clrrng_ft2d_cmpx_mean[2])
             heatmap!(ax_cohr, kx_ft_plot, ky_ft_plot, amp_cohr_nonmasked[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
             heatmap!(ax_cohr, kx_ft_plot, ky_ft_plot, amp_cohr_masked[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
             hlines!(ax_cohr, [-ky_max_modl, ky_max_modl]; color=(:black, 0.55), linewidth=0.7, linestyle=:dash)
@@ -512,7 +513,7 @@ function draw_ft_table!(fig)
             hideydecorations!(ax_cohr; label=idx_istp != 1, grid=false)
             hideydecorations!(ax_cohr_profile; label=idx_istp != 1, grid=false)
             ax_inco = Axis(gl_inco[3, idx_istp]; aspect=DataAspect(), xlabel="", ylabel=idx_istp == 1 ? "ky (μm⁻¹)" : "")
-            amp_inco_nonmasked, amp_inco_masked = gen_amp_masked_clr(ft2d_absl_mean[idx_IB, idx_istp], idx_istp, mask_sidepeak[idx_IB, idx_istp]; max=clrrng_ft2d_absl_mean[2])
+            amp_inco_nonmasked, amp_inco_masked = gen_amp_masked_clr(ft2d_absl_mean[idx_IB, idx_istp].^2, idx_istp, mask_sidepeak[idx_IB, idx_istp]; max=clrrng_ft2d_absl_mean[2])
             heatmap!(ax_inco, kx_ft_plot, ky_ft_plot, amp_inco_nonmasked[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
             heatmap!(ax_inco, kx_ft_plot, ky_ft_plot, amp_inco_masked[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
             hlines!(ax_inco, [-ky_max_modl, ky_max_modl]; color=(:black, 0.55), linewidth=0.7, linestyle=:dash)
@@ -571,10 +572,10 @@ function draw_ft_table!(fig)
     fig
 end
 
-fig_phase_distro = Figure(fontsize=12)
-draw_ft_table!(fig_phase_distro)
+fig_table = Figure(fontsize=12)
+draw_ft_table!(fig_table)
 for ext in ("png", "pdf")
-    save(joinpath(path_output, "$(tag)_ft2d_table.$ext"), fig_phase_distro; backend=CairoMakie)
+    save(joinpath(path_output, "$(tag)_ft2d_table.$ext"), fig_table; backend=CairoMakie)
 end
 
 function draw_stacked_profile_heatmaps!(
