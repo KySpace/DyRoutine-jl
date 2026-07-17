@@ -22,9 +22,10 @@ path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\DualSS"
 path_data = joinpath(path_root, "0204_interference", "result", "data.h5")
 
 # commit 57d2e69f9017be9957b38674e01e6fbc3aae013d
-# different sidepeak masks for different conditions with watershed
-# narrower sum region
-path_output = joinpath(path_root, "AnlzRoutine", "50.MeanAbsl2D.VaryMask.Squared")
+# Here we use heavy blurring along y, so that it's effectively a FT on 1D fringe
+# see `calc_ft2d_cmpx`, the blurring is specified with sigma_center_filter
+# Goes back to normal width of FT for sum
+path_output = joinpath(path_root, "AnlzRoutine", "59.MeanAbsl2D.NonSquared.Mask.HugeBlurY")
 path_fit_jld2 = joinpath(path_output, "SSNTFR_ft2d_fit.jld2")
 
 tag = "SSNTFR"
@@ -56,12 +57,16 @@ pixsz = 6.5
 bin = 1
 sigma_center_filter = 5
 use_common_xy_center = :free # :free, :fixed_x, or :fixed_xy
+power_fourier_px_weight = 1
+sigma_y_blur_dens = 500
 
 vis_cmpx_ampl_prescaler_power = 2
-vis_cmpx_ampl_prescaler_scale = 0.4
+vis_cmpx_ampl_prescaler_scale = 3
+vis_rng_scaler = (1 / vis_cmpx_ampl_prescaler_scale)^(vis_cmpx_ampl_prescaler_power - 1)
 vis_cmpx_ampl_prescaler = a -> a^vis_cmpx_ampl_prescaler_power * vis_cmpx_ampl_prescaler_scale
-clrrng_ft2d_absl_mean = (0, 400)
-clrrng_ft2d_cmpx_mean = (0, 75)
+clrrng_ft2d_cmpx_mean_ampl = (0, 100)
+clrrng_ft2d_absl_mean = (0, 120) .^ power_fourier_px_weight .* vis_rng_scaler^(power_fourier_px_weight - 1)
+clrrng_ft2d_cmpx_mean = (0, 60) .^ power_fourier_px_weight .* vis_rng_scaler^(power_fourier_px_weight - 1)
 use_mask_sidepeak = true
 ky_max_modl = 0.1
 
@@ -122,7 +127,7 @@ function shader_cmpx(ampl, phase; l_max=0.7438, c_max=0.1255, hue_offset=0, pres
     l = @pipe ampl |> prescale |> clamp(_, 0, 1) |> 1 - _
     alpha = 1 - l |> u -> u > thres_alpha ? 1.0 : (u / thres_alpha * (1 - alpha_base) + alpha_base)
     c = l < l_max ? (l / l_max * c_max) : ((1 - l) / (1 - l_max) * c_max)
-    hue = @pipe mod(phase, 2pi)/2pi*360 + hue_offset |> mod(_, 360)
+    hue = @pipe mod(phase, 2pi) / 2pi * 360 + hue_offset |> mod(_, 360)
     RGBAf(Oklch(l, c, hue), alpha)
 end
 
@@ -181,7 +186,7 @@ use_common_xy_center in (:free, :fixed_x, :fixed_xy) || throw(ArgumentError(
 ))
 
 num = Array{Float64}(undef, n_IB, n_istp, n_rep)
-xy_center_nvlp_px = Array{Tuple{Float64, Float64}}(undef, n_IB, n_istp, n_rep)
+xy_center_nvlp_px = Array{Tuple{Float64,Float64}}(undef, n_IB, n_istp, n_rep)
 for idx_IB in 1:n_IB, idx_istp in 1:n_istp, idx_rep in 1:n_rep
     dens = dens_raw_fmt[idx_IB, idx_istp, idx_rep]
     dens_smooth = imfilter(dens, Kernel.gaussian(sigma_center_filter))
@@ -240,12 +245,12 @@ end
 
 ##
 gen_freq_shifted(n::Integer, step::Real) =
-    iseven(n) ? collect((-n ÷ 2):(n ÷ 2 - 1)) ./ (n * step) :
-    collect((-(n ÷ 2)):(n ÷ 2)) ./ (n * step)
+    iseven(n) ? collect((-n÷2):(n÷2-1)) ./ (n * step) :
+    collect((-(n ÷ 2)):(n÷2)) ./ (n * step)
 idx_ft_x_center = argmin(abs.(x_dens))
 idx_ft_y_center = argmin(abs.(y_dens))
-idxs_ft_x = (idx_ft_x_center - smwh_dens_ft[1]):(idx_ft_x_center + smwh_dens_ft[1])
-idxs_ft_y = (idx_ft_y_center - smwh_dens_ft[2]):(idx_ft_y_center + smwh_dens_ft[2])
+idxs_ft_x = (idx_ft_x_center-smwh_dens_ft[1]):(idx_ft_x_center+smwh_dens_ft[1])
+idxs_ft_y = (idx_ft_y_center-smwh_dens_ft[2]):(idx_ft_y_center+smwh_dens_ft[2])
 first(idxs_ft_x) >= firstindex(x_dens) && last(idxs_ft_x) <= lastindex(x_dens) || throw(ArgumentError(
     "smwh_dens_ft=$smwh_dens_ft exceeds x_dens bounds around x=0.",
 ))
@@ -313,10 +318,10 @@ function calc_ft2d_cmpx(
     mask_ft_kx,
     step_ft,
 )
-    @pipe dens2d[idxs_ft_y, idxs_ft_x] .* tukey_dens_ft |>
-        ifftshift |> fft |> fftshift |>
-        _[mask_ft_ky, mask_ft_kx] |>
-        ft2d -> ft2d ./ (sum(abs.(ft2d)) .* prod(step_ft) ./ 4)
+    @pipe dens2d[idxs_ft_y, idxs_ft_x] |> imfilter(_, Kernel.gaussian((sigma_y_blur_dens, 0))) |> _ .* tukey_dens_ft |>
+          ifftshift |> fft |> fftshift |>
+          _[mask_ft_ky, mask_ft_kx] |>
+          ft2d -> ft2d ./ (sum(abs.(ft2d)) .* prod(step_ft) ./ 4)
 end
 
 function calc_prfl_modl1d(
@@ -325,9 +330,9 @@ function calc_prfl_modl1d(
     mask=nothing,
 )
     isnothing(mask) || size(ft2d_absl) == size(mask) || throw(DimensionMismatch(
-        "ft2d size $(size(ft2d_absl)) must match mask size $(size(mask)).",
-    ))
-    ft2d_weight = ft2d_absl.^2
+            "ft2d size $(size(ft2d_absl)) must match mask size $(size(mask)).",
+        ))
+    ft2d_weight = ft2d_absl .^ power_fourier_px_weight
     ft2d_selected = isnothing(mask) ? ft2d_weight : ft2d_weight .* mask
     prfl_selected = vec(sum(@view(ft2d_selected[mask_modl_ft_ky, :]); dims=1))
     prfl_unmasked = vec(sum(@view(ft2d_weight[mask_modl_ft_ky, :]); dims=1))
@@ -358,6 +363,10 @@ mask_sidepeak = [ begin
     end
     for ib in 1:length(val_IB), istp in 1:length(val_istp)
     ]
+# mask_sidepeak = [
+#     [(abs.(x .- 0.2) .< 0.06) .& (abs.(y .- 0.0) .< ky_max_modl) for y in ky_ft, x in kx_ft]
+#     for ib in 1:length(val_IB), istp in 1:length(val_istp)
+# ]
 
 prfl_modl1d_cohr_unmasked = map(enumerate(ft2d_cmpx_mean)) do (ids, ft2d)
     calc_prfl_modl1d(abs.(ft2d), mask_modl_ft_ky)
@@ -405,8 +414,9 @@ prfl_modl_fit_scaled_inco = [vec(tail_inco.prfl_modl_fit_scaled[:, idx_istp, idx
 isdir(path_output) || mkpath(path_output)
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 
-ylims_profile_cohr = (-0.0002, 0.0052)
-ylims_profile_inco = (-0.0001, 0.022)
+ylims_profile_cohr = ((-0.00, 0.04) .* (5 / 3)) .^ power_fourier_px_weight .* vis_rng_scaler
+ylims_profile_inco = ((-0.00, 0.10) .* (5 / 3)) .^ power_fourier_px_weight .* vis_rng_scaler
+
 fit_config = (;
     tag, path_data, path_output, smwh, smwh_dens_ft, alpha_tukey, mag, pixsz, bin,
     sigma_center_filter, use_common_xy_center, clrrng_ft2d_cmpx_mean,
@@ -445,10 +455,10 @@ gen_amp_masked_clr(dens, idx_istp, mask; max=clrrng_ft2d_absl_mean[2]) = (
 
 clr_theme(idx_istp; alpha=1.0) = RGBAf(Oklch(0.52, 0.14, hue_theme_istp[string(val_istp[idx_istp])]), alpha)
 clrmap_theme(idx_istp) = gen_clrmap_solo(hue_theme_istp[string(val_istp[idx_istp])]; alpha_base=0.2, thres_alpha=0.04)
-gen_ft_rgba(ft, mask; rng_amp=clrrng_ft2d_cmpx_mean) = begin
+gen_ft_rgba(ft, mask; rng_amp=clrrng_ft2d_cmpx_mean_ampl) = begin
     amp = abs.(ft)
     phs = angle.(ft)
-    amp_max = isnothing(rng_amp) ? max(maximum(vec(amp[mask])), eps(Float64)) : rng_amp[2] / 2
+    amp_max = isnothing(rng_amp) ? max(maximum(vec(amp[mask])), eps(Float64)) : rng_amp[2] / 1
     phase = shader_cmpx.(amp ./ amp_max, phs; prescale=vis_cmpx_ampl_prescaler)
     phase_axis = collect(range(-pi, pi; length=256))
     amp_axis = isnothing(rng_amp) ? collect(range(0, 2amp_max; length=256)) : collect(range(rng_amp...; length=256))
@@ -474,7 +484,9 @@ function draw_ft_table!(fig)
             hidexdecorations!(ax_cb; grid=false)
             hideydecorations!(ax_cb; grid=false, label=j != 1, ticklabels=j != 1, ticks=j != 1)
         end
-        colsize!(gl_cb, 1, Fixed(34)); colsize!(gl_cb, 2, Fixed(34)); colgap!(gl_cb, 2)
+        colsize!(gl_cb, 1, Fixed(34))
+        colsize!(gl_cb, 2, Fixed(34))
+        colgap!(gl_cb, 2)
     end
     for (idx_IB, IB) in enumerate(val_IB)
         row = idx_IB + 1
@@ -497,59 +509,77 @@ function draw_ft_table!(fig)
             hideydecorations!(ax_dens; label=idx_istp != 1, grid=false)
             ax_cmpx = Axis(gl_cmpx[3, idx_istp]; aspect=DataAspect(), xlabel=bottom ? "kx (μm⁻¹)" : "", ylabel=idx_istp == 1 ? "ky (μm⁻¹)" : "")
             heatmap!(ax_cmpx, kx_ft_plot, ky_ft_plot, first(gen_ft_rgba(ft2d_cmpx_mean[idx_IB, idx_istp], mask_sidepeak[idx_IB, idx_istp]))[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
-            xlims!(ax_cmpx, lims_kx_ft_plot); ylims!(ax_cmpx, lims_ky_ft_plot)
+            xlims!(ax_cmpx, lims_kx_ft_plot)
+            ylims!(ax_cmpx, lims_ky_ft_plot)
             hideydecorations!(ax_cmpx; label=idx_istp != 1, grid=false)
             ax_cohr = Axis(gl_cohr[3, idx_istp]; aspect=DataAspect(), xlabel="", ylabel=idx_istp == 1 ? "ky (μm⁻¹)" : "")
-            amp_cohr_nonmasked, amp_cohr_masked = gen_amp_masked_clr(abs.(ft2d_cmpx_mean[idx_IB, idx_istp]).^2, idx_istp, mask_sidepeak[idx_IB, idx_istp]; max=clrrng_ft2d_cmpx_mean[2])
+            amp_cohr_nonmasked, amp_cohr_masked = gen_amp_masked_clr(abs.(ft2d_cmpx_mean[idx_IB, idx_istp]) .^ power_fourier_px_weight, idx_istp, mask_sidepeak[idx_IB, idx_istp]; max=clrrng_ft2d_cmpx_mean[2])
             heatmap!(ax_cohr, kx_ft_plot, ky_ft_plot, amp_cohr_nonmasked[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
             heatmap!(ax_cohr, kx_ft_plot, ky_ft_plot, amp_cohr_masked[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
             hlines!(ax_cohr, [-ky_max_modl, ky_max_modl]; color=(:black, 0.55), linewidth=0.7, linestyle=:dash)
-            xlims!(ax_cohr, lims_kx_ft_plot); ylims!(ax_cohr, lims_ky_ft_plot)
+            xlims!(ax_cohr, lims_kx_ft_plot)
+            ylims!(ax_cohr, lims_ky_ft_plot)
             ax_cohr_profile = Axis(gl_cohr[4, idx_istp]; xlabel=bottom ? "kx (μm⁻¹)" : "", ylabel=idx_istp == 1 ? "cohr" : "", xticks=0.0:0.1:0.5)
             lines!(ax_cohr_profile, kx_ft_plot, prfl_modl_fit_scaled_cohr[idx_IB, idx_istp][mask_kx_ft_plot]; color=(:gray40, 0.55), linewidth=1.0)
             lines!(ax_cohr_profile, kx_ft_plot, prfl_modl1d_cohr[idx_IB, idx_istp][mask_kx_ft_plot]; color=clr_theme(idx_istp), linewidth=1.2)
             ylims!(ax_cohr_profile, ylims_profile_cohr)
             linkxaxes!(ax_cohr, ax_cohr_profile)
             hideydecorations!(ax_cohr; label=idx_istp != 1, grid=false)
-            hideydecorations!(ax_cohr_profile; label=idx_istp != 1, grid=false)
+            hideydecorations!(ax_cohr_profile; label=idx_istp != 1, ticks=idx_istp != 1, ticklabels=idx_istp != 1, grid=false)
             ax_inco = Axis(gl_inco[3, idx_istp]; aspect=DataAspect(), xlabel="", ylabel=idx_istp == 1 ? "ky (μm⁻¹)" : "")
-            amp_inco_nonmasked, amp_inco_masked = gen_amp_masked_clr(ft2d_absl_mean[idx_IB, idx_istp].^2, idx_istp, mask_sidepeak[idx_IB, idx_istp]; max=clrrng_ft2d_absl_mean[2])
+            amp_inco_nonmasked, amp_inco_masked = gen_amp_masked_clr(ft2d_absl_mean[idx_IB, idx_istp] .^ power_fourier_px_weight, idx_istp, mask_sidepeak[idx_IB, idx_istp]; max=clrrng_ft2d_absl_mean[2])
             heatmap!(ax_inco, kx_ft_plot, ky_ft_plot, amp_inco_nonmasked[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
             heatmap!(ax_inco, kx_ft_plot, ky_ft_plot, amp_inco_masked[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
             hlines!(ax_inco, [-ky_max_modl, ky_max_modl]; color=(:black, 0.55), linewidth=0.7, linestyle=:dash)
-            xlims!(ax_inco, lims_kx_ft_plot); ylims!(ax_inco, lims_ky_ft_plot)
+            xlims!(ax_inco, lims_kx_ft_plot)
+            ylims!(ax_inco, lims_ky_ft_plot)
             ax_inco_profile = Axis(gl_inco[4, idx_istp]; xlabel=bottom ? "kx (μm⁻¹)" : "", ylabel=idx_istp == 1 ? "incohr" : "", xticks=0.0:0.1:0.5)
             lines!(ax_inco_profile, kx_ft_plot, prfl_modl1d_inco[idx_IB, idx_istp][mask_kx_ft_plot]; color=clr_theme(idx_istp), linewidth=1.3)
             ylims!(ax_inco_profile, ylims_profile_inco)
             linkxaxes!(ax_inco, ax_inco_profile)
             hideydecorations!(ax_inco; label=idx_istp != 1, grid=false)
-            hideydecorations!(ax_inco_profile; label=idx_istp != 1, grid=false)
+            hideydecorations!(ax_inco_profile; label=idx_istp != 1, ticks=idx_istp != 1, ticklabels=idx_istp != 1, grid=false)
             ax_tail_profile = Axis(gl_tail[3, idx_istp]; xlabel=bottom ? "kx (μm⁻¹)" : "", ylabel=idx_istp == 1 ? "tailess" : "", xticks=0.0:0.1:0.5)
             lines!(ax_tail_profile, kx_ft_plot, prfl_modl1d_cohr_tailess[idx_IB, idx_istp][mask_kx_ft_plot]; color=clr_theme(idx_istp), linewidth=1.3)
             lines!(ax_tail_profile, kx_ft_plot, prfl_modl1d_inco_tailess[idx_IB, idx_istp][mask_kx_ft_plot]; color=clr_theme(idx_istp), linewidth=1.3, linestyle=:dash)
             ylims!(ax_tail_profile, min(ylims_profile_cohr[1], ylims_profile_inco[1]), max(ylims_profile_cohr[2], ylims_profile_inco[2]))
-            hideydecorations!(ax_tail_profile; label=idx_istp != 1, grid=false)
+            hideydecorations!(ax_tail_profile; label=idx_istp != 1, ticks=idx_istp != 1, ticklabels=idx_istp != 1, grid=false)
         end
         for gl in (gl_dens, gl_cmpx)
             Label(gl[1, 1:2]; text=@sprintf("IB=%.3f A", IB), fontsize=9, halign=:left)
-            rowsize!(gl, 1, Fixed(24)); rowsize!(gl, 2, Fixed(24)); rowsize!(gl, 3, Fixed(366)); rowgap!(gl, 0)
+            rowsize!(gl, 1, Fixed(24))
+            rowsize!(gl, 2, Fixed(24))
+            rowsize!(gl, 3, Fixed(366))
+            rowgap!(gl, 0)
         end
         for gl in (gl_cohr, gl_inco)
             Label(gl[1, 1:3]; text=@sprintf("IB=%.3f A", IB), fontsize=9, halign=:left)
-            rowsize!(gl, 1, Fixed(24)); rowsize!(gl, 2, Fixed(24)); rowsize!(gl, 3, Fixed(270)); rowsize!(gl, 4, Fixed(100))
+            rowsize!(gl, 1, Fixed(24))
+            rowsize!(gl, 2, Fixed(24))
+            rowsize!(gl, 3, Fixed(270))
+            rowsize!(gl, 4, Fixed(100))
             rowgap!(gl, 0)
         end
         Label(gl_tail[1, 1:2]; text=@sprintf("IB=%.3f A", IB), fontsize=9, halign=:left)
-        rowsize!(gl_tail, 1, Fixed(24)); rowsize!(gl_tail, 2, Fixed(24)); rowsize!(gl_tail, 3, Fixed(100)); rowgap!(gl_tail, 0)
-        colsize!(gl_dens, 1, Fixed(330)); colsize!(gl_dens, 2, Fixed(330))
-        colsize!(gl_cmpx, 1, Fixed(285)); colsize!(gl_cmpx, 2, Fixed(285))
-        colsize!(gl_cohr, 1, Fixed(285)); colsize!(gl_cohr, 2, Fixed(285))
-        colsize!(gl_inco, 1, Fixed(285)); colsize!(gl_inco, 2, Fixed(285))
-        colsize!(gl_tail, 1, Fixed(285)); colsize!(gl_tail, 2, Fixed(285))
+        rowsize!(gl_tail, 1, Fixed(24))
+        rowsize!(gl_tail, 2, Fixed(24))
+        rowsize!(gl_tail, 3, Fixed(100))
+        rowgap!(gl_tail, 0)
+        colsize!(gl_dens, 1, Fixed(330))
+        colsize!(gl_dens, 2, Fixed(330))
+        colsize!(gl_cmpx, 1, Fixed(285))
+        colsize!(gl_cmpx, 2, Fixed(285))
+        colsize!(gl_cohr, 1, Fixed(285))
+        colsize!(gl_cohr, 2, Fixed(285))
+        colsize!(gl_inco, 1, Fixed(285))
+        colsize!(gl_inco, 2, Fixed(285))
+        colsize!(gl_tail, 1, Fixed(285))
+        colsize!(gl_tail, 2, Fixed(285))
         ax_cmpx_cb = Axis(gl_cmpx[3, 3]; xlabel="φ", ylabel="amp", titlesize=8)
         cmpx_cb = gen_ft_rgba(ft2d_cmpx_mean[idx_IB, 1], mask_sidepeak[idx_IB, 1])[2]
         heatmap!(ax_cmpx_cb, cmpx_cb.phase_axis, cmpx_cb.amp_axis, cmpx_cb.legend'; rasterize=true)
-        xlims!(ax_cmpx_cb, -pi, pi); ylims!(ax_cmpx_cb, 0, maximum(cmpx_cb.amp_axis))
+        xlims!(ax_cmpx_cb, -pi, pi)
+        ylims!(ax_cmpx_cb, 0, maximum(cmpx_cb.amp_axis))
         draw_theme_colorbar!(gl_cohr, 3:4; colorrange=clrrng_ft2d_cmpx_mean)
         draw_theme_colorbar!(gl_inco, 3:4; colorrange=clrrng_ft2d_absl_mean)
         colsize!(gl_cmpx, 3, Fixed(80))
@@ -589,16 +619,16 @@ function draw_stacked_profile_heatmaps!(
     range_x_plot,
     colorrange,
 )
-    Label(fig[row - 2, 1:length(val_istp)]; text=label_prfl, tellwidth=false, halign=:center, font=:bold)
+    Label(fig[row-2, 1:length(val_istp)]; text=label_prfl, tellwidth=false, halign=:center, font=:bold)
     hm = Array{Heatmap}(undef, 2)
     for (idx_istp, istp_name) in enumerate(val_istp)
         ax = Axis(fig[row, idx_istp]; xlabel="kx (μm⁻¹)", ylabel="IB (A)", yaxisposition=idx_istp == 1 ? :left : :right, title="istp=$istp_name")
         hm[idx_istp] = heatmap!(ax, x_plot, val_IB, @view(prfl[:, idx_istp, :]); colormap=gen_clrmap_solo(hue_theme_istp[istp_name]), colorrange, rasterize=true)
         idx_istp == 1 ? xlims!(ax, reverse(range_x_plot)) : xlims!(ax, range_x_plot)
-        ax.xticks = 0 : 0.1 : 0.6
+        ax.xticks = 0:0.1:0.6
     end
-    Colorbar(fig[row, length(val_istp) + 1], hm[1]; ticklabelsvisible = false, labelvisible = false,)
-    Colorbar(fig[row, length(val_istp) + 2], hm[2]; label="profile")
+    Colorbar(fig[row, length(val_istp)+1], hm[1]; ticklabelsvisible=false, labelvisible=false,)
+    Colorbar(fig[row, length(val_istp)+2], hm[2]; label="profile")
     rowsize!(fig.layout, row - 2, Fixed(24))
     rowsize!(fig.layout, row - 1, Fixed(24))
     rowsize!(fig.layout, row, Fixed(260))
@@ -675,16 +705,19 @@ function draw_ft_live!(fig)
     heatmap!(ax_density, x_dens, y_dens, obs_density; colormap=obs_theme, colorrange=obs_density_range, rasterize=true)
     ax_shot = Axis(fig[1, 2]; xlabel="kx (μm⁻¹)", ylabel="ky (μm⁻¹)", title="shot complex FT2D", aspect=DataAspect())
     heatmap!(ax_shot, kx_ft_plot, ky_ft_plot, obs_ft_shot; rasterize=true)
-    xlims!(ax_shot, lims_kx_ft_plot); ylims!(ax_shot, lims_ky_ft_plot)
+    xlims!(ax_shot, lims_kx_ft_plot)
+    ylims!(ax_shot, lims_ky_ft_plot)
 
     gl_mean = GridLayout(fig[2, 1])
     ax_mean = Axis(gl_mean[1, 1]; xlabel="kx (μm⁻¹)", ylabel="ky (μm⁻¹)", title="mean complex FT2D", aspect=DataAspect())
     heatmap!(ax_mean, kx_ft_plot, ky_ft_plot, obs_ft_mean; rasterize=true)
-    xlims!(ax_mean, lims_kx_ft_plot); ylims!(ax_mean, lims_ky_ft_plot)
+    xlims!(ax_mean, lims_kx_ft_plot)
+    ylims!(ax_mean, lims_ky_ft_plot)
     mean_rgba = gen_ft_rgba(ft_mean_live(), mask_sidepeak[obs_ib[], obs_istp[]])[2]
     ax_mean_cb = Axis(gl_mean[1, 2]; xlabel="φ", ylabel="amp", title="FT shader")
     heatmap!(ax_mean_cb, mean_rgba.phase_axis, mean_rgba.amp_axis, mean_rgba.legend'; rasterize=true)
-    xlims!(ax_mean_cb, -pi, pi); ylims!(ax_mean_cb, 0, maximum(mean_rgba.amp_axis))
+    xlims!(ax_mean_cb, -pi, pi)
+    ylims!(ax_mean_cb, 0, maximum(mean_rgba.amp_axis))
     ax_ctrl = GridLayout(fig[2, 2])
     btn_ib_prev = Button(ax_ctrl[1, 1]; label="IB ←")
     btn_ib_next = Button(ax_ctrl[1, 2]; label="IB →")
@@ -699,11 +732,13 @@ function draw_ft_live!(fig)
     heatmap!(ax_cohr, kx_ft_plot, ky_ft_plot, obs_ft_mean_amp_nonmasked; rasterize=true)
     heatmap!(ax_cohr, kx_ft_plot, ky_ft_plot, obs_ft_mean_amp_masked; rasterize=true)
     hlines!(ax_cohr, [-ky_max_modl, ky_max_modl]; color=(:black, 0.55), linewidth=0.7, linestyle=:dash)
-    xlims!(ax_cohr, lims_kx_ft_plot); ylims!(ax_cohr, lims_ky_ft_plot)
+    xlims!(ax_cohr, lims_kx_ft_plot)
+    ylims!(ax_cohr, lims_ky_ft_plot)
     ax_cohr_prfl = Axis(gl_cohr[2, 1]; xlabel="kx (μm⁻¹)", ylabel="cohr")
     lines!(ax_cohr_prfl, kx_ft_plot, lift(v -> v[mask_kx_ft_plot], obs_cohr_reconstr); color=(:gray40, 0.55), linewidth=1.0)
     lines!(ax_cohr_prfl, kx_ft_plot, lift(v -> v[mask_kx_ft_plot], obs_cohr_profile); color=lift(clr_theme, obs_istp), linewidth=1.3)
-    ylims!(ax_cohr_prfl, ylims_profile_cohr); linkxaxes!(ax_cohr, ax_cohr_prfl)
+    ylims!(ax_cohr_prfl, ylims_profile_cohr)
+    linkxaxes!(ax_cohr, ax_cohr_prfl)
     ax_cohr_cb = Axis(gl_cohr[1:2, 2]; ylabel="|FT|")
     heatmap!(ax_cohr_cb, [0.0, 1.0], collect(range(clrrng_ft2d_cmpx_mean...; length=256)), [y for _ in 1:2, y in range(clrrng_ft2d_cmpx_mean...; length=256)]; colormap=obs_theme, colorrange=clrrng_ft2d_cmpx_mean)
     hidexdecorations!(ax_cohr_cb; grid=false)
@@ -713,11 +748,13 @@ function draw_ft_live!(fig)
     heatmap!(ax_inco, kx_ft_plot, ky_ft_plot, obs_ft_inco_nonmasked; rasterize=true)
     heatmap!(ax_inco, kx_ft_plot, ky_ft_plot, obs_ft_inco_masked; rasterize=true)
     hlines!(ax_inco, [-ky_max_modl, ky_max_modl]; color=(:black, 0.55), linewidth=0.7, linestyle=:dash)
-    xlims!(ax_inco, lims_kx_ft_plot); ylims!(ax_inco, lims_ky_ft_plot)
+    xlims!(ax_inco, lims_kx_ft_plot)
+    ylims!(ax_inco, lims_ky_ft_plot)
     ax_inco_prfl = Axis(gl_inco[2, 1]; xlabel="kx (μm⁻¹)", ylabel="incohr")
     lines!(ax_inco_prfl, kx_ft_plot, lift(v -> v[mask_kx_ft_plot], obs_inco_reconstr); color=(:gray40, 0.55), linewidth=1.0)
     lines!(ax_inco_prfl, kx_ft_plot, lift(v -> v[mask_kx_ft_plot], obs_inco_profile); color=lift(clr_theme, obs_istp), linewidth=1.3)
-    ylims!(ax_inco_prfl, ylims_profile_inco); linkxaxes!(ax_inco, ax_inco_prfl)
+    ylims!(ax_inco_prfl, ylims_profile_inco)
+    linkxaxes!(ax_inco, ax_inco_prfl)
     ax_inco_cb = Axis(gl_inco[1:2, 2]; ylabel="|FT|")
     heatmap!(ax_inco_cb, [0.0, 1.0], collect(range(clrrng_ft2d_absl_mean...; length=256)), [y for _ in 1:2, y in range(clrrng_ft2d_absl_mean...; length=256)]; colormap=obs_theme, colorrange=clrrng_ft2d_absl_mean)
     hidexdecorations!(ax_inco_cb; grid=false)
@@ -742,25 +779,58 @@ function draw_ft_live!(fig)
         obs_theme[] = clrmap_theme(obs_istp[])
         notify(obs_title)
     end
-    on(btn_ib_prev.clicks) do _; obs_ib[] = mod1(obs_ib[] - 1, n_IB); update_live!(); end
-    on(btn_ib_next.clicks) do _; obs_ib[] = mod1(obs_ib[] + 1, n_IB); update_live!(); end
-    on(btn_istp_prev.clicks) do _; obs_istp[] = mod1(obs_istp[] - 1, n_istp); update_live!(); end
-    on(btn_istp_next.clicks) do _; obs_istp[] = mod1(obs_istp[] + 1, n_istp); update_live!(); end
-    on(btn_rep_prev.clicks) do _; obs_rep[] -= 1; update_live!(); end
-    on(btn_rep_next.clicks) do _; obs_rep[] += 1; update_live!(); end
-    on(btn_reset.clicks) do _; obs_ib[] = ib; obs_istp[] = istp; obs_rep[] = idx_rep; update_live!(); end
-    colsize!(fig.layout, 1, Fixed(400)); colsize!(fig.layout, 2, Fixed(400))
-    rowsize!(fig.layout, 1, Fixed(300)); rowsize!(fig.layout, 2, Fixed(300)); rowsize!(fig.layout, 3, Fixed(400))
-    colsize!(gl_cohr, 1, 240); colsize!(gl_cohr, 2, 60); rowsize!(gl_cohr, 1, 240); rowsize!(gl_cohr, 2, 120)
-    colsize!(gl_inco, 1, 240); colsize!(gl_inco, 2, 60); rowsize!(gl_inco, 1, 240); rowsize!(gl_inco, 2, 120)
-    colsize!(gl_mean, 1, 240); colsize!(gl_mean, 2, 60)
+    on(btn_ib_prev.clicks) do _
+        obs_ib[] = mod1(obs_ib[] - 1, n_IB)
+        update_live!()
+    end
+    on(btn_ib_next.clicks) do _
+        obs_ib[] = mod1(obs_ib[] + 1, n_IB)
+        update_live!()
+    end
+    on(btn_istp_prev.clicks) do _
+        obs_istp[] = mod1(obs_istp[] - 1, n_istp)
+        update_live!()
+    end
+    on(btn_istp_next.clicks) do _
+        obs_istp[] = mod1(obs_istp[] + 1, n_istp)
+        update_live!()
+    end
+    on(btn_rep_prev.clicks) do _
+        obs_rep[] -= 1
+        update_live!()
+    end
+    on(btn_rep_next.clicks) do _
+        obs_rep[] += 1
+        update_live!()
+    end
+    on(btn_reset.clicks) do _
+        obs_ib[] = ib
+        obs_istp[] = istp
+        obs_rep[] = idx_rep
+        update_live!()
+    end
+    colsize!(fig.layout, 1, Fixed(400))
+    colsize!(fig.layout, 2, Fixed(400))
+    rowsize!(fig.layout, 1, Fixed(300))
+    rowsize!(fig.layout, 2, Fixed(300))
+    rowsize!(fig.layout, 3, Fixed(400))
+    colsize!(gl_cohr, 1, 240)
+    colsize!(gl_cohr, 2, 60)
+    rowsize!(gl_cohr, 1, 240)
+    rowsize!(gl_cohr, 2, 120)
+    colsize!(gl_inco, 1, 240)
+    colsize!(gl_inco, 2, 60)
+    rowsize!(gl_inco, 1, 240)
+    rowsize!(gl_inco, 2, 120)
+    colsize!(gl_mean, 1, 240)
+    colsize!(gl_mean, 2, 60)
     resize_to_layout!(fig)
     fig
 end
 
-fig_live = Figure(fontsize=14)
-draw_ft_live!(fig_live)
-display(fig_live)
+# fig_live = Figure(fontsize=14)
+# draw_ft_live!(fig_live)
+# display(fig_live)
 
 
 fig_cohr = Figure()
@@ -768,11 +838,10 @@ axs_cohr = Axis(fig_cohr[1, 1]; title="coherent 2D modulation spectral weight wi
 axs_modl = Axis(fig_cohr[2, 1]; title="averaged 2D modulation spectral weight within mask")
 filename_plot_cohr_modl = "$(tag)_cohr_modl"
 for (i, istp) in enumerate(["162", "164"])
-    lines!(axs_cohr, val_IB_ref, sum.(prfl_modl1d_cohr_tailess)[:,i]; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
-    lines!(axs_modl, val_IB_ref, sum.(prfl_modl1d_inco_tailess)[:,i]; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
+    lines!(axs_cohr, val_IB_ref, sum.(prfl_modl1d_cohr_tailess)[:, i]; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
+    lines!(axs_modl, val_IB_ref, sum.(prfl_modl1d_inco_tailess)[:, i]; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
 end
 for ext in ("png", "pdf")
     save(joinpath(path_output, "$filename_plot_cohr_modl.$ext"), fig_cohr; backend=CairoMakie)
 end
 println("  [$tag] saved phase distro table to $(joinpath(path_output, "$filename_plot_cohr_modl.png"))")
-
