@@ -10,6 +10,7 @@ using Printf
 using Statistics
 import CairoMakie
 using ImageSegmentation
+using GeometryBasics
 
 
 GLMakie.activate!()
@@ -25,7 +26,8 @@ path_data = joinpath(path_root, "0204_interference", "result", "data.h5")
 # Here we use heavy blurring along y, so that it's effectively a FT on 1D fringe
 # see `calc_ft2d_cmpx`, the blurring is specified with sigma_center_filter
 # Goes back to normal width of FT for sum
-path_output = joinpath(path_root, "AnlzRoutine", "59.MeanAbsl2D.NonSquared.Mask.HugeBlurY")
+# Try without subtracting the tail by setting it to 0, shrink the averaging region
+path_output = joinpath(path_root, "AnlzRoutine", "62.MeanAbsl2D.NonSquared.Mask.AvgTailess")
 path_fit_jld2 = joinpath(path_output, "SSNTFR_ft2d_fit.jld2")
 
 tag = "SSNTFR"
@@ -50,7 +52,7 @@ val_IB_ref = [
     5.342,
 ]
 smwh = (150, 150)
-smwh_dens_ft = (80, 80)
+smwh_dens_ft = (150, 40)
 alpha_tukey = (1.0, 1.0)
 mag = 22.06
 pixsz = 6.5
@@ -64,9 +66,9 @@ vis_cmpx_ampl_prescaler_power = 2
 vis_cmpx_ampl_prescaler_scale = 3
 vis_rng_scaler = (1 / vis_cmpx_ampl_prescaler_scale)^(vis_cmpx_ampl_prescaler_power - 1)
 vis_cmpx_ampl_prescaler = a -> a^vis_cmpx_ampl_prescaler_power * vis_cmpx_ampl_prescaler_scale
-clrrng_ft2d_cmpx_mean_ampl = (0, 100)
-clrrng_ft2d_absl_mean = (0, 120) .^ power_fourier_px_weight .* vis_rng_scaler^(power_fourier_px_weight - 1)
-clrrng_ft2d_cmpx_mean = (0, 60) .^ power_fourier_px_weight .* vis_rng_scaler^(power_fourier_px_weight - 1)
+clrrng_ft2d_cmpx_mean_ampl = (0, 100) .*2
+clrrng_ft2d_absl_mean = (0, 120) .*2 .^ power_fourier_px_weight .* vis_rng_scaler^(power_fourier_px_weight - 1)
+clrrng_ft2d_cmpx_mean = (0, 60) .*2 .^ power_fourier_px_weight .* vis_rng_scaler^(power_fourier_px_weight - 1)
 use_mask_sidepeak = true
 ky_max_modl = 0.1
 
@@ -150,7 +152,7 @@ function calc_modl_tail(
     for idx_IB in axes(prfl, 3), idx_istp in axes(prfl, 2)
         ids = (:, idx_istp, idx_IB)
         denom = sum(@view prfl_modl_fit[ids...][sel_center])
-        denom > 0 || throw(ArgumentError("Reconstructed profile has nonpositive center sum at (IB=$idx_IB, istp=$idx_istp)."))
+        denom >= 0 || throw(ArgumentError("Reconstructed profile has nonpositive center sum at (IB=$idx_IB, istp=$idx_istp)."))
         scale = sum(@view prfl[ids...][sel_center]) / denom
         scale_reconstr[idx_istp, idx_IB] = scale
         prfl_tailess[ids...] .= @view(prfl[ids...]) .- scale .* @view(prfl_modl_fit[ids...])
@@ -318,7 +320,9 @@ function calc_ft2d_cmpx(
     mask_ft_kx,
     step_ft,
 )
-    @pipe dens2d[idxs_ft_y, idxs_ft_x] |> imfilter(_, Kernel.gaussian((sigma_y_blur_dens, 0))) |> _ .* tukey_dens_ft |>
+    @pipe dens2d[idxs_ft_y, idxs_ft_x] |> 
+          # imfilter(_, Kernel.gaussian((sigma_y_blur_dens, 0))) |> _ .* tukey_dens_ft |>
+          (ds -> mean(ds; dims=1) .+ zero(ds)) |>
           ifftshift |> fft |> fftshift |>
           _[mask_ft_ky, mask_ft_kx] |>
           ft2d -> ft2d ./ (sum(abs.(ft2d)) .* prod(step_ft) ./ 4)
@@ -393,10 +397,11 @@ prfl_modl_fit_fmt = Array{Float64}(undef, length(kx_ft), n_istp, n_IB)
 prfl_modl1d_cohr_fmt = similar(prfl_modl_fit_fmt)
 prfl_modl1d_inco_fmt = similar(prfl_modl_fit_fmt)
 for idx_IB in 1:n_IB, idx_istp in 1:n_istp
-    prfl_modl_fit_fmt[:, idx_istp, idx_IB] .= prfl_modl_fit[idx_IB, idx_istp]
+    prfl_modl_fit_fmt[:, idx_istp, idx_IB] .= 0 # prfl_modl_fit[idx_IB, idx_istp]
     prfl_modl1d_cohr_fmt[:, idx_istp, idx_IB] .= prfl_modl1d_cohr[idx_IB, idx_istp]
     prfl_modl1d_inco_fmt[:, idx_istp, idx_IB] .= prfl_modl1d_inco[idx_IB, idx_istp]
 end
+
 if use_mask_sidepeak
     tail_cohr = calc_modl_tail_masked(kx_ft, prfl_modl1d_cohr_fmt, prfl_modl_fit_fmt)
     tail_inco = calc_modl_tail_masked(kx_ft, prfl_modl1d_inco_fmt, prfl_modl_fit_fmt)
@@ -506,6 +511,8 @@ function draw_ft_table!(fig)
             Label(gl_tail[2, idx_istp]; text=istp_name, fontsize=9, halign=:center)
             ax_dens = Axis(gl_dens[3, idx_istp]; aspect=DataAspect(), xlabel=bottom ? "x (μm)" : "", ylabel=idx_istp == 1 ? "y (μm)" : "")
             heatmap!(ax_dens, x_dens, y_dens, ntfr2d_mean[idx_IB, idx_istp]'; colormap=clrmap, rasterize=true)
+            Rect2f(.- smwh_dens_ft .* step_dens, smwh_dens_ft .* step_dens .* 2) |> 
+                r -> poly!(ax_dens, r; color=:transparent, strokecolor=(:black, 0.5)) |> p -> translate!(p, 0, 0, 100)
             hideydecorations!(ax_dens; label=idx_istp != 1, grid=false)
             ax_cmpx = Axis(gl_cmpx[3, idx_istp]; aspect=DataAspect(), xlabel=bottom ? "kx (μm⁻¹)" : "", ylabel=idx_istp == 1 ? "ky (μm⁻¹)" : "")
             heatmap!(ax_cmpx, kx_ft_plot, ky_ft_plot, first(gen_ft_rgba(ft2d_cmpx_mean[idx_IB, idx_istp], mask_sidepeak[idx_IB, idx_istp]))[mask_ky_ft_plot, mask_kx_ft_plot]'; rasterize=true)
@@ -520,6 +527,7 @@ function draw_ft_table!(fig)
             xlims!(ax_cohr, lims_kx_ft_plot)
             ylims!(ax_cohr, lims_ky_ft_plot)
             ax_cohr_profile = Axis(gl_cohr[4, idx_istp]; xlabel=bottom ? "kx (μm⁻¹)" : "", ylabel=idx_istp == 1 ? "cohr" : "", xticks=0.0:0.1:0.5)
+            lines!(ax_cohr_profile, kx_ft_plot, prfl_modl1d_cohr_unmasked[idx_IB, idx_istp][mask_kx_ft_plot]; color=(:black, 0.45), linewidth=1.2)
             lines!(ax_cohr_profile, kx_ft_plot, prfl_modl_fit_scaled_cohr[idx_IB, idx_istp][mask_kx_ft_plot]; color=(:gray40, 0.55), linewidth=1.0)
             lines!(ax_cohr_profile, kx_ft_plot, prfl_modl1d_cohr[idx_IB, idx_istp][mask_kx_ft_plot]; color=clr_theme(idx_istp), linewidth=1.2)
             ylims!(ax_cohr_profile, ylims_profile_cohr)
@@ -534,6 +542,7 @@ function draw_ft_table!(fig)
             xlims!(ax_inco, lims_kx_ft_plot)
             ylims!(ax_inco, lims_ky_ft_plot)
             ax_inco_profile = Axis(gl_inco[4, idx_istp]; xlabel=bottom ? "kx (μm⁻¹)" : "", ylabel=idx_istp == 1 ? "incohr" : "", xticks=0.0:0.1:0.5)
+            lines!(ax_inco_profile, kx_ft_plot, prfl_modl1d_inco_unmasked[idx_IB, idx_istp][mask_kx_ft_plot]; color=(:black, 0.45), linewidth=1.2)
             lines!(ax_inco_profile, kx_ft_plot, prfl_modl1d_inco[idx_IB, idx_istp][mask_kx_ft_plot]; color=clr_theme(idx_istp), linewidth=1.3)
             ylims!(ax_inco_profile, ylims_profile_inco)
             linkxaxes!(ax_inco, ax_inco_profile)
@@ -623,9 +632,11 @@ function draw_stacked_profile_heatmaps!(
     hm = Array{Heatmap}(undef, 2)
     for (idx_istp, istp_name) in enumerate(val_istp)
         ax = Axis(fig[row, idx_istp]; xlabel="kx (μm⁻¹)", ylabel="IB (A)", yaxisposition=idx_istp == 1 ? :left : :right, title="istp=$istp_name")
-        hm[idx_istp] = heatmap!(ax, x_plot, val_IB, @view(prfl[:, idx_istp, :]); colormap=gen_clrmap_solo(hue_theme_istp[istp_name]), colorrange, rasterize=true)
+        hm[idx_istp] = heatmap!(ax, x_plot, val_IB, @view(prfl[:, idx_istp, :]); colormap=gen_clrmap_solo(hue_theme_istp[istp_name]), colorrange, rasterize=false)
         idx_istp == 1 ? xlims!(ax, reverse(range_x_plot)) : xlims!(ax, range_x_plot)
-        ax.xticks = 0:0.1:0.6
+        ax.xticks = 0.05:0.05:0.6
+        ax.xminorticks = IntervalsBetween(5)
+        ax.xminorticksvisible = true;
     end
     Colorbar(fig[row, length(val_istp)+1], hm[1]; ticklabelsvisible=false, labelvisible=false,)
     Colorbar(fig[row, length(val_istp)+2], hm[2]; label="profile")
