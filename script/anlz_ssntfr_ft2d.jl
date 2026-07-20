@@ -24,9 +24,9 @@ path_data = joinpath(path_root, "0204_interference", "result", "data.h5")
 
 # commit 57d2e69f9017be9957b38674e01e6fbc3aae013d
 # Here we use heavy blurring along y, so that it's effectively a FT on 1D fringe
-# see `calc_ft2d_cmpx`, the blurring is specified with sigma_center_filter
 # Goes back to normal width of FT for sum
 # Try without subtracting the tail by setting it to 0, shrink the averaging region
+# Fitting on the 1D profile with a simple model
 path_output = joinpath(path_root, "AnlzRoutine", "62.MeanAbsl2D.NonSquared.Mask.AvgTailess")
 path_fit_jld2 = joinpath(path_output, "SSNTFR_ft2d_fit.jld2")
 
@@ -414,6 +414,69 @@ prfl_modl1d_inco_tailess = [vec(tail_inco.prfl_tailess[:, idx_istp, idx_IB]) for
 prfl_modl_fit_scaled_cohr = [vec(tail_cohr.prfl_modl_fit_scaled[:, idx_istp, idx_IB]) for idx_IB in 1:n_IB, idx_istp in 1:n_istp]
 prfl_modl_fit_scaled_inco = [vec(tail_inco.prfl_modl_fit_scaled[:, idx_istp, idx_IB]) for idx_IB in 1:n_IB, idx_istp in 1:n_istp]
 
+## Fitting on the 1D profiles
+function twinpeak_decay_model_1d(kx, params)
+    k_side, σ_side, A_side, k_far, σ_far, A_far, M_decay, λ_dacay = params
+    @. M_decay * exp(-abs(kx)/λ_dacay) + A_side * exp(-(kx - k_side)^2/(2 * σ_side^2)) + A_far * exp(-(kx - k_far)^2/(2 * σ_far^2))  
+end
+
+function twinpeak_decay_components_1d(kx, params)
+    k_side, σ_side, A_side, k_far, σ_far, A_far, M_decay, λ_dacay = params
+    tail = @. M_decay * exp(-abs(kx) / λ_dacay)
+    side = @. A_side * exp(-(kx - k_side)^2 / (2 * σ_side^2))
+    far = @. A_far * exp(-(kx - k_far)^2 / (2 * σ_far^2))
+    (; tail, side_tail=tail + side, total=tail + side + far)
+end
+fit_cohr = map(prfl_modl1d_cohr) do prfl
+    mask_fit_prfl = 0.13 .<= kx_ft .<= 0.50
+    kx_fit = kx_ft[mask_fit_prfl]
+    prfl_fit = prfl[mask_fit_prfl]
+    p_init = [0.20, 0.030, 0.005, 0.27, 0.01, 0.002, 0.005, 0.2]
+    p_upper = [0.22, 0.050, 0.015, 0.275, 0.020, 0.003, 0.010, 0.5]
+    p_lower = [0.15, 0.015, 0.000001, 0.255, 0.005, 0.001, 0.000, 0.1]
+    fit = curve_fit(
+        twinpeak_decay_model_1d,
+        kx_fit,
+        prfl_fit,
+        p_init;
+        lower=p_lower,
+        upper=p_upper,
+        maxIter=4000,
+    )
+    k_side, σ_side, A_side, k_far, σ_far, A_far, M_decay, λ_dacay = params = coef(fit)
+    stderr_k_side, stderr_σ_side, stderr_A_side, stderr_k_far, stderr_σ_far, stderr_A_far, stderr_M_decay, stderr_λ_dacay = stderr_params = stderror(fit)
+    maxiter_reached = !fit.converged
+    norm = (prfl[1]/2 + sum(prfl[2:end])) * step_ft[1]
+    weight_sidepeak = (sqrt(2π) * A_side * σ_side + sqrt(2π) * A_far * σ_far) / norm
+    stderr_weight_sidepeak = sqrt(stderr_A_side^2 * σ_side^2 + stderr_σ_side^2 * A_side^2 + 
+                                    stderr_A_far^2 * σ_far^2 + stderr_σ_far^2 * A_far^2) / norm
+    (; params, stderr_params, maxiter_reached, norm, weight_sidepeak, stderr_weight_sidepeak)
+end
+fit_inco = map(prfl_modl1d_inco) do prfl
+    mask_fit_prfl = 0.13 .<= kx_ft .<= 0.35
+    kx_fit = kx_ft[mask_fit_prfl]
+    prfl_fit = prfl[mask_fit_prfl]
+    p_init =  [0.20, 0.05, 0.020, 0.270, 0.020, 0.005, 0.010, 0.2]
+    p_upper = [0.22, 0.15, 0.030, 0.275, 0.050, 0.010, 0.020, 0.5]
+    p_lower = [0.15, 0.02, 0.005, 0.255, 0.010, 0.001, 0.000, 0.1]
+    fit = curve_fit(
+        twinpeak_decay_model_1d,
+        kx_fit,
+        prfl_fit,
+        p_init;
+        lower=p_lower,
+        upper=p_upper,
+        maxIter=4000,
+    )
+    k_side, σ_side, A_side, k_far, σ_far, A_far, M_decay, λ_dacay = params = coef(fit)
+    stderr_k_side, stderr_σ_side, stderr_A_side, stderr_k_far, stderr_σ_far, stderr_A_far, stderr_M_decay, stderr_λ_dacay = stderr_params = stderror(fit)
+    maxiter_reached = !fit.converged
+    norm = (prfl[1]/2 + sum(prfl[2:end])) * step_ft[1]
+    weight_sidepeak = (sqrt(2π) * A_side * σ_side + sqrt(2π) * A_far * σ_far) / norm
+    stderr_weight_sidepeak = sqrt(stderr_A_side^2 * σ_side^2 + stderr_σ_side^2 * A_side^2 + 
+                                    stderr_A_far^2 * σ_far^2 + stderr_σ_far^2 * A_far^2) / norm
+    (; params, stderr_params, maxiter_reached, norm, weight_sidepeak, stderr_weight_sidepeak)
+end
 ## Data save and FT-only visualizations
 
 isdir(path_output) || mkpath(path_output)
@@ -527,6 +590,10 @@ function draw_ft_table!(fig)
             xlims!(ax_cohr, lims_kx_ft_plot)
             ylims!(ax_cohr, lims_ky_ft_plot)
             ax_cohr_profile = Axis(gl_cohr[4, idx_istp]; xlabel=bottom ? "kx (μm⁻¹)" : "", ylabel=idx_istp == 1 ? "cohr" : "", xticks=0.0:0.1:0.5)
+            fit_cohr_components = twinpeak_decay_components_1d(kx_ft, fit_cohr[idx_IB, idx_istp].params)
+            band!(ax_cohr_profile, kx_ft_plot, zeros(length(kx_ft_plot)), fit_cohr_components.total[mask_kx_ft_plot]; color=(:lightgreen, 0.55))
+            band!(ax_cohr_profile, kx_ft_plot, zeros(length(kx_ft_plot)), fit_cohr_components.side_tail[mask_kx_ft_plot]; color=(:seagreen4, 0.55))
+            band!(ax_cohr_profile, kx_ft_plot, zeros(length(kx_ft_plot)), fit_cohr_components.tail[mask_kx_ft_plot]; color=(:gray40, 0.62))
             lines!(ax_cohr_profile, kx_ft_plot, prfl_modl1d_cohr_unmasked[idx_IB, idx_istp][mask_kx_ft_plot]; color=(:black, 0.45), linewidth=1.2)
             lines!(ax_cohr_profile, kx_ft_plot, prfl_modl_fit_scaled_cohr[idx_IB, idx_istp][mask_kx_ft_plot]; color=(:gray40, 0.55), linewidth=1.0)
             lines!(ax_cohr_profile, kx_ft_plot, prfl_modl1d_cohr[idx_IB, idx_istp][mask_kx_ft_plot]; color=clr_theme(idx_istp), linewidth=1.2)
@@ -542,6 +609,10 @@ function draw_ft_table!(fig)
             xlims!(ax_inco, lims_kx_ft_plot)
             ylims!(ax_inco, lims_ky_ft_plot)
             ax_inco_profile = Axis(gl_inco[4, idx_istp]; xlabel=bottom ? "kx (μm⁻¹)" : "", ylabel=idx_istp == 1 ? "incohr" : "", xticks=0.0:0.1:0.5)
+            fit_inco_components = twinpeak_decay_components_1d(kx_ft, fit_inco[idx_IB, idx_istp].params)
+            band!(ax_inco_profile, kx_ft_plot, zeros(length(kx_ft_plot)), fit_inco_components.total[mask_kx_ft_plot]; color=(:lightgreen, 0.55))
+            band!(ax_inco_profile, kx_ft_plot, zeros(length(kx_ft_plot)), fit_inco_components.side_tail[mask_kx_ft_plot]; color=(:seagreen4, 0.55))
+            band!(ax_inco_profile, kx_ft_plot, zeros(length(kx_ft_plot)), fit_inco_components.tail[mask_kx_ft_plot]; color=(:gray40, 0.62))
             lines!(ax_inco_profile, kx_ft_plot, prfl_modl1d_inco_unmasked[idx_IB, idx_istp][mask_kx_ft_plot]; color=(:black, 0.45), linewidth=1.2)
             lines!(ax_inco_profile, kx_ft_plot, prfl_modl1d_inco[idx_IB, idx_istp][mask_kx_ft_plot]; color=clr_theme(idx_istp), linewidth=1.3)
             ylims!(ax_inco_profile, ylims_profile_inco)
@@ -849,8 +920,16 @@ axs_cohr = Axis(fig_cohr[1, 1]; title="coherent 2D modulation spectral weight wi
 axs_modl = Axis(fig_cohr[2, 1]; title="averaged 2D modulation spectral weight within mask")
 filename_plot_cohr_modl = "$(tag)_cohr_modl"
 for (i, istp) in enumerate(["162", "164"])
-    lines!(axs_cohr, val_IB_ref, sum.(prfl_modl1d_cohr_tailess)[:, i]; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
-    lines!(axs_modl, val_IB_ref, sum.(prfl_modl1d_inco_tailess)[:, i]; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
+    weight_cohr = getfield.(fit_cohr[:, i], :weight_sidepeak)  
+    weight_inco = getfield.(fit_inco[:, i], :weight_sidepeak) 
+    stderr_weight_cohr = getfield.(fit_cohr[:, i], :stderr_weight_sidepeak)  
+    stderr_weight_inco = getfield.(fit_inco[:, i], :stderr_weight_sidepeak) 
+    # lines!(axs_cohr, val_IB_ref, sum.(prfl_modl1d_cohr_tailess)[:, i]; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
+    # lines!(axs_modl, val_IB_ref, sum.(prfl_modl1d_inco_tailess)[:, i]; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
+    lines!(axs_cohr, val_IB_ref, weight_cohr; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
+    lines!(axs_modl, val_IB_ref, weight_inco; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
+    errorbars!(axs_cohr, val_IB_ref, weight_cohr, stderr_weight_cohr; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
+    errorbars!(axs_modl, val_IB_ref, weight_inco, stderr_weight_inco; color=RGBAf(Oklch(0.52, 0.14, hue_theme_istp[istp]), 0.8))
 end
 for ext in ("png", "pdf")
     save(joinpath(path_output, "$filename_plot_cohr_modl.$ext"), fig_cohr; backend=CairoMakie)
