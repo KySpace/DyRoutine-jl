@@ -213,7 +213,7 @@ function plot_pca_evol_spct!(
         text!(ax_spct, pk.freq, pk.value;
             text=@sprintf("%.0f Hz \n%s", pk.freq, str_val_rel),
             color=(:darkorchid4, 1), fontsize=14,
-            align=(:left, (pk.value > 1) ? :top : :bottom))
+            align=(:left, (pk.value > 0.5) ? :top : :bottom))
     end
     isnothing(t_span_lim) || vspan!(ax_evol, t_span_lim...; color=RGBAf(Oklch(0.4, 0.01, 240), 0.04))
     for rep = 1:n_rep

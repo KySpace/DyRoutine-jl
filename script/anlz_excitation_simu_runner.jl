@@ -18,6 +18,7 @@ include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
 # axial and radial profiles integrated into saved data
+# commit f895ed70eb888f4caa9008041f63d776e1fc772d
 title_anlz = "Anlz.16.Simu-03.[2025.07.22]"
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations"
@@ -130,7 +131,7 @@ fit_asymm_kwargs = (;
 fit_round_kwargs = NamedTuple()
 query_weight_kwargs = NamedTuple()
 plot_prfl_modl_evol_kwargs = (; colorrange=(0, 3.0))
-prfl_axial_halfwidth_um = 14.0
+prfl_axial_halfwidth_um = 16.0
 prfl_radial_halfwidth_um = 4.0
 plot_prfl_axial_evol_kwargs = (; pos_lims=(-prfl_axial_halfwidth_um, prfl_axial_halfwidth_um))
 plot_prfl_radial_evol_kwargs = (; pos_lims=(-prfl_radial_halfwidth_um, prfl_radial_halfwidth_um))
@@ -195,7 +196,7 @@ trend_property_specs = [
     (
         name="nvlp-size-axial",
         ylabel="envelope size\naxial (μm)",
-        ylim=(5, 10),
+        ylim=(6, 10),
         selection_key="t_vec_sel_nvlp_size",
         overlay_evol_col=1,
         fit_evol=(
@@ -212,7 +213,7 @@ trend_property_specs = [
     (
         name="nvlp-size-radial",
         ylabel="envelope size\nradial (μm)",
-        ylim=(0.5, 3.5),
+        ylim=(0.5, 1.5),
         selection_key="t_vec_sel_nvlp_size",
         overlay_evol_col=1,
         fit_evol=(
