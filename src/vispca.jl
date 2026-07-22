@@ -210,7 +210,10 @@ function plot_pca_evol_spct!(
     for pk in rcrd_pks
         scatter!(ax_spct, pk.freq, pk.value; color=(:darkorchid4, 1))
         str_val_rel = @sprintf("%.2f", pk.value_reduced) |> s -> replace(s, r"^0" => "")
-        text!(ax_spct, pk.freq, pk.value; text=@sprintf("%.0f Hz \n%s", pk.freq, str_val_rel), color=(:darkorchid4, 1), fontsize=14, align=(:left, :bottom))
+        text!(ax_spct, pk.freq, pk.value;
+            text=@sprintf("%.0f Hz \n%s", pk.freq, str_val_rel),
+            color=(:darkorchid4, 1), fontsize=14,
+            align=(:left, (pk.value > 1) ? :top : :bottom))
     end
     isnothing(t_span_lim) || vspan!(ax_evol, t_span_lim...; color=RGBAf(Oklch(0.4, 0.01, 240), 0.04))
     for rep = 1:n_rep

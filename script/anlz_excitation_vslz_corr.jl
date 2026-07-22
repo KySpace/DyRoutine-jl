@@ -34,13 +34,14 @@ log_done("saved spectrum-vs-IB figures", t_stage)
 
 for (c, tag_IB) in enumerate(tag_IBs)
     runinfo_plot = runinfo_plots[c]
+    width_prfl_evol = 10 * (maximum(val_vars.t_hold) - minimum(val_vars.t_hold))
 
     local t_stage = log_step("sidepeak distribution evolution for $tag_IB")
     fig_prfl_evol, axs_prfl_evol = set_axis_prfl_modl_evol!(
         val_vars.rep,
         val_vars.istp,
         "$tag_IB modulation sidepeak profile";
-        width=30 * size(prfl_evol[c, 1, 1], 2),
+        width=width_prfl_evol,
         height=400,
     )
     plot_prfl_modl_evol!(
@@ -57,6 +58,49 @@ for (c, tag_IB) in enumerate(tag_IBs)
         fig_prfl_evol |> f -> save(joinpath(path_output, @sprintf("prfl_modl_evol_[%s].%s", tag_IB, format)), f; backend=CairoMakie)
     end
     log_done("finished sidepeak distribution for $tag_IB", t_stage)
+
+    local t_stage = log_step("core density profile evolution for $tag_IB")
+    essn_ref = essn_2d_fmt[c, 1, 1, 1]
+    core_profiles = (
+        axial=(
+            evol=prfl_axial_evol,
+            stacked=prfl_axial_evol_stacked,
+            pos=((-essn_ref.smwh_core[2]):essn_ref.smwh_core[2]) .* essn_ref.step_posi[2],
+            height=400,
+            kwargs=plot_prfl_axial_evol_kwargs,
+        ),
+        radial=(
+            evol=prfl_radial_evol,
+            stacked=prfl_radial_evol_stacked,
+            pos=((-essn_ref.smwh_core[1]):essn_ref.smwh_core[1]) .* essn_ref.step_posi[1],
+            height=400 * (2 * prfl_radial_halfwidth_um) / (2 * prfl_axial_halfwidth_um),
+            kwargs=plot_prfl_radial_evol_kwargs,
+        ),
+    )
+    for field in propertynames(core_profiles)
+        profile = getproperty(core_profiles, field)
+        fig_core, axs_core = set_axis_prfl_modl_evol!(
+            val_vars.rep,
+            val_vars.istp,
+            "$tag_IB $(field) core density profile";
+            width=width_prfl_evol,
+            height=profile.height,
+        )
+        plot_prfl_core_evol!(
+            axs_core,
+            profile.evol[c, :, :],
+            profile.stacked[c, :],
+            val_vars.t_hold,
+            profile.pos,
+            val_vars.istp;
+            profile.kwargs...,
+        )
+        resize_to_layout!(fig_core)
+        for format in ["svg", "png"]
+            save(joinpath(path_output, @sprintf("prfl_%s_evol_[%s].%s", field, tag_IB, format)), fig_core; backend=CairoMakie)
+        end
+    end
+    log_done("finished core density profiles for $tag_IB", t_stage)
 
     local t_stage = log_step("building trend figures for $tag_IB")
     panel_setter = (gl, col; extra=false) -> set_panel_trend_properties!(

@@ -61,6 +61,29 @@ prfl_evol_stacked = [
 ]
 log_done("finished composing FT sidepeak profile evolution", t_stage)
 
+t_stage = log_step("composing core density profile evolution")
+compose_core_prfl_evol(essns, field::Symbol) = [
+    getproperty(essns[t].prfls_core, field)
+    for t in eachindex(essns)
+] |> prfls -> reduce(hcat, prfls)
+prfl_axial_evol = [
+    compose_core_prfl_evol(essn_2d_fmt[c, r, :, i], :axial)
+    for c in axes(essn_2d_fmt, 1), r in axes(essn_2d_fmt, 2), i in axes(essn_2d_fmt, 4)
+]
+prfl_axial_evol_stacked = [
+    compose_core_prfl_evol(essn_stacked_over_rep[c, :, i], :axial)
+    for c in axes(essn_stacked_over_rep, 1), i in axes(essn_stacked_over_rep, 3)
+]
+prfl_radial_evol = [
+    compose_core_prfl_evol(essn_2d_fmt[c, r, :, i], :radial)
+    for c in axes(essn_2d_fmt, 1), r in axes(essn_2d_fmt, 2), i in axes(essn_2d_fmt, 4)
+]
+prfl_radial_evol_stacked = [
+    compose_core_prfl_evol(essn_stacked_over_rep[c, :, i], :radial)
+    for c in axes(essn_stacked_over_rep, 1), i in axes(essn_stacked_over_rep, 3)
+]
+log_done("finished composing core density profile evolution", t_stage)
+
 t_stage = log_step("fitting modulation profile PCA modes")
 mask_y_modl_pca = (0.06 .<= y_modl .<= 0.6)
 any(mask_y_modl_pca) || throw(ArgumentError("modulation profile PCA wavenum selector 0.06-0.6 selected no y_modl values."))
@@ -118,6 +141,10 @@ JLD2.jldsave(
     trend_stacked_over_rep,
     prfl_evol,
     prfl_evol_stacked,
+    prfl_axial_evol,
+    prfl_axial_evol_stacked,
+    prfl_radial_evol,
+    prfl_radial_evol_stacked,
     modes_pca_dens2d,
     pca_spectra,
     modes_pca_prfl_modl,

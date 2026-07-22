@@ -138,6 +138,49 @@ function plot_prfl_modl_evol!(
     return nothing
 end
 
+function plot_prfl_core_evol!(
+    axs::Dict,
+    prfl_evol::AbstractArray,
+    prfl_evol_stacked::AbstractVector,
+    val_t::AbstractVector,
+    pos::AbstractVector,
+    val_istp::AbstractVector;
+    colorrange=nothing,
+    x_ticks=0:10:210,
+    pos_ticks=nothing,
+    pos_lims=(-14, 14),
+    colormap=nothing,
+)
+    axs_repeats = axs["repeats"]
+    axs_stacked = axs["stacked"]
+    slots_colorbar = axs["colorbars"]
+    size(prfl_evol) == size(axs_repeats) ||
+        throw(DimensionMismatch("core profile size $(size(prfl_evol)) does not match repeat axes $(size(axs_repeats))"))
+    length(prfl_evol_stacked) == length(val_istp) ||
+        throw(DimensionMismatch("stacked core profile count $(length(prfl_evol_stacked)) does not match val_istp length $(length(val_istp))"))
+    for i in eachindex(val_istp)
+        clrmap = isnothing(colormap) ? gen_clrmap_solo(hue_theme_istp[val_istp[i]]) : colormap
+        draw_heatmap(ax, prfl) = isnothing(colorrange) ?
+            heatmap!(ax, val_t, pos, prfl'; colormap=clrmap) :
+            heatmap!(ax, val_t, pos, prfl'; colorrange, colormap=clrmap)
+        hm = nothing
+        for r in axes(prfl_evol, 1)
+            ax = axs_repeats[r, i]
+            hm = draw_heatmap(ax, prfl_evol[r, i])
+            ylims!(ax, pos_lims)
+            ax.xticks = x_ticks
+            isnothing(pos_ticks) || (ax.yticks = pos_ticks)
+        end
+        ax = axs_stacked[i]
+        hm = draw_heatmap(ax, prfl_evol_stacked[i])
+        Colorbar(slots_colorbar[i], hm)
+        ylims!(ax, pos_lims)
+        ax.xticks = x_ticks
+        isnothing(pos_ticks) || (ax.yticks = pos_ticks)
+    end
+    return nothing
+end
+
 function set_axes_2axes!(vals::NamedTuple, panel_setter::Function, runinfo)
     fig = Figure()
     n_dim_vars = vals |> vs -> map(length, vs) |> Tuple

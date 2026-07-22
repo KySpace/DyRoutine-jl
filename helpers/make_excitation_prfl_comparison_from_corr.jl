@@ -211,7 +211,7 @@ function draw_prfl_inner_stack!(
     prfls::AbstractVector,
     istp::AbstractString,
     colorranges::AbstractVector{<:Tuple{<:Real,<:Real}};
-    width::Real=720,
+    width::Real=2.5 * (maximum(val_t_hold) - minimum(val_t_hold)),
     height::Real=100,
 )
     length(labels) == length(prfls) ||

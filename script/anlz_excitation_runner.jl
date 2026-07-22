@@ -288,6 +288,10 @@ plot_corr_figures = true
 plot_extr_figures = false
 draw_solo_modl_kwargs = NamedTuple()
 plot_prfl_modl_evol_kwargs = NamedTuple()
+prfl_axial_halfwidth_um = 14.0
+prfl_radial_halfwidth_um = 4.0
+plot_prfl_axial_evol_kwargs = (; pos_lims=(-prfl_axial_halfwidth_um, prfl_axial_halfwidth_um))
+plot_prfl_radial_evol_kwargs = (; pos_lims=(-prfl_radial_halfwidth_um, prfl_radial_halfwidth_um))
 
 ##
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)

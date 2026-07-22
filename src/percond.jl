@@ -33,6 +33,10 @@ function calc_stacked_essn(essns::AbstractVector{SoloEssentials})::SoloEssential
             ),
             mask=essn_ref.prfl_modl.mask,
         ),
+        (;
+            axial=mean(map(essn -> essn.prfls_core.axial, essns)),
+            radial=mean(map(essn -> essn.prfls_core.radial, essns)),
+        ),
         essn_ref.smwh,
         essn_ref.smwh_strip,
         essn_ref.step_posi,

@@ -17,7 +17,8 @@ include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
-title_anlz = "Anlz.15.Simu-03.[2025.06.22]"
+# axial and radial profiles integrated into saved data
+title_anlz = "Anlz.16.Simu-03.[2025.07.22]"
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations"
 dir_test = raw"03.[2026.06.10]"
@@ -102,7 +103,7 @@ selector_t_spectrum = (;
     sp_height=t -> 30 .< t .< 100,
     sp_width=t -> 30 .< t .< 100,
     sp_wavenum=t -> 30 .< t .< 100,
-    nvlp=t -> 30 .< t .< 100,
+    nvlp=t -> 30 .< t .< 200,
 )
 selector_t_pca_dens = t -> 30 .< t .< 80
 selector_t_pca_modl = t -> 30 .< t .< 100
@@ -129,6 +130,10 @@ fit_asymm_kwargs = (;
 fit_round_kwargs = NamedTuple()
 query_weight_kwargs = NamedTuple()
 plot_prfl_modl_evol_kwargs = (; colorrange=(0, 3.0))
+prfl_axial_halfwidth_um = 14.0
+prfl_radial_halfwidth_um = 4.0
+plot_prfl_axial_evol_kwargs = (; pos_lims=(-prfl_axial_halfwidth_um, prfl_axial_halfwidth_um))
+plot_prfl_radial_evol_kwargs = (; pos_lims=(-prfl_radial_halfwidth_um, prfl_radial_halfwidth_um))
 trend_property_specs = [
     (
         name="number",
@@ -190,7 +195,7 @@ trend_property_specs = [
     (
         name="nvlp-size-axial",
         ylabel="envelope size\naxial (μm)",
-        ylim=(5, 8),
+        ylim=(5, 10),
         selection_key="t_vec_sel_nvlp_size",
         overlay_evol_col=1,
         fit_evol=(
@@ -261,5 +266,5 @@ for idx_runinfo_iter in ids_runinfo
     "anlz_excitation_extr.jl" |> copy_and_include
     "anlz_excitation_corr.jl" |> copy_and_include
     "anlz_excitation_vslz_corr.jl" |> copy_and_include
-    "anlz_excitation_vslz_extr.jl" |> copy_and_include
+    # "anlz_excitation_vslz_extr.jl" |> copy_and_include
 end

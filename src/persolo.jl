@@ -341,6 +341,7 @@ struct SoloEssentials
     smwh_core::Tuple{<:Real,<:Real}
     prfl_strip::AbstractVector
     prfl_modl::NamedTuple
+    prfls_core::NamedTuple
     smwh::Tuple{<:Real,<:Real}
     smwh_strip::Tuple{<:Real,<:Real}
     step_posi::Tuple{Real,Real}
@@ -389,7 +390,8 @@ function calc_solo_essn_2d(
     modl_roi = dens2d_core .* gen_win_hann_2d(smwh_core) |> fft |> fftshift |> c -> abs.(c)
     x_modl, y_modl = smwh_core |> s -> map(u -> (-u:1:u), s) |> xy -> xy .* step_modl
     masks = isempty(mask_modl) ? build_default_modl_masks(x_modl, y_modl) : build_modl_masks(mask_modl, x_modl, y_modl)
-    prfls = calc_prfl_norm_px_masked(modl_roi, masks, step_modl)
+    prfls_modl = calc_prfl_norm_px_masked(modl_roi, masks, step_modl)
+    prfls_core = dens2d_core |> ds -> (; axial = vec(mean(ds; dims=2)), radial = vec(mean(ds; dims=1)))
     return SoloEssentials(
         dens_roi,
         modl_roi,
@@ -397,7 +399,8 @@ function calc_solo_essn_2d(
         (x_posi[cent_core[1]], y_posi[cent_core[2]]),
         smwh_core,
         prfl_strip,
-        prfls,
+        prfls_modl,
+        prfls_core,
         smwh,
         smwh_strip,
         step_posi,

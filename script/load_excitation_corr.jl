@@ -55,6 +55,10 @@ else
     prfl_evol = nothing
     prfl_evol_stacked = cache_corr["prfl_evol"]
 end
+prfl_axial_evol = get(cache_corr, "prfl_axial_evol", nothing)
+prfl_axial_evol_stacked = get(cache_corr, "prfl_axial_evol_stacked", nothing)
+prfl_radial_evol = get(cache_corr, "prfl_radial_evol", nothing)
+prfl_radial_evol_stacked = get(cache_corr, "prfl_radial_evol_stacked", nothing)
 modes_pca_dens2d = cache_corr["modes_pca_dens2d"]
 pca_spectra = cache_corr["pca_spectra"]
 modes_pca_prfl_modl = haskey(cache_corr, "modes_pca_prfl_modl") ? cache_corr["modes_pca_prfl_modl"] : nothing
