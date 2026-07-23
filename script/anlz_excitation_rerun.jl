@@ -32,7 +32,7 @@ path_load_corr = joinpath(path_load, @sprintf("%s_corr.jld2", tag))
 ## Recomputed correlation settings. Change these here if the rerun should use
 # different analysis choices from the saved extraction metadata.
 
-selector_t_pca_dens = t -> 30 .< t .< 80
+selector_t_pca_dens = t -> 30 .< t .< 200
 selector_t_pca_modl = t -> 30 .< t .< 200
 n_pca_modes_prfl_modl = 8
 freq_query_pca_modl = 1:1:100

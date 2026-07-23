@@ -14,12 +14,18 @@ tag = "BdG"
 log_step(msg) = (println("  [$tag] $msg"); flush(stdout); time())
 log_done(msg, t_start) = (println("  [$tag] $msg ($(round(time() - t_start; digits=1)) s)"); flush(stdout))
 
-title = "Anlz.11.BdG-02.[2026.06.16].03"
+title = "Anlz.18.BdG-02.[2026.06.16].04"
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations"
 dir_test = raw"02.[2026.06.12]"
+dir_static = raw"static"
+dir_animation = raw"animation"
 path_show = joinpath(@__DIR__, "show_bdg_modes.jl")
 path_output = joinpath(path_root, title)
 isdir(path_output) || mkpath(path_output)
+for dir in (dir_static, dir_animation)
+    path_dir = joinpath(path_output, dir)
+    isdir(path_dir) || mkpath(path_dir)
+end
 n_mode = 15
 for a_s_iter in [75, 79, 80, 81, 83, 90]
     global a_s = a_s_iter

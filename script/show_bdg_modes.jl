@@ -60,6 +60,18 @@ function set_panel_mode!(gl::GridLayout)
     colsize!(gl, 0, 8)
     dict_axs, label
 end
+function set_panel_mode_static!(gl::GridLayout)
+    gl |> clean_gridlayout!
+    dict_axs = Dict{String,Any}()
+    dict_axs["δρ_si"] = [Axis(gl[1, 1]; kwargs_axes_si...), Axis(gl[1, 2]; kwargs_axes_si...)]
+    dict_axs["δρ_ti"] = [Axis(gl[2, 1]; kwargs_axes_ti...), Axis(gl[2, 2]; kwargs_axes_ti...)]
+    label = Label(gl[0, 1:2], ""; tellwidth=false, tellheight=true, halign=:left, valign=:top)
+    Label(gl[1, 0], "SI ρ"; tellwidth=false, tellheight=false, halign=:left, valign=:center, rotation=π / 2)
+    Label(gl[2, 0], "TI ρ"; tellwidth=false, tellheight=false, halign=:left, valign=:center, rotation=π / 2)
+    rowsize!(gl, 0, 8)
+    colsize!(gl, 0, 8)
+    dict_axs, label
+end
 function set_panel_ground!(gl::GridLayout)
     gl |> clean_gridlayout!
     dict_axs = Dict{String,Any}()
@@ -88,7 +100,7 @@ println("  [$tag] Drawing modes $tag_as")
 fig_modes = Figure()
 
 gl_modes = GridLayout(fig_modes[0, 1])
-axs_ground, label = set_panel_ground!(gl_modes)
+axs_ground, label_ground = set_panel_ground!(gl_modes)
 vcat(axs_ground["ti"], axs_ground["si"]) |> clear_axes!
 dens_3d_si = map(int_y, dens_3d)
 dens_3d_ti = map(int_z, dens_3d)
@@ -118,14 +130,41 @@ end
 for m = 1:n_mode
     print("\r      [$tag_as] Drawing mode $m")
     flush(stdout)
-    (ω[m] |> o -> imag(o) > real(o)) && continue
-    gl_modes = GridLayout(fig_modes[m, 1])
-    axs_modes, label = set_panel_mode!(gl_modes)
-    vcat(axs_modes["δρ_ti"], axs_modes["δρ_si"], axs_modes["δφ_ti"], axs_modes["δφ_si"]) |> clear_axes!
-
     c_t = maximum(abs, δρ_ti[m, :] |> stack)
     c_s = maximum(abs, δρ_si[m, :] |> stack)
-    label.text = "Mode $m | $(@sprintf("%.02f", real(ω[m]))) Hz"
+    label_mode = "Mode $m | $(@sprintf("%.02f", real(ω[m]))) Hz"
+
+    fig_mode_static = Figure()
+    axs_mode_static, label_static = set_panel_mode_static!(fig_mode_static.layout)
+    vcat(axs_mode_static["δρ_ti"], axs_mode_static["δρ_si"]) |> clear_axes!
+    label_static.text = label_mode
+    for i = 1:2
+        heatmap!(axs_mode_static["δρ_si"][i], x_vec, z_vec, δρ_si[m, i]; colormap=clrmap, colorrange=(-c_s, c_s), rasterize=true)
+        heatmap!(axs_mode_static["δρ_ti"][i], x_vec, y_vec, δρ_ti[m, i]; colormap=clrmap, colorrange=(-c_t, c_t), rasterize=true)
+    end
+    for ax in vcat(axs_mode_static["δρ_si"], axs_mode_static["δρ_ti"])
+        ax |> a -> hidedecorations!(a, ticks=true, ticklabels=true, grid=false)
+        ax.xgridvisible = true
+        ax.ygridvisible = true
+        ax.xminorgridvisible = true
+        ax.yminorgridvisible = true
+        ax.xticks = LinearTicks(10)
+    end
+    for ax in axs_mode_static["δρ_si"]
+        limits!(ax, (-50, 50), (-20, 20))
+    end
+    for ax in axs_mode_static["δρ_ti"]
+        limits!(ax, (-50, 50), (-12, 12))
+        ax.xticklabelsvisible = true
+    end
+    fig_mode_static |> resize_to_layout!
+    save(joinpath(path_output, dir_static, "$tag_as.mode-$m.png"), fig_mode_static; backend=CairoMakie)
+
+    (ω[m] |> o -> imag(o) > real(o)) && continue
+    gl_modes = GridLayout(fig_modes[m, 1])
+    axs_modes, label_modes = set_panel_mode!(gl_modes)
+    vcat(axs_modes["δρ_ti"], axs_modes["δρ_si"], axs_modes["δφ_ti"], axs_modes["δφ_si"]) |> clear_axes!
+    label_modes.text = label_mode
 
     for i = 1:2
         clr_δφ_si = to_phase_clr_dens(δφ_si[m, i], dens_gnd_si_cut[i], 0.57 * 360, 0.96 * 360; max_φ=max_φ[m], thres_alpha=0.05)
@@ -172,7 +211,7 @@ ax_si = Axis(fig_gif[2, 1]; width=500, height=200, aspect=DataAspect())
 ax_prfl = Axis(fig_gif[3, 1]; width=500, height=150)
 rowsize!(fig_gif.layout, 0, 20)
 
-for m in 1:15
+for m in 1:n_mode
     print("\r      [$tag_as] Animating mode $m")
     flush(stdout)
     clr_theme = [RGBAf(Oklch(0.52, 0.14, hue_theme_istp[i]), 0.75) for i in ["162" "164"]]
@@ -219,7 +258,7 @@ for m in 1:15
     local_draw(0)
     linkxaxes!(ax_ti, ax_si, ax_prfl)
     fig_gif |> resize_to_layout!
-    record(local_draw, fig_gif, joinpath(path_output, "$tag_as.mode-$m.gif"), range(0, 1, 72); framerate=24)
+    record(local_draw, fig_gif, joinpath(path_output, dir_animation, "$tag_as.mode-$m.gif"), range(0, 1, 72); framerate=24)
 end
 println("")
 println("  [$tag] Finished $tag_as")
