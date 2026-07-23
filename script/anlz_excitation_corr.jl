@@ -113,20 +113,41 @@ pca_spectra_prfl_modl = [
 ]
 log_done("fit modulation profile PCA modes", t_stage)
 
+config_corr = (;
+    filter_core_pca_sigma,
+    n_pca_modes_prfl_modl,
+    freq_query_pca_modl,
+    query_weight_kwargs,
+    selector_t_pca_dens_val=val_vars.t_hold[selector_t_pca_dens(val_vars.t_hold)],
+    selector_t_pca_modl_val=val_vars.t_hold[selector_t_pca_modl(val_vars.t_hold)],
+    selector_t_spectrum_val=NamedTuple{propertynames(selector_t_spectrum)}(
+        Tuple(selector_t_spectrum[key](val_vars.t_hold) |> mask -> val_vars.t_hold[mask] for key in propertynames(selector_t_spectrum))
+    ),
+    trend_property_specs,
+    trend_panel_per_IB_kwargs,
+    trend_panel_per_prop_kwargs,
+    trend_all_IB_groups,
+    trend_spectrum_IB_groups,
+    trend_spectrum_IB_kwargs,
+    trend_spectrum_IB_plot_kwargs,
+    plot_prfl_modl_evol_kwargs,
+    plot_prfl_axial_evol_kwargs,
+    plot_prfl_radial_evol_kwargs,
+)
+
 meta_corr = merge(
     meta_extr,
     (;
         kind="excitation_corr",
         path_output,
+        config_corr,
         n_pca_modes_prfl_modl,
         trend_property_specs,
         y_modl_pca,
         freq_query_pca_modl,
-        selector_t_pca_dens_val=val_vars.t_hold[selector_t_pca_dens(val_vars.t_hold)],
-        selector_t_pca_modl_val=val_vars.t_hold[selector_t_pca_modl(val_vars.t_hold)],
-        selector_t_spectrum_val=NamedTuple{propertynames(selector_t_spectrum)}(
-            Tuple(selector_t_spectrum[key](val_vars.t_hold) |> mask -> val_vars.t_hold[mask] for key in propertynames(selector_t_spectrum))
-        ),
+        config_corr.selector_t_pca_dens_val,
+        config_corr.selector_t_pca_modl_val,
+        config_corr.selector_t_spectrum_val,
     ),
 )
 

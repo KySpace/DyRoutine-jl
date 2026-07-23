@@ -32,9 +32,26 @@ path_load_corr = joinpath(path_load, @sprintf("%s_corr.jld2", tag))
 ## Recomputed correlation settings. Change these here if the rerun should use
 # different analysis choices from the saved extraction metadata.
 
-selector_t_pca_modl = t -> 30 .< t .< 100
+selector_t_pca_dens = t -> 30 .< t .< 80
+selector_t_pca_modl = t -> 30 .< t .< 200
+n_pca_modes_prfl_modl = 8
+freq_query_pca_modl = 1:1:100
+selector_t_spectrum = (;
+    number=t -> 30 .< t .< 100,
+    sp_weight=t -> 30 .< t .< 100,
+    sp_height=t -> 30 .< t .< 100,
+    sp_width=t -> 30 .< t .< 100,
+    sp_wavenum=t -> 30 .< t .< 100,
+    nvlp=t -> 30 .< t .< 200,
+)
+filter_core_pca_sigma = 1.5
+filter_core_pca = im -> imfilter(im, Kernel.gaussian(filter_core_pca_sigma))
+query_weight_kwargs = NamedTuple()
 prfl_axial_halfwidth_um = 16.0
 prfl_radial_halfwidth_um = 4.0
+plot_prfl_modl_evol_kwargs = (; colorrange=(0, 3.0))
+plot_prfl_axial_evol_kwargs = (; pos_lims=(-prfl_axial_halfwidth_um, prfl_axial_halfwidth_um))
+plot_prfl_radial_evol_kwargs = (; pos_lims=(-prfl_radial_halfwidth_um, prfl_radial_halfwidth_um))
 trend_property_specs = [
     (
         name="number",
@@ -96,7 +113,7 @@ trend_property_specs = [
     (
         name="nvlp-size-axial",
         ylabel="envelope size\naxial (μm)",
-        ylim=(6, 10),
+        ylim=(5, 15),
         selection_key="t_vec_sel_nvlp_size",
         overlay_evol_col=1,
         fit_evol=(
@@ -149,7 +166,7 @@ copy_and_include = (name_script) -> begin
     include(path_script)
 end
 "load_excitation_extr.jl" |> copy_and_include
-"anlz_excitation_corr.jl" |> copy_and_include
 # "load_excitation_corr.jl" |> copy_and_include
+"anlz_excitation_corr.jl" |> copy_and_include
 "anlz_excitation_vslz_corr.jl" |> copy_and_include
 # "anlz_excitation_vslz_extr.jl" |> copy_and_include

@@ -123,7 +123,8 @@ selector_t_spectrum = (;
 selector_t_pca_dens = t -> 20 .< t .< 80
 selector_t_pca_modl = t -> 30 .< t .< 170
 selector_tail_sidepeak = y -> y .> 0.2
-filter_core_pca = im -> imfilter(im, Kernel.gaussian(1.5))
+filter_core_pca_sigma = 1.5
+filter_core_pca = im -> imfilter(im, Kernel.gaussian(filter_core_pca_sigma))
 
 mask_modl = (;
     fringe=(x, y) -> ((x - 0.37) / 0.16)^2 + ((y - 0.32) / 0.1)^2 < 1,

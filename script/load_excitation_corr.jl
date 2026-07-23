@@ -18,7 +18,8 @@ n_rep = meta_corr.n_rep
 n_main = meta_corr.n_main
 n_istp = meta_corr.n_istp
 n_pca_modes = meta_corr.n_pca_modes
-n_pca_modes_prfl_modl = haskey(meta_corr, :n_pca_modes_prfl_modl) ? meta_corr.n_pca_modes_prfl_modl : 0
+n_pca_modes_prfl_modl = @isdefined(n_pca_modes_prfl_modl) ? n_pca_modes_prfl_modl : (haskey(meta_corr, :n_pca_modes_prfl_modl) ? meta_corr.n_pca_modes_prfl_modl : 0)
+config_corr = @isdefined(config_corr) ? config_corr : (haskey(meta_corr, :config_corr) ? meta_corr.config_corr : nothing)
 px_in_um = meta_corr.px_in_um
 smwh_roi = meta_corr.smwh_roi
 smwh_core = meta_corr.smwh_core
@@ -33,13 +34,16 @@ tag_IBs = meta_corr.tag_IBs
 runinfo_plots = meta_corr.runinfo_plots
 info_fmt = meta_corr.info_fmt
 info_fitting = meta_corr.info_fitting
-trend_property_specs = meta_corr.trend_property_specs
-trend_panel_per_IB_kwargs = meta_corr.trend_panel_per_IB_kwargs
-trend_panel_per_prop_kwargs = meta_corr.trend_panel_per_prop_kwargs
-trend_all_IB_groups = meta_corr.trend_all_IB_groups
-trend_spectrum_IB_groups = meta_corr.trend_spectrum_IB_groups
-trend_spectrum_IB_kwargs = meta_corr.trend_spectrum_IB_kwargs
-trend_spectrum_IB_plot_kwargs = meta_corr.trend_spectrum_IB_plot_kwargs
+# Preserve rerun-defined visualization settings.  In an ordinary load-only
+# workflow these variables are undefined, so the saved metadata remains the
+# default source.
+trend_property_specs = @isdefined(trend_property_specs) ? trend_property_specs : meta_corr.trend_property_specs
+trend_panel_per_IB_kwargs = @isdefined(trend_panel_per_IB_kwargs) ? trend_panel_per_IB_kwargs : meta_corr.trend_panel_per_IB_kwargs
+trend_panel_per_prop_kwargs = @isdefined(trend_panel_per_prop_kwargs) ? trend_panel_per_prop_kwargs : meta_corr.trend_panel_per_prop_kwargs
+trend_all_IB_groups = @isdefined(trend_all_IB_groups) ? trend_all_IB_groups : meta_corr.trend_all_IB_groups
+trend_spectrum_IB_groups = @isdefined(trend_spectrum_IB_groups) ? trend_spectrum_IB_groups : meta_corr.trend_spectrum_IB_groups
+trend_spectrum_IB_kwargs = @isdefined(trend_spectrum_IB_kwargs) ? trend_spectrum_IB_kwargs : meta_corr.trend_spectrum_IB_kwargs
+trend_spectrum_IB_plot_kwargs = @isdefined(trend_spectrum_IB_plot_kwargs) ? trend_spectrum_IB_plot_kwargs : meta_corr.trend_spectrum_IB_plot_kwargs
 
 trend_sidepeak_nvlp = cache_corr["trend_sidepeak_nvlp"]
 fit_evol_properties = haskey(cache_corr, "fit_evol_properties") ? cache_corr["fit_evol_properties"] : nothing
