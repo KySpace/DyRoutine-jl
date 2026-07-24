@@ -247,6 +247,127 @@ function plot_prfl_comparison!(
     return nothing
 end
 
+function set_axis_prfl_comparison_table!(
+    val_group::AbstractVector,
+    val_istp::AbstractVector,
+    title::AbstractString,
+)
+    isempty(val_group) && throw(ArgumentError("val_group must not be empty"))
+    isempty(val_istp) && throw(ArgumentError("val_istp must not be empty"))
+
+    fig = Figure()
+    Label(fig[0, 1:length(val_istp)], title; tellwidth=false, tellheight=true, halign=:left)
+    grids = Array{GridLayout}(undef, length(val_group), length(val_istp))
+    for (idx_group, group) in enumerate(val_group), (idx_istp, istp) in enumerate(val_istp)
+        idx_istp == 1 && Label(
+            fig[idx_group + 1, 0],
+            string(group);
+            tellwidth=true,
+            tellheight=false,
+            fontsize=9,
+        )
+        idx_group == 1 && Label(
+            fig[1, idx_istp],
+            string(istp);
+            tellwidth=false,
+            tellheight=true,
+            halign=:center,
+            fontsize=9,
+        )
+        gl = GridLayout()
+        fig[idx_group + 1, idx_istp] = gl
+        grids[idx_group, idx_istp] = gl
+    end
+    rowgap!(fig.layout, 6)
+    colgap!(fig.layout, 10)
+    return fig, grids
+end
+
+function calc_prfl_colorrange_auto(
+    prfl::AbstractMatrix,
+    val_t::AbstractVector,
+    pos::AbstractVector;
+    selector_t_hold::Function=t -> true,
+    selector_pos::Function=x -> true,
+)
+    size(prfl) == (length(pos), length(val_t)) || throw(DimensionMismatch(
+        "profile size $(size(prfl)) must match position/time lengths $((length(pos), length(val_t)))"
+    ))
+    mask_t = Bool[selector_t_hold(t) for t in val_t]
+    mask_pos = Bool[selector_pos(x) for x in pos]
+    any(mask_t) || throw(ArgumentError("selector_t_hold selected no time points"))
+    any(mask_pos) || throw(ArgumentError("selector_pos selected no profile positions"))
+    vals = Float64.(prfl[mask_pos, mask_t])
+    vals = filter(isfinite, vals)
+    isempty(vals) && return (0.0, 1.0)
+    upper = maximum(vals)
+    return (0.0, upper > 0 ? upper : 1.0)
+end
+
+function plot_prfl_comparison_table!(
+    fig::Figure,
+    grids::AbstractMatrix,
+    rows_by_group::AbstractVector,
+    val_t::AbstractVector,
+    val_istp::AbstractVector;
+    width::Real,
+    height::Real,
+    ylims=nothing,
+    colorrange=nothing,
+    selector_t_hold::Function=t -> true,
+    selector_pos::Function=x -> true,
+    x_ticks=0:10:210,
+    pos_ticks=nothing,
+)
+    size(grids) == (length(rows_by_group), length(val_istp)) || throw(DimensionMismatch(
+        "profile table grid size $(size(grids)) does not match groups/isotopes $((length(rows_by_group), length(val_istp)))"
+    ))
+    for (idx_group, rows) in enumerate(rows_by_group), (idx_istp, istp) in enumerate(val_istp)
+        isempty(rows) && throw(ArgumentError("profile table group $idx_group has no rows"))
+        gl = grids[idx_group, idx_istp]
+        Label(gl[1, 1:2], string(rows[1].group_caption); tellwidth=false, tellheight=true, halign=:center, fontsize=8)
+        for (idx_row, row_spec) in enumerate(rows)
+            row = idx_row + 1
+            Label(gl[row, 0], row_spec.label; tellwidth=true, tellheight=false, fontsize=8)
+            profile_config = hasproperty(row_spec, :profile_config) ? row_spec.profile_config : nothing
+            width_row = isnothing(profile_config) ? width : profile_config.width_to_time * (maximum(val_t) - minimum(val_t))
+            row_height = Float64(hasproperty(row_spec, :height) ? row_spec.height : isnothing(profile_config) ? height : profile_config.height)
+            ax = Axis(gl[row, 1]; width=Float64(width_row), height=row_height, yticklabelspace=28.0)
+            ax.xtickalign = 1
+            ax.ytickalign = 1
+            clrmap = gen_clrmap_solo(hue_theme_istp[istp]; thres_alpha=0.1, alpha_base=0.1)
+            prfl = row_spec.evol[1, idx_istp]
+            colorrange_row = isnothing(profile_config) ? colorrange : profile_config.colorrange
+            selector_t_hold_row = hasproperty(row_spec, :selector_t_hold) ? row_spec.selector_t_hold : selector_t_hold
+            selector_pos_row = hasproperty(row_spec, :selector_pos) ? row_spec.selector_pos : selector_pos
+            colorrange_use = isnothing(colorrange_row) ?
+                calc_prfl_colorrange_auto(
+                    prfl,
+                    val_t,
+                    row_spec.pos;
+                    selector_t_hold=selector_t_hold_row,
+                    selector_pos=selector_pos_row,
+                ) : colorrange_row
+            hm = heatmap!(ax, val_t, row_spec.pos, prfl'; colorrange=colorrange_use, colormap=clrmap, rasterize=true)
+            Colorbar(gl[row, 2], hm; width=8.0, ticklabelsize=7.0, tickalign=1)
+            ylims_row = isnothing(profile_config) ? ylims : profile_config.ylims
+            isnothing(ylims_row) ? ylims!(ax, extrema(row_spec.pos)) : ylims!(ax, ylims_row)
+            ax.xticks = x_ticks
+            if hasproperty(row_spec, :hide_x_ticklabels) && row_spec.hide_x_ticklabels
+                ax.xticklabelsvisible = false
+                ax.xlabelvisible = false
+            end
+            isnothing(pos_ticks) || (ax.yticks = pos_ticks)
+        end
+        rowgap!(gl, 1)
+        colgap!(gl, 2)
+        colsize!(gl, 0, Fixed(48))
+        colsize!(gl, 2, Fixed(16))
+    end
+    resize_to_layout!(fig)
+    return nothing
+end
+
 function set_axes_2axes!(vals::NamedTuple, panel_setter::Function, runinfo)
     fig = Figure()
     n_dim_vars = vals |> vs -> map(length, vs) |> Tuple

@@ -132,7 +132,15 @@ fit_asymm_kwargs = (;
 fit_round_kwargs = NamedTuple()
 query_weight_kwargs = NamedTuple()
 vis_evol_prfl_modl = (height=400, width_to_time=10, ylims=(0, 0.6), colorrange=nothing)
-vis_evol_prfl_core = (height=400, width_to_time=10, ylims=nothing, colorrange=nothing)
+vis_evol_prfl_axial = (height=400, width_to_time=10, ylims=nothing, colorrange=nothing)
+vis_evol_prfl_radial = (height=400, width_to_time=10, ylims=nothing, colorrange=nothing)
+vis_evol_prfl_core = vis_evol_prfl_axial
+selector_t_hold_prfl_modl = t -> true
+selector_pos_prfl_modl = k -> true
+selector_t_hold_prfl_axial = t -> true
+selector_pos_prfl_axial = x -> true
+selector_t_hold_prfl_radial = t -> true
+selector_pos_prfl_radial = x -> true
 trend_property_specs = [
     (
         name="number",

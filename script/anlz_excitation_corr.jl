@@ -131,7 +131,8 @@ config_corr = (;
     trend_spectrum_IB_kwargs,
     trend_spectrum_IB_plot_kwargs,
     vis_evol_prfl_modl,
-    vis_evol_prfl_core,
+    vis_evol_prfl_axial,
+    vis_evol_prfl_radial,
 )
 
 meta_corr = merge(

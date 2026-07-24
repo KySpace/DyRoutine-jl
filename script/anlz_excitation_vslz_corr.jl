@@ -32,66 +32,140 @@ for spec in trend_property_specs
 end
 log_done("saved spectrum-vs-IB figures", t_stage)
 
-function save_prfl_comparison!(rows, title, name, tag_IB, config, val_t, val_istp)
+selector_t_hold_prfl_modl = @isdefined(selector_t_hold_prfl_modl) ? selector_t_hold_prfl_modl : (t -> true)
+selector_pos_prfl_modl = @isdefined(selector_pos_prfl_modl) ? selector_pos_prfl_modl : (k -> true)
+selector_t_hold_prfl_axial = @isdefined(selector_t_hold_prfl_axial) ? selector_t_hold_prfl_axial : (t -> true)
+selector_pos_prfl_axial = @isdefined(selector_pos_prfl_axial) ? selector_pos_prfl_axial : (x -> true)
+selector_t_hold_prfl_radial = @isdefined(selector_t_hold_prfl_radial) ? selector_t_hold_prfl_radial : (t -> true)
+selector_pos_prfl_radial = @isdefined(selector_pos_prfl_radial) ? selector_pos_prfl_radial : (x -> true)
+
+function save_prfl_comparison_table!(rows_by_IB, title, name, tag, config, val_IB, val_t, val_istp; selector_t_hold=t -> true, selector_pos=x -> true)
     width = config.width_to_time * (maximum(val_t) - minimum(val_t))
-    fig, axs, colorbars = set_axis_prfl_comparison!(
-        rows,
+    fig, grids = set_axis_prfl_comparison_table!(
+        val_IB,
         val_istp,
         title;
-        width,
-        height=config.height,
     )
-    plot_prfl_comparison!(
+    plot_prfl_comparison_table!(
         fig,
-        axs,
-        colorbars,
-        rows,
+        grids,
+        rows_by_IB,
         val_t,
         val_istp;
+        width,
+        height=config.height,
         ylims=config.ylims,
         colorrange=config.colorrange,
+        selector_t_hold,
+        selector_pos,
     )
     for format in ("svg", "png")
-        save(joinpath(path_output, @sprintf("%s_[%s].%s", name, tag_IB, format)), fig; backend=CairoMakie)
+        save(joinpath(path_output, @sprintf("%s_[%s].%s", name, tag, format)), fig; backend=CairoMakie)
     end
 end
 
-for (c, tag_IB) in enumerate(tag_IBs)
-    local t_stage = log_step("profile comparison figures for $tag_IB")
-    runinfo_plot = runinfo_plots[c]
-    val_t = val_vars.t_hold
-    val_istp = val_vars.istp
-    modl_stack = reshape([prfl_evol_stacked[c, i] for i in axes(prfl_evol_stacked, 2)], 1, :)
-    modl_rows_stack = [(label="stack", evol=modl_stack, pos=y_modl)]
-    modl_rows_reps = [
+val_t = val_vars.t_hold
+val_istp = val_vars.istp
+
+modl_rows_stack_by_IB = [
+    [
+        (
+            label="stack",
+            group_caption="IB=$(val_vars.IB[c])",
+            evol=reshape([prfl_evol_stacked[c, i] for i in axes(prfl_evol_stacked, 2)], 1, :),
+            pos=y_modl,
+        ),
+    ]
+    for c in axes(prfl_evol_stacked, 1)
+]
+modl_rows_reps_by_IB = [
+    [
         (
             label="rep $(val_vars.rep[r])",
+            group_caption="IB=$(val_vars.IB[c])",
             evol=reshape([prfl_evol[c, r, i] for i in axes(prfl_evol, 3)], 1, :),
             pos=y_modl,
         )
         for r in axes(prfl_evol, 2)
     ]
-    push!(modl_rows_reps, modl_rows_stack[1])
-    save_prfl_comparison!(modl_rows_stack, "$tag_IB modulation profile stack", "prfl_modl_stack", tag_IB, vis_evol_prfl_modl, val_t, val_istp)
-    save_prfl_comparison!(modl_rows_reps, "$tag_IB modulation profile reps and stack", "prfl_modl_reps_stack", tag_IB, vis_evol_prfl_modl, val_t, val_istp)
+    for c in axes(prfl_evol, 1)
+]
+for (c, rows) in enumerate(modl_rows_reps_by_IB)
+    push!(rows, modl_rows_stack_by_IB[c][1])
+end
+save_prfl_comparison_table!(
+    modl_rows_stack_by_IB,
+    "$tag modulation profile stack",
+    "prfl_modl_stack",
+    tag,
+    vis_evol_prfl_modl,
+    val_vars.IB,
+    val_t,
+    val_istp,
+    selector_t_hold=selector_t_hold_prfl_modl,
+    selector_pos=selector_pos_prfl_modl,
+)
+save_prfl_comparison_table!(
+    modl_rows_reps_by_IB,
+    "$tag modulation profile reps and stack",
+    "prfl_modl_reps_stack",
+    tag,
+    vis_evol_prfl_modl,
+    val_vars.IB,
+    val_t,
+    val_istp,
+    selector_t_hold=selector_t_hold_prfl_modl,
+    selector_pos=selector_pos_prfl_modl,
+)
 
-    essn_ref = essn_2d_fmt[c, 1, 1, 1]
-    pos_axial = ((-essn_ref.smwh_core[2]):essn_ref.smwh_core[2]) .* essn_ref.step_posi[2]
-    pos_radial = ((-essn_ref.smwh_core[1]):essn_ref.smwh_core[1]) .* essn_ref.step_posi[1]
-    height_radial = vis_evol_prfl_core.height * (maximum(pos_radial) - minimum(pos_radial)) / (maximum(pos_axial) - minimum(pos_axial))
-    core_stack = [
-        (label="axial stack", evol=reshape([prfl_axial_evol_stacked[c, i] for i in axes(prfl_axial_evol_stacked, 2)], 1, :), pos=pos_axial, height=vis_evol_prfl_core.height),
-        (label="radial stack", evol=reshape([prfl_radial_evol_stacked[c, i] for i in axes(prfl_radial_evol_stacked, 2)], 1, :), pos=pos_radial, height=height_radial),
+essn_ref = essn_2d_fmt[firstindex(essn_2d_fmt, 1), firstindex(essn_2d_fmt, 2), firstindex(essn_2d_fmt, 3), firstindex(essn_2d_fmt, 4)]
+pos_axial = ((-essn_ref.smwh_core[2]):essn_ref.smwh_core[2]) .* essn_ref.step_posi[2]
+pos_radial = ((-essn_ref.smwh_core[1]):essn_ref.smwh_core[1]) .* essn_ref.step_posi[1]
+height_radial = vis_evol_prfl_core.height * (maximum(pos_radial) - minimum(pos_radial)) / (maximum(pos_axial) - minimum(pos_axial))
+core_rows_stack_by_IB = [
+    [
+        (label="axial stack", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_axial_evol_stacked[c, i] for i in axes(prfl_axial_evol_stacked, 2)], 1, :), pos=pos_axial, height=vis_evol_prfl_axial.height, profile_config=vis_evol_prfl_axial, selector_t_hold=selector_t_hold_prfl_axial, selector_pos=selector_pos_prfl_axial, hide_x_ticklabels=true),
+        (label="radial stack", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_radial_evol_stacked[c, i] for i in axes(prfl_radial_evol_stacked, 2)], 1, :), pos=pos_radial, height=height_radial, profile_config=vis_evol_prfl_radial, selector_t_hold=selector_t_hold_prfl_radial, selector_pos=selector_pos_prfl_radial),
     ]
-    core_rows_reps = Any[]
-    for r in axes(prfl_axial_evol, 2)
-        push!(core_rows_reps, (label="rep $(val_vars.rep[r]) axial", evol=reshape([prfl_axial_evol[c, r, i] for i in axes(prfl_axial_evol, 3)], 1, :), pos=pos_axial, height=vis_evol_prfl_core.height))
-        push!(core_rows_reps, (label="rep $(val_vars.rep[r]) radial", evol=reshape([prfl_radial_evol[c, r, i] for i in axes(prfl_radial_evol, 3)], 1, :), pos=pos_radial, height=height_radial))
+    for c in axes(prfl_axial_evol_stacked, 1)
+]
+core_rows_reps_by_IB = [
+    begin
+        rows = Any[]
+        for r in axes(prfl_axial_evol, 2)
+            push!(rows, (label="rep $(val_vars.rep[r]) axial", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_axial_evol[c, r, i] for i in axes(prfl_axial_evol, 3)], 1, :), pos=pos_axial, height=vis_evol_prfl_axial.height, profile_config=vis_evol_prfl_axial, selector_t_hold=selector_t_hold_prfl_axial, selector_pos=selector_pos_prfl_axial, hide_x_ticklabels=true))
+            push!(rows, (label="rep $(val_vars.rep[r]) radial", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_radial_evol[c, r, i] for i in axes(prfl_radial_evol, 3)], 1, :), pos=pos_radial, height=height_radial, profile_config=vis_evol_prfl_radial, selector_t_hold=selector_t_hold_prfl_radial, selector_pos=selector_pos_prfl_radial))
+        end
+        append!(rows, core_rows_stack_by_IB[c])
+        rows
     end
-    append!(core_rows_reps, core_stack)
-    save_prfl_comparison!(core_stack, "$tag_IB axial/radial profile stack", "prfl_core_stack", tag_IB, vis_evol_prfl_core, val_t, val_istp)
-    save_prfl_comparison!(core_rows_reps, "$tag_IB axial/radial profile reps and stack", "prfl_core_reps_stack", tag_IB, vis_evol_prfl_core, val_t, val_istp)
-    log_done("finished profile comparison figures for $tag_IB", t_stage)
+    for c in axes(prfl_axial_evol, 1)
+]
+save_prfl_comparison_table!(
+    core_rows_stack_by_IB,
+    "$tag axial/radial profile stack",
+    "prfl_core_stack",
+    tag,
+    vis_evol_prfl_core,
+    val_vars.IB,
+    val_t,
+    val_istp,
+)
+save_prfl_comparison_table!(
+    core_rows_reps_by_IB,
+    "$tag axial/radial profile reps and stack",
+    "prfl_core_reps_stack",
+    tag,
+    vis_evol_prfl_core,
+    val_vars.IB,
+    val_t,
+    val_istp,
+)
+
+for (c, tag_IB) in enumerate(tag_IBs)
+    local t_stage = log_step("profile comparison figures for $tag_IB")
+    runinfo_plot = runinfo_plots[c]
+    log_done("finished profile data preparation for $tag_IB", t_stage)
 
     local t_stage = log_step("building trend figures for $tag_IB")
     panel_setter = (gl, col; extra=false) -> set_panel_trend_properties!(
@@ -104,7 +178,7 @@ for (c, tag_IB) in enumerate(tag_IBs)
     fig_trend, axs_trend = set_axis_sidepeak_nvlp!(n_dim_vars_per_IB, panel_setter, runinfo_plot)
     log_done("built trend figures for $tag_IB", t_stage)
     for i in 1:n_istp
-        val_istp = val_vars.istp[i]
+        local val_istp = val_vars.istp[i]
         t_plot_stage = log_step("plotting and saving trends for $tag_IB istp=$val_istp")
         trend_reps = trend_sidepeak_nvlp[c, :, i]
         trend_stacked = trend_extr_stacked_over_rep[c, i]
