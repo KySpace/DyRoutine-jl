@@ -16,8 +16,9 @@ include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
-# commit 89384be35faef4bf140f661b2d87ae56382a9250
-title_anlz = "[06.21].90.Extr.Table.Nvlp.SmallBlur.NoRot"
+# A test run to see how the new density profiles are drawn
+# commit e794fd69f788f0ae5ce2a74503900d8542567941
+title_anlz = "[07.24].99.Extr"
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
@@ -77,8 +78,8 @@ runinfos = runinfos_grouped
 # ids_runinfo = eachindex(runinfos)
 ids_runinfo = 1:2
 # sel_vars = NamedTuple()
-sel_vars = (; t_hold=t -> 0 .<= t .<= 100)
-# sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 20)
+# sel_vars = (; t_hold=t -> 0 .<= t .<= 100)
+sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 20)
 
 
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
