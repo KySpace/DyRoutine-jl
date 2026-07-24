@@ -1,5 +1,5 @@
 using MultivariateStats: PCA, fit, predict, projection
-using Statistics: mean
+using Statistics: mean, quantile
 using Peaks
 using LsqFit: curve_fit, coef, residuals
 

@@ -162,6 +162,46 @@ save_prfl_comparison_table!(
     val_istp,
 )
 
+core_rows_norm_stack_by_IB = [
+    [
+        (label="normalized axial stack", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_axial_evol_norm_stacked[c, i] for i in axes(prfl_axial_evol_norm_stacked, 2)], 1, :), pos=pos_axial, height=vis_evol_prfl_axial.height, profile_config=vis_evol_prfl_axial, selector_t_hold=selector_t_hold_prfl_axial, selector_pos=selector_pos_prfl_axial, hide_x_ticklabels=true),
+        (label="normalized radial stack", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_radial_evol_norm_stacked[c, i] for i in axes(prfl_radial_evol_norm_stacked, 2)], 1, :), pos=pos_radial, height=height_radial, profile_config=vis_evol_prfl_radial, selector_t_hold=selector_t_hold_prfl_radial, selector_pos=selector_pos_prfl_radial),
+    ]
+    for c in axes(prfl_axial_evol_norm_stacked, 1)
+]
+core_rows_norm_reps_by_IB = [
+    begin
+        rows = Any[]
+        for r in axes(prfl_axial_evol_norm, 2)
+            push!(rows, (label="normalized rep $(val_vars.rep[r]) axial", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_axial_evol_norm[c, r, i] for i in axes(prfl_axial_evol_norm, 3)], 1, :), pos=pos_axial, height=vis_evol_prfl_axial.height, profile_config=vis_evol_prfl_axial, selector_t_hold=selector_t_hold_prfl_axial, selector_pos=selector_pos_prfl_axial, hide_x_ticklabels=true))
+            push!(rows, (label="normalized rep $(val_vars.rep[r]) radial", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_radial_evol_norm[c, r, i] for i in axes(prfl_radial_evol_norm, 3)], 1, :), pos=pos_radial, height=height_radial, profile_config=vis_evol_prfl_radial, selector_t_hold=selector_t_hold_prfl_radial, selector_pos=selector_pos_prfl_radial))
+        end
+        append!(rows, core_rows_norm_stack_by_IB[c])
+        rows
+    end
+    for c in axes(prfl_axial_evol_norm, 1)
+]
+save_prfl_comparison_table!(
+    core_rows_norm_stack_by_IB,
+    "$tag normalized axial/radial profile stack",
+    "prfl_core_norm_stack",
+    tag,
+    vis_evol_prfl_core,
+    val_vars.IB,
+    val_t,
+    val_istp,
+)
+save_prfl_comparison_table!(
+    core_rows_norm_reps_by_IB,
+    "$tag normalized axial/radial profile reps and stack",
+    "prfl_core_norm_reps_stack",
+    tag,
+    vis_evol_prfl_core,
+    val_vars.IB,
+    val_t,
+    val_istp,
+)
+
 for (c, tag_IB) in enumerate(tag_IBs)
     local t_stage = log_step("profile comparison figures for $tag_IB")
     runinfo_plot = runinfo_plots[c]

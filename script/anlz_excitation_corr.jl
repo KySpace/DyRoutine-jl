@@ -82,6 +82,99 @@ prfl_radial_evol_stacked = [
     compose_core_prfl_evol(essn_stacked_over_rep[c, :, i], :radial)
     for c in axes(essn_stacked_over_rep, 1), i in axes(essn_stacked_over_rep, 3)
 ]
+
+function normalize_core_prfl_evol(
+    prfl_evol::AbstractMatrix,
+    pos::AbstractVector{<:Real},
+    thres_prfl_bot_mask::AbstractVector{<:Real},
+)
+    n_pos, n_t = size(prfl_evol)
+    n_t >= 4 || throw(DimensionMismatch("core profile evolution needs at least 4 t_hold profiles, got $n_t"))
+    length(pos) == n_pos || throw(DimensionMismatch("profile position length $(length(pos)) does not match profile size $n_pos"))
+    length(thres_prfl_bot_mask) == n_t || throw(DimensionMismatch("profile threshold length $(length(thres_prfl_bot_mask)) does not match t_hold count $n_t"))
+
+    mask_com = [
+        isfinite(prfl_evol[p, t]) && prfl_evol[p, t] > thres_prfl_bot_mask[t]
+        for p in axes(prfl_evol, 1), t in axes(prfl_evol, 2)
+    ]
+    t_first = firstindex(prfl_evol, 2)
+    total_first = sum(
+        sum(prfl_evol[p, t] for p in axes(prfl_evol, 1) if mask_com[p, t])
+        for t in t_first:(t_first + 3)
+    )
+    isfinite(total_first) && !iszero(total_first) || return Array{Union{Missing,Float64}}(missing, size(prfl_evol))
+
+    step_pos = mean(abs, diff(pos))
+    isfinite(step_pos) && !iszero(step_pos) || throw(ArgumentError("profile positions must have nonzero finite spacing"))
+    prfl_norm = Array{Union{Missing,Float64}}(missing, size(prfl_evol))
+    for t in axes(prfl_evol, 2)
+        idx_mask = findall(@view(mask_com[:, t]))
+        isempty(idx_mask) && continue
+        total_mask = sum(prfl_evol[p, t] for p in idx_mask)
+        isfinite(total_mask) && !iszero(total_mask) || continue
+        scale = total_first / total_mask
+        com = sum(pos[p] * prfl_evol[p, t] for p in idx_mask) / total_mask
+        shift = round(Int, -com / step_pos)
+        for p in axes(prfl_evol, 1)
+            p_shift = p + shift
+            checkbounds(Bool, prfl_norm, p_shift, t) && (prfl_norm[p_shift, t] = prfl_evol[p, t] * scale)
+        end
+    end
+    return prfl_norm
+end
+
+function calc_top_prfl_core_thresholds(
+    prfl_evol::AbstractArray{<:Any,3};
+    quantile_mask_prfl::Real,
+)
+    0 < quantile_mask_prfl < 1 || throw(ArgumentError("quantile_mask_prfl must lie in (0, 1), got $quantile_mask_prfl"))
+    n_t = size(first(prfl_evol), 2)
+    thres_prfl_top = Array{Float64}(undef, size(prfl_evol, 1), n_t, size(prfl_evol, 3))
+    for c in axes(prfl_evol, 1), t in axes(first(prfl_evol), 2), i in axes(prfl_evol, 3)
+        vals = Float64[]
+        for r in axes(prfl_evol, 2)
+            append!(vals, filter(isfinite, vec(prfl_evol[c, r, i][:, t])))
+        end
+        isempty(vals) && throw(ArgumentError("no finite core-profile pixels for IB index $c, t index $t, istp index $i"))
+        thres_prfl_top[c, t, i] = quantile(vals, 1 - quantile_mask_prfl)
+    end
+    return thres_prfl_top
+end
+
+function stack_core_prfl_evol(prfl_evol::AbstractArray{<:Any,3})
+    n_pos, n_t = size(first(prfl_evol))
+    return [
+        begin
+            prfl_stack = Matrix{Union{Missing,Float64}}(missing, n_pos, n_t)
+            for p in axes(prfl_stack, 1), t in axes(prfl_stack, 2)
+                vals = [prfl_evol[c, r, i][p, t] for r in axes(prfl_evol, 2) if !ismissing(prfl_evol[c, r, i][p, t])]
+                isempty(vals) || (prfl_stack[p, t] = mean(vals))
+            end
+            prfl_stack
+        end
+        for c in axes(prfl_evol, 1), i in axes(prfl_evol, 3)
+    ]
+end
+
+quantile_mask_prfl = @isdefined(quantile_mask_prfl) ? quantile_mask_prfl : 0.05
+thres_frac_bot_mask_prfl = @isdefined(thres_frac_bot_mask_prfl) ? thres_frac_bot_mask_prfl : 0.1
+essn_ref = first(essn_2d_fmt)
+pos_axial = ((-essn_ref.smwh_core[2]):essn_ref.smwh_core[2]) .* essn_ref.step_posi[2]
+pos_radial = ((-essn_ref.smwh_core[1]):essn_ref.smwh_core[1]) .* essn_ref.step_posi[1]
+thres_prfl_top_axial = calc_top_prfl_core_thresholds(prfl_axial_evol; quantile_mask_prfl)
+thres_prfl_top_radial = calc_top_prfl_core_thresholds(prfl_radial_evol; quantile_mask_prfl)
+thres_prfl_bot_mask_axial = thres_frac_bot_mask_prfl .* thres_prfl_top_axial
+thres_prfl_bot_mask_radial = thres_frac_bot_mask_prfl .* thres_prfl_top_radial
+prfl_axial_evol_norm = [
+    normalize_core_prfl_evol(prfl_axial_evol[c, r, i], pos_axial, @view(thres_prfl_bot_mask_axial[c, :, i]))
+    for c in axes(prfl_axial_evol, 1), r in axes(prfl_axial_evol, 2), i in axes(prfl_axial_evol, 3)
+]
+prfl_radial_evol_norm = [
+    normalize_core_prfl_evol(prfl_radial_evol[c, r, i], pos_radial, @view(thres_prfl_bot_mask_radial[c, :, i]))
+    for c in axes(prfl_radial_evol, 1), r in axes(prfl_radial_evol, 2), i in axes(prfl_radial_evol, 3)
+]
+prfl_axial_evol_norm_stacked = stack_core_prfl_evol(prfl_axial_evol_norm)
+prfl_radial_evol_norm_stacked = stack_core_prfl_evol(prfl_radial_evol_norm)
 log_done("finished composing core density profile evolution", t_stage)
 
 t_stage = log_step("fitting modulation profile PCA modes")
@@ -133,6 +226,8 @@ config_corr = (;
     vis_evol_prfl_modl,
     vis_evol_prfl_axial,
     vis_evol_prfl_radial,
+    quantile_mask_prfl,
+    thres_frac_bot_mask_prfl,
 )
 
 meta_corr = merge(
@@ -166,6 +261,10 @@ JLD2.jldsave(
     prfl_axial_evol_stacked,
     prfl_radial_evol,
     prfl_radial_evol_stacked,
+    prfl_axial_evol_norm,
+    prfl_axial_evol_norm_stacked,
+    prfl_radial_evol_norm,
+    prfl_radial_evol_norm_stacked,
     modes_pca_dens2d,
     pca_spectra,
     modes_pca_prfl_modl,

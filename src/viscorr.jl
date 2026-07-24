@@ -297,7 +297,7 @@ function calc_prfl_colorrange_auto(
     mask_pos = Bool[selector_pos(x) for x in pos]
     any(mask_t) || throw(ArgumentError("selector_t_hold selected no time points"))
     any(mask_pos) || throw(ArgumentError("selector_pos selected no profile positions"))
-    vals = Float64.(prfl[mask_pos, mask_t])
+    vals = Float64.(collect(skipmissing(prfl[mask_pos, mask_t])))
     vals = filter(isfinite, vals)
     isempty(vals) && return (0.0, 1.0)
     upper = maximum(vals)
@@ -359,8 +359,8 @@ function plot_prfl_comparison_table!(
             end
             isnothing(pos_ticks) || (ax.yticks = pos_ticks)
         end
-        rowgap!(gl, 1)
-        colgap!(gl, 2)
+        rowgap!(gl, 4)
+        colgap!(gl, 4)
         colsize!(gl, 0, Fixed(48))
         colsize!(gl, 2, Fixed(16))
     end

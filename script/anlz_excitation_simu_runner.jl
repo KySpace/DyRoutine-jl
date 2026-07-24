@@ -135,6 +135,8 @@ vis_evol_prfl_modl = (height=400, width_to_time=10, ylims=(0, 0.6), colorrange=n
 vis_evol_prfl_axial = (height=400, width_to_time=10, ylims=nothing, colorrange=nothing)
 vis_evol_prfl_radial = (height=400, width_to_time=10, ylims=nothing, colorrange=nothing)
 vis_evol_prfl_core = vis_evol_prfl_axial
+quantile_mask_prfl = 0.05
+thres_frac_bot_mask_prfl = 0.1
 selector_t_hold_prfl_modl = t -> true
 selector_pos_prfl_modl = k -> true
 selector_t_hold_prfl_axial = t -> true
