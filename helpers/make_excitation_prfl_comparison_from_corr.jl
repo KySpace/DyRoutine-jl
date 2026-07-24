@@ -4,8 +4,8 @@ using CairoMakie
 
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 
-const path_root_simu = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations"
-const folder_simu_selected = "Anlz.17.Simu-03.[2025.07.22].[←16]"
+const path_root_simu = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\AnlzRoutine"
+const folder_simu_selected = "[07.24].99.Extr"
 const path_simu_selected = joinpath(path_root_simu, folder_simu_selected)
 const path_output = joinpath(path_simu_selected, "Prfl Evol")
 

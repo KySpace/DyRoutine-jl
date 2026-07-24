@@ -32,75 +32,66 @@ for spec in trend_property_specs
 end
 log_done("saved spectrum-vs-IB figures", t_stage)
 
+function save_prfl_comparison!(rows, title, name, tag_IB, config, val_t, val_istp)
+    width = config.width_to_time * (maximum(val_t) - minimum(val_t))
+    fig, axs, colorbars = set_axis_prfl_comparison!(
+        rows,
+        val_istp,
+        title;
+        width,
+        height=config.height,
+    )
+    plot_prfl_comparison!(
+        fig,
+        axs,
+        colorbars,
+        rows,
+        val_t,
+        val_istp;
+        ylims=config.ylims,
+        colorrange=config.colorrange,
+    )
+    for format in ("svg", "png")
+        save(joinpath(path_output, @sprintf("%s_[%s].%s", name, tag_IB, format)), fig; backend=CairoMakie)
+    end
+end
+
 for (c, tag_IB) in enumerate(tag_IBs)
+    local t_stage = log_step("profile comparison figures for $tag_IB")
     runinfo_plot = runinfo_plots[c]
-    width_prfl_evol = 10 * (maximum(val_vars.t_hold) - minimum(val_vars.t_hold))
+    val_t = val_vars.t_hold
+    val_istp = val_vars.istp
+    modl_stack = reshape([prfl_evol_stacked[c, i] for i in axes(prfl_evol_stacked, 2)], 1, :)
+    modl_rows_stack = [(label="stack", evol=modl_stack, pos=y_modl)]
+    modl_rows_reps = [
+        (
+            label="rep $(val_vars.rep[r])",
+            evol=reshape([prfl_evol[c, r, i] for i in axes(prfl_evol, 3)], 1, :),
+            pos=y_modl,
+        )
+        for r in axes(prfl_evol, 2)
+    ]
+    push!(modl_rows_reps, modl_rows_stack[1])
+    save_prfl_comparison!(modl_rows_stack, "$tag_IB modulation profile stack", "prfl_modl_stack", tag_IB, vis_evol_prfl_modl, val_t, val_istp)
+    save_prfl_comparison!(modl_rows_reps, "$tag_IB modulation profile reps and stack", "prfl_modl_reps_stack", tag_IB, vis_evol_prfl_modl, val_t, val_istp)
 
-    local t_stage = log_step("sidepeak distribution evolution for $tag_IB")
-    fig_prfl_evol, axs_prfl_evol = set_axis_prfl_modl_evol!(
-        val_vars.rep,
-        val_vars.istp,
-        "$tag_IB modulation sidepeak profile";
-        width=width_prfl_evol,
-        height=400,
-    )
-    plot_prfl_modl_evol!(
-        axs_prfl_evol,
-        prfl_evol[c, :, :],
-        prfl_evol_stacked[c, :],
-        val_vars.t_hold,
-        y_modl,
-        val_vars.istp;
-        plot_prfl_modl_evol_kwargs...
-    )
-    fig_prfl_evol |> resize_to_layout!
-    for format in ["svg", "png"]
-        fig_prfl_evol |> f -> save(joinpath(path_output, @sprintf("prfl_modl_evol_[%s].%s", tag_IB, format)), f; backend=CairoMakie)
-    end
-    log_done("finished sidepeak distribution for $tag_IB", t_stage)
-
-    local t_stage = log_step("core density profile evolution for $tag_IB")
     essn_ref = essn_2d_fmt[c, 1, 1, 1]
-    core_profiles = (
-        axial=(
-            evol=prfl_axial_evol,
-            stacked=prfl_axial_evol_stacked,
-            pos=((-essn_ref.smwh_core[2]):essn_ref.smwh_core[2]) .* essn_ref.step_posi[2],
-            height=400,
-            kwargs=plot_prfl_axial_evol_kwargs,
-        ),
-        radial=(
-            evol=prfl_radial_evol,
-            stacked=prfl_radial_evol_stacked,
-            pos=((-essn_ref.smwh_core[1]):essn_ref.smwh_core[1]) .* essn_ref.step_posi[1],
-            height=400 * (2 * prfl_radial_halfwidth_um) / (2 * prfl_axial_halfwidth_um),
-            kwargs=plot_prfl_radial_evol_kwargs,
-        ),
-    )
-    for field in propertynames(core_profiles)
-        profile = getproperty(core_profiles, field)
-        fig_core, axs_core = set_axis_prfl_modl_evol!(
-            val_vars.rep,
-            val_vars.istp,
-            "$tag_IB $(field) core density profile";
-            width=width_prfl_evol,
-            height=profile.height,
-        )
-        plot_prfl_core_evol!(
-            axs_core,
-            profile.evol[c, :, :],
-            profile.stacked[c, :],
-            val_vars.t_hold,
-            profile.pos,
-            val_vars.istp;
-            profile.kwargs...,
-        )
-        resize_to_layout!(fig_core)
-        for format in ["svg", "png"]
-            save(joinpath(path_output, @sprintf("prfl_%s_evol_[%s].%s", field, tag_IB, format)), fig_core; backend=CairoMakie)
-        end
+    pos_axial = ((-essn_ref.smwh_core[2]):essn_ref.smwh_core[2]) .* essn_ref.step_posi[2]
+    pos_radial = ((-essn_ref.smwh_core[1]):essn_ref.smwh_core[1]) .* essn_ref.step_posi[1]
+    height_radial = vis_evol_prfl_core.height * (maximum(pos_radial) - minimum(pos_radial)) / (maximum(pos_axial) - minimum(pos_axial))
+    core_stack = [
+        (label="axial stack", evol=reshape([prfl_axial_evol_stacked[c, i] for i in axes(prfl_axial_evol_stacked, 2)], 1, :), pos=pos_axial, height=vis_evol_prfl_core.height),
+        (label="radial stack", evol=reshape([prfl_radial_evol_stacked[c, i] for i in axes(prfl_radial_evol_stacked, 2)], 1, :), pos=pos_radial, height=height_radial),
+    ]
+    core_rows_reps = Any[]
+    for r in axes(prfl_axial_evol, 2)
+        push!(core_rows_reps, (label="rep $(val_vars.rep[r]) axial", evol=reshape([prfl_axial_evol[c, r, i] for i in axes(prfl_axial_evol, 3)], 1, :), pos=pos_axial, height=vis_evol_prfl_core.height))
+        push!(core_rows_reps, (label="rep $(val_vars.rep[r]) radial", evol=reshape([prfl_radial_evol[c, r, i] for i in axes(prfl_radial_evol, 3)], 1, :), pos=pos_radial, height=height_radial))
     end
-    log_done("finished core density profiles for $tag_IB", t_stage)
+    append!(core_rows_reps, core_stack)
+    save_prfl_comparison!(core_stack, "$tag_IB axial/radial profile stack", "prfl_core_stack", tag_IB, vis_evol_prfl_core, val_t, val_istp)
+    save_prfl_comparison!(core_rows_reps, "$tag_IB axial/radial profile reps and stack", "prfl_core_reps_stack", tag_IB, vis_evol_prfl_core, val_t, val_istp)
+    log_done("finished profile comparison figures for $tag_IB", t_stage)
 
     local t_stage = log_step("building trend figures for $tag_IB")
     panel_setter = (gl, col; extra=false) -> set_panel_trend_properties!(

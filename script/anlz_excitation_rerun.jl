@@ -47,11 +47,8 @@ selector_t_spectrum = (;
 filter_core_pca_sigma = 1.5
 filter_core_pca = im -> imfilter(im, Kernel.gaussian(filter_core_pca_sigma))
 query_weight_kwargs = NamedTuple()
-prfl_axial_halfwidth_um = 16.0
-prfl_radial_halfwidth_um = 4.0
-plot_prfl_modl_evol_kwargs = (; colorrange=(0, 3.0))
-plot_prfl_axial_evol_kwargs = (; pos_lims=(-prfl_axial_halfwidth_um, prfl_axial_halfwidth_um))
-plot_prfl_radial_evol_kwargs = (; pos_lims=(-prfl_radial_halfwidth_um, prfl_radial_halfwidth_um))
+vis_evol_prfl_modl = (height=400, width_to_time=10, ylims=(0, 0.6), colorrange=nothing)
+vis_evol_prfl_core = (height=400, width_to_time=10, ylims=nothing, colorrange=nothing)
 trend_property_specs = [
     (
         name="number",

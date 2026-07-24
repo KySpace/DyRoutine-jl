@@ -16,9 +16,9 @@ include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
-# A test run to see how the new density profiles are drawn
+# With density profiles drawn, extractions as well
 # commit e794fd69f788f0ae5ce2a74503900d8542567941
-title_anlz = "[07.24].99.Extr"
+title_anlz = "[07.24].100.Extr"
 
 year_test = 2026
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations"
@@ -77,9 +77,9 @@ runinfos = runinfos_grouped
 
 # ids_runinfo = eachindex(runinfos)
 ids_runinfo = 1:2
-# sel_vars = NamedTuple()
+sel_vars = NamedTuple()
 # sel_vars = (; t_hold=t -> 0 .<= t .<= 100)
-sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 20)
+# sel_vars = (; IB=b -> 5.316 .<= b .<= 5.318, t_hold=t -> 0 .<= t .<= 20)
 
 
 path_output = joinpath(path_root, "AnlzRoutine", title_anlz)
@@ -289,11 +289,8 @@ trend_spectrum_IB_plot_kwargs = (colorrange=(0.3, 1.00),)
 plot_corr_figures = true
 plot_extr_figures = false
 draw_solo_modl_kwargs = NamedTuple()
-plot_prfl_modl_evol_kwargs = NamedTuple()
-prfl_axial_halfwidth_um = 14.0
-prfl_radial_halfwidth_um = 4.0
-plot_prfl_axial_evol_kwargs = (; pos_lims=(-prfl_axial_halfwidth_um, prfl_axial_halfwidth_um))
-plot_prfl_radial_evol_kwargs = (; pos_lims=(-prfl_radial_halfwidth_um, prfl_radial_halfwidth_um))
+vis_evol_prfl_modl = (height=400, width_to_time=10, ylims=(0, 0.6), colorrange=nothing)
+vis_evol_prfl_core = (height=400, width_to_time=10, ylims=nothing, colorrange=nothing)
 
 ##
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
@@ -315,5 +312,5 @@ for idx_runinfo_iter in ids_runinfo
     "anlz_excitation_extr.jl" |> copy_and_include
     "anlz_excitation_corr.jl" |> copy_and_include
     "anlz_excitation_vslz_corr.jl" |> copy_and_include
-    "anlz_excitation_vslz_extr.jl" |> copy_and_include
+    # "anlz_excitation_vslz_extr.jl" |> copy_and_include
 end

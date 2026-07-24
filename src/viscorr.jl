@@ -103,7 +103,7 @@ function plot_prfl_modl_evol!(
     val_t::AbstractVector,
     y_modl::AbstractVector,
     val_istp::AbstractVector;
-    colorrange=(0, 1.0),
+    colorrange=nothing,
     x_ticks=0:10:210,
     y_ticks=0:0.1:0.6,
     y_lims=(0, 0.6),
@@ -123,13 +123,17 @@ function plot_prfl_modl_evol!(
         hm = nothing
         for r in axes(prfl_evol, 1)
             ax = axs_repeats[r, i]
-            hm = heatmap!(ax, val_t, y_modl, prfl_evol[r, i]'; colorrange, colormap=clrmap)
+            hm = isnothing(colorrange) ?
+                heatmap!(ax, val_t, y_modl, prfl_evol[r, i]'; colormap=clrmap) :
+                heatmap!(ax, val_t, y_modl, prfl_evol[r, i]'; colorrange, colormap=clrmap)
             ylims!(ax, y_lims)
             ax.xticks = x_ticks
             ax.yticks = y_ticks
         end
         ax = axs_stacked[i]
-        hm = heatmap!(ax, val_t, y_modl, prfl_evol_stacked[i]'; colorrange, colormap=clrmap)
+        hm = isnothing(colorrange) ?
+            heatmap!(ax, val_t, y_modl, prfl_evol_stacked[i]'; colormap=clrmap) :
+            heatmap!(ax, val_t, y_modl, prfl_evol_stacked[i]'; colorrange, colormap=clrmap)
         Colorbar(slots_colorbar[i], hm)
         ylims!(ax, y_lims)
         ax.xticks = x_ticks
@@ -178,6 +182,68 @@ function plot_prfl_core_evol!(
         ax.xticks = x_ticks
         isnothing(pos_ticks) || (ax.yticks = pos_ticks)
     end
+    return nothing
+end
+
+"""Build the compact stack/repeat comparison used for excitation profiles.
+
+Each row specification must contain `label`, `evol`, and `pos`, where `evol`
+is indexed `(row, istp)` and each entry is a profile matrix.
+"""
+function set_axis_prfl_comparison!(
+    rows::AbstractVector,
+    val_istp::AbstractVector,
+    title::AbstractString;
+    width::Real,
+    height::Real,
+)
+    isempty(rows) && throw(ArgumentError("rows must not be empty"))
+    isempty(val_istp) && throw(ArgumentError("val_istp must not be empty"))
+    n_col = 2 * length(val_istp)
+    fig = Figure()
+    Label(fig[0, 1:n_col], title; tellwidth=false, tellheight=true, halign=:left)
+    axs = Array{Axis}(undef, length(rows), length(val_istp))
+    colorbars = Array{Any}(undef, length(rows), length(val_istp))
+    for (idx_row, row_spec) in enumerate(rows)
+        Label(fig[idx_row, 0], row_spec.label; tellwidth=true, tellheight=false, fontsize=8)
+        for idx_istp in eachindex(val_istp)
+            row_height = Float64(hasproperty(row_spec, :height) ? row_spec.height : height)
+            idx_col = 2 * idx_istp - 1
+            axs[idx_row, idx_istp] = Axis(fig[idx_row, idx_col]; width=Float64(width), height=row_height, yticklabelspace=28.0)
+            colorbars[idx_row, idx_istp] = fig[idx_row, idx_col + 1]
+        end
+    end
+    colgap!(fig.layout, 8)
+    rowgap!(fig.layout, 2)
+    return fig, axs, colorbars
+end
+
+function plot_prfl_comparison!(
+    fig::Figure,
+    axs::AbstractMatrix,
+    colorbars::AbstractMatrix,
+    rows::AbstractVector,
+    val_t::AbstractVector,
+    val_istp::AbstractVector;
+    ylims=nothing,
+    colorrange=nothing,
+    x_ticks=0:10:210,
+    pos_ticks=nothing,
+)
+    size(axs) == (length(rows), length(val_istp)) ||
+        throw(DimensionMismatch("profile axes size $(size(axs)) does not match rows/isotopes $((length(rows), length(val_istp)))"))
+    for (idx_row, row_spec) in enumerate(rows), idx_istp in eachindex(val_istp)
+        prfl = row_spec.evol[1, idx_istp]
+        clrmap = gen_clrmap_solo(hue_theme_istp[val_istp[idx_istp]])
+        hm = isnothing(colorrange) ?
+            heatmap!(axs[idx_row, idx_istp], val_t, row_spec.pos, prfl'; colormap=clrmap) :
+            heatmap!(axs[idx_row, idx_istp], val_t, row_spec.pos, prfl'; colorrange, colormap=clrmap)
+        Colorbar(colorbars[idx_row, idx_istp], hm; width=8.0, ticklabelsize=7.0)
+        isnothing(ylims) ? ylims!(axs[idx_row, idx_istp], extrema(row_spec.pos)) : ylims!(axs[idx_row, idx_istp], ylims)
+        axs[idx_row, idx_istp].xticks = x_ticks
+        isnothing(pos_ticks) || (axs[idx_row, idx_istp].yticks = pos_ticks)
+    end
+    resize_to_layout!(fig)
     return nothing
 end
 
