@@ -3,131 +3,80 @@ using JLD2
 using CairoMakie
 
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
-include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 
-const path_root_anlz = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\AnlzRoutine"
-const folder_output = "[06.21].98.FullTime.PrflModlEvol.Tailess.sansMask"
-const path_output = joinpath(path_root_anlz, folder_output, "comparison 2")
+const path_root_simu = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations"
+const folder_simu_selected = "Anlz.17.Simu-03.[2025.07.22].[←16]"
+const path_simu_selected = joinpath(path_root_simu, folder_simu_selected)
+const path_output = joinpath(path_simu_selected, "Prfl Evol")
 
-const sources = [
-    (id=96, folder="[06.21].96.FullTime.PrflModlEvol.KeptTail.sansMask"),
-    (id=95, folder="[06.21].95.FullTime.PrflModlEvol.KeptTail.avecMask"),
-    (id=98, folder=folder_output),
-    (id=97, folder="[06.21].97.FullTime.PrflModlEvol.Tailess.avecMask"),
-]
-const id_source_monosrc = 97
-
-const ids_source_pair = ((96, 95), (98, 97))
+const tag_simu = "SIMU-NTRC"
+const name_param = "as_s"
+const val_as_s = [80, 85, 90, 95, 100, 105]
 const val_istp_plot = ["162", "164"]
-const val_t_hold = collect(6:2:200)
-const smwh_core = (30, 60)
-const px_in_um = 6.5 / 22.06
-const step_modl = 1 ./ (2 .* smwh_core .* px_in_um)
-const y_modl = collect((-smwh_core[2]):smwh_core[2]) .* step_modl[2]
 
-const configs_tag = Dict(
-    "CFNM" => (
-        IB=[5.311, 5.313, 5.316, 5.318, 5.322, 5.325, 5.326, 5.328, 5.332, 5.333, 5.336, 5.338],
-        runid=[95, 82, 52, 80, 67, 96, 68, 50, 81, 51, 79, 53],
-    ),
-    "NTRC" => (
-        IB=[5.314, 5.316, 5.318, 5.322, 5.326, 5.332, 5.336, 5.340, 5.343],
-        runid=[29, 28, 27, 26, 25, 61, 62, 63, 64],
-    ),
-)
+const height_prfl_default = 100.0
 
-# Per-IB/per-istp colorrange controls.
-# Each matrix must be n_IB x 2, with columns matching val_istp_plot = ["162", "164"].
-# Cell values may be:
-# - nothing: use the current auto pairwise per-IB limit, shared for source pairs (96,95) and (98,97)
-# - upper::Real: use (0, upper)
-# - (lower, upper): use that exact range
-const colorrange_by_tag = Dict(
-    "CFNM" => Any[
-        (0.0, 0.8) (0.0, 1.0)  # IB 5.311, 162 / 164
-        (0.0, 0.8) (0.0, 1.0)  # IB 5.313, 162 / 164
-        (0.0, 0.8) (0.0, 1.0)  # IB 5.316, 162 / 164
-        (0.0, 0.8) (0.0, 1.0)  # IB 5.318, 162 / 164
-        (0.0, 0.8) (0.0, 1.0)  # IB 5.322, 162 / 164
-        (0.0, 0.8) (0.0, 1.0)  # IB 5.325, 162 / 164
-        (0.0, 0.8) (0.0, 1.0)  # IB 5.326, 162 / 164
-        (0.0, 0.8) (0.0, 0.8)  # IB 5.328, 162 / 164
-        (0.0, 0.6) (0.0, 0.8)  # IB 5.332, 162 / 164
-        (0.0, 0.6) (0.0, 0.8)  # IB 5.333, 162 / 164
-        (0.0, 0.6) (0.0, 0.8)  # IB 5.336, 162 / 164
-        (0.0, 0.6) (0.0, 0.8)  # IB 5.338, 162 / 164
-    ],
-    "NTRC" => Any[
-        (0.0, 1.0) (0.0, 1.8)  # IB 5.314, 162 / 164
-        (0.0, 1.0) (0.0, 1.8)  # IB 5.316, 162 / 164
-        (0.0, 1.0) (0.0, 1.8)  # IB 5.318, 162 / 164
-        (0.0, 1.0) (0.0, 1.5)  # IB 5.322, 162 / 164
-        (0.0, 0.6) (0.0, 0.8)  # IB 5.326, 162 / 164
-        (0.0, 0.6) (0.0, 0.8)  # IB 5.332, 162 / 164
-        (0.0, 0.6) (0.0, 0.8)  # IB 5.336, 162 / 164
-        (0.0, 0.6) (0.0, 0.8)  # IB 5.340, 162 / 164
-        (0.0, 0.6) (0.0, 0.8)  # IB 5.343, 162 / 164
-    ],
-)
-# Examples:
-# colorrange_by_tag["CFNM"][1, :] .= [(0.0, 0.8), (0.0, 1.2)]  # first CFNM IB, 162/164
-# colorrange_by_tag["CFNM"][:, 1] .= [(0.0, 0.9)]              # all CFNM 162 panels
-# colorrange_by_tag["NTRC"][3, 2] = 1.4                        # NTRC third IB, 164 => (0, 1.4)
-# colorrange_by_tag["NTRC"][5, :] .= [nothing]                 # use auto ranges for one IB
-
-# One multiplier per source row, applied after the IB/istp colorrange is chosen.
-const factor_colorrange_source = Dict(
-    96 => 2.0,
-    95 => 2.0,
-    98 => 1.0,
-    97 => 1.0,
-)
-
-struct CorrCache
-    source_id::Int
+struct SimuCorrCache
     path_corr::String
-    prfl_evol
-    prfl_evol_stacked
+    meta
+    prfl_modl_evol
+    prfl_modl_evol_stacked
+    prfl_axial_evol
+    prfl_axial_evol_stacked
+    prfl_radial_evol
+    prfl_radial_evol_stacked
 end
 
-function load_corr_cache(source, tag::AbstractString)
-    path_corr = joinpath(path_root_anlz, source.folder, @sprintf("%s_corr.jld2", tag))
+function load_simu_corr_cache(tag::AbstractString)
+    path_corr = joinpath(path_simu_selected, @sprintf("%s_corr.jld2", tag))
     isfile(path_corr) || throw(ArgumentError("missing correlation cache: $path_corr"))
     cache = JLD2.load(path_corr)
-    haskey(cache, "prfl_evol") || throw(KeyError("prfl_evol"))
-    haskey(cache, "prfl_evol_stacked") || throw(KeyError("prfl_evol_stacked"))
-    return CorrCache(source.id, path_corr, cache["prfl_evol"], cache["prfl_evol_stacked"])
+    for key in (
+        "meta_corr",
+        "prfl_evol",
+        "prfl_evol_stacked",
+        "prfl_axial_evol",
+        "prfl_axial_evol_stacked",
+        "prfl_radial_evol",
+        "prfl_radial_evol_stacked",
+    )
+        haskey(cache, key) || throw(KeyError(key))
+    end
+    return SimuCorrCache(
+        path_corr,
+        cache["meta_corr"],
+        cache["prfl_evol"],
+        cache["prfl_evol_stacked"],
+        cache["prfl_axial_evol"],
+        cache["prfl_axial_evol_stacked"],
+        cache["prfl_radial_evol"],
+        cache["prfl_radial_evol_stacked"],
+    )
 end
 
-function tag_config(tag::AbstractString)
-    haskey(configs_tag, tag) || throw(ArgumentError("unknown tag $tag; expected one of $(keys(configs_tag))"))
-    cfg = configs_tag[tag]
-    length(cfg.IB) == length(cfg.runid) || throw(DimensionMismatch("$tag IB/runid count mismatch"))
-    return cfg
-end
-
-function tag_IBs_for(tag::AbstractString, cfg)
-    return [@sprintf("%s_%.3f_r%02d", tag, IB, runid) for (IB, runid) in zip(cfg.IB, cfg.runid)]
-end
-
-function validate_cache_shapes!(caches::AbstractVector{CorrCache}, tag::AbstractString, cfg)
-    n_IB = length(cfg.IB)
+function validate_simu_cache!(cache::SimuCorrCache)
+    collect(cache.meta.val_vars.IB) == val_as_s ||
+        throw(ArgumentError("cache $(cache.path_corr) has $(cache.meta.val_vars.IB), expected $val_as_s"))
+    collect(cache.meta.val_vars.istp) == val_istp_plot ||
+        throw(ArgumentError("cache $(cache.path_corr) has istp $(cache.meta.val_vars.istp), expected $val_istp_plot"))
+    n_param = length(val_as_s)
+    n_rep = length(cache.meta.val_vars.rep)
     n_istp = length(val_istp_plot)
-    for cache in caches
-        size(cache.prfl_evol_stacked) == (n_IB, n_istp) ||
-            throw(DimensionMismatch("$(cache.path_corr) prfl_evol_stacked size $(size(cache.prfl_evol_stacked)); expected $((n_IB, n_istp))"))
-        size(cache.prfl_evol, 1) == n_IB ||
-            throw(DimensionMismatch("$(cache.path_corr) prfl_evol IB count $(size(cache.prfl_evol, 1)); expected $n_IB"))
-        size(cache.prfl_evol, 3) == n_istp ||
-            throw(DimensionMismatch("$(cache.path_corr) prfl_evol istp count $(size(cache.prfl_evol, 3)); expected $n_istp"))
-        for idx in eachindex(cache.prfl_evol_stacked)
-            size(cache.prfl_evol_stacked[idx]) == (length(y_modl), length(val_t_hold)) ||
-                throw(DimensionMismatch("$(cache.path_corr) stacked profile size $(size(cache.prfl_evol_stacked[idx])); expected $((length(y_modl), length(val_t_hold)))"))
-        end
-        for idx in eachindex(cache.prfl_evol)
-            size(cache.prfl_evol[idx]) == (length(y_modl), length(val_t_hold)) ||
-                throw(DimensionMismatch("$(cache.path_corr) repeat profile size $(size(cache.prfl_evol[idx])); expected $((length(y_modl), length(val_t_hold)))"))
-        end
+    for (name, evol) in (
+        (:modl, cache.prfl_modl_evol),
+        (:axial, cache.prfl_axial_evol),
+        (:radial, cache.prfl_radial_evol),
+    )
+        size(evol) == (n_param, n_rep, n_istp) ||
+            throw(DimensionMismatch("$name evol size $(size(evol)); expected $((n_param, n_rep, n_istp))"))
+    end
+    for (name, stacked) in (
+        (:modl, cache.prfl_modl_evol_stacked),
+        (:axial, cache.prfl_axial_evol_stacked),
+        (:radial, cache.prfl_radial_evol_stacked),
+    )
+        size(stacked) == (n_param, n_istp) ||
+            throw(DimensionMismatch("$name stacked size $(size(stacked)); expected $((n_param, n_istp))"))
     end
     return nothing
 end
@@ -142,53 +91,24 @@ function finite_max(xs)
     return val_max > 0 ? val_max : 1.0
 end
 
-function calc_colorrange_by_pair(caches_by_id, idx_ib::Integer, ids_istp::AbstractVector{<:Integer})
-    ranges = Dict{Int,Vector{Tuple{Float64,Float64}}}()
-    for pair in ids_source_pair
-        upper_by_istp = [
-            finite_max(
-                caches_by_id[id].prfl_evol_stacked[idx_ib, idx_istp]
-                for id in pair
-            )
-            for idx_istp in ids_istp
-        ]
-        for id in pair
-            ranges[id] = [(0.0, upper) for upper in upper_by_istp]
-        end
-    end
-    return ranges
+function calc_colorrange_auto(prfls::AbstractVector)
+    return (0.0, finite_max(prfls))
 end
 
-function parse_manual_colorrange(value)
-    isnothing(value) && return nothing
-    value isa Real && return (0.0, Float64(value))
-    value isa Tuple && length(value) == 2 && return (Float64(value[1]), Float64(value[2]))
-    throw(ArgumentError("colorrange entries must be nothing, an upper limit, or a (lower, upper) tuple; got $value"))
+function calc_height_same_unit(pos::AbstractVector, pos_ref::AbstractVector; height_ref::Real=height_prfl_default)
+    span = maximum(pos) - minimum(pos)
+    span_ref = maximum(pos_ref) - minimum(pos_ref)
+    span_ref > 0 || throw(ArgumentError("reference position span must be positive"))
+    return height_ref * span / span_ref
 end
 
-function manual_colorranges_for(tag::AbstractString, idx_ib::Integer, ids_istp::AbstractVector{<:Integer})
-    haskey(colorrange_by_tag, tag) || return fill(nothing, length(ids_istp))
-    ranges = colorrange_by_tag[tag]
-    size(ranges, 2) == length(val_istp_plot) ||
-        throw(DimensionMismatch("$tag manual colorrange columns $(size(ranges, 2)); expected $(length(val_istp_plot))"))
-    idx_ib <= size(ranges, 1) ||
-        throw(DimensionMismatch("$tag manual colorrange rows $(size(ranges, 1)); expected at least $idx_ib"))
-    return [parse_manual_colorrange(ranges[idx_ib, idx_istp]) for idx_istp in ids_istp]
-end
-
-function merge_manual_colorranges(auto_ranges, manual_ranges)
-    return [
-        isnothing(manual_ranges[i]) ? auto_ranges[i] : manual_ranges[i]
-        for i in eachindex(auto_ranges)
-    ]
-end
-
-function scale_colorranges(colorranges, factor::Real)
-    factor > 0 || throw(ArgumentError("colorrange factor must be positive, got $factor"))
-    return [(lower * factor, upper * factor) for (lower, upper) in colorranges]
-end
-
-function set_axis_prfl_compare!(ax::Axis, idx_row::Integer, n_row::Integer)
+function set_axis_prfl_evol!(
+    ax::Axis,
+    idx_row::Integer,
+    n_row::Integer,
+    pos::AbstractVector;
+    y_lims=extrema(pos),
+)
     ax.xlabel = ""
     ax.ylabel = ""
     ax.xticklabelsize = 7
@@ -197,99 +117,126 @@ function set_axis_prfl_compare!(ax::Axis, idx_row::Integer, n_row::Integer)
     ax.yticksize = 3
     ax.xgridvisible = false
     ax.ygridvisible = false
-    ax.xticks = 0:50:200
-    ax.yticks = 0:0.2:0.6
-    ylims!(ax, (0, 0.6))
+    ax.xticks = 0:50:250
+    ax.yticks = LinearTicks(3)
+    ylims!(ax, y_lims)
     idx_row < n_row && hidexdecorations!(ax; label=true, ticklabels=true, ticks=false, grid=false)
     return nothing
 end
 
-function draw_prfl_inner_stack!(
-    gl::GridLayout,
-    caption::AbstractString,
-    labels::AbstractVector,
-    prfls::AbstractVector,
-    istp::AbstractString,
-    colorranges::AbstractVector{<:Tuple{<:Real,<:Real}};
-    width::Real=2.5 * (maximum(val_t_hold) - minimum(val_t_hold)),
-    height::Real=100,
-)
-    length(labels) == length(prfls) ||
-        throw(DimensionMismatch("label count $(length(labels)) does not match profile count $(length(prfls))"))
-    length(colorranges) == length(prfls) ||
-        throw(DimensionMismatch("colorrange count $(length(colorranges)) does not match profile count $(length(prfls))"))
-    Label(gl[1, 1:2], caption; tellwidth=false, tellheight=true, halign=:center, fontsize=10)
-    clrmap = gen_clrmap_solo(hue_theme_istp[istp])
-    n_row = length(prfls)
-    for idx_row in eachindex(prfls)
-        row = idx_row + 1
-        Label(gl[row, 0], string(labels[idx_row]); tellwidth=true, tellheight=false, fontsize=8)
-        ax = Axis(gl[row, 1]; width, height, yticklabelspace=20.0)
-        hm = heatmap!(
-            ax,
-            val_t_hold,
-            y_modl,
-            prfls[idx_row]';
-            colorrange=colorranges[idx_row],
-            colormap=clrmap,
-        )
-        Colorbar(gl[row, 2], hm; width=8, ticklabelsize=7)
-        set_axis_prfl_compare!(ax, idx_row, n_row)
-    end
-    rowgap!(gl, 1)
-    colgap!(gl, 2)
-    colsize!(gl, 0, Fixed(22))
-    colsize!(gl, 2, Fixed(16))
-    return nothing
-end
-
-function set_outer_prfl_layout!(
-    fig::Figure,
-    tag::AbstractString,
-    tag_IBs::AbstractVector,
-    title::AbstractString,
-)
+function set_outer_layout!(fig::Figure, cache::SimuCorrCache, title::AbstractString)
     Label(fig[0, 1:length(val_istp_plot)], title; tellwidth=false, tellheight=true, halign=:left)
     for (idx_istp, istp) in enumerate(val_istp_plot)
         Label(fig[1, idx_istp], istp; tellwidth=false, tellheight=true, halign=:center)
     end
-    grids = Array{GridLayout}(undef, length(tag_IBs), length(val_istp_plot))
-    for idx_ib in eachindex(tag_IBs), idx_istp in eachindex(val_istp_plot)
-        idx_istp == 1 && Label(fig[idx_ib+1, 0], string(tag_IBs[idx_ib]); tellwidth=true, tellheight=false, fontsize=10)
+    grids = Array{GridLayout}(undef, length(val_as_s), length(val_istp_plot))
+    for idx_as_s in eachindex(val_as_s), idx_istp in eachindex(val_istp_plot)
+        idx_istp == 1 && Label(
+            fig[idx_as_s+1, 0],
+            @sprintf("%s=%s", name_param, val_as_s[idx_as_s]);
+            tellwidth=true,
+            tellheight=false,
+            fontsize=10,
+        )
         gl = GridLayout()
-        fig[idx_ib+1, idx_istp] = gl
-        grids[idx_ib, idx_istp] = gl
+        fig[idx_as_s+1, idx_istp] = gl
+        grids[idx_as_s, idx_istp] = gl
     end
     rowgap!(fig.layout, 6)
     colgap!(fig.layout, 10)
     return grids
 end
 
-function load_tag_context(tag::AbstractString)
-    cfg = tag_config(tag)
-    caches = [load_corr_cache(source, tag) for source in sources]
-    validate_cache_shapes!(caches, tag, cfg)
-    caches_by_id = Dict(cache.source_id => cache for cache in caches)
-    haskey(caches_by_id, id_source_monosrc) ||
-        throw(ArgumentError("id_source_monosrc=$id_source_monosrc is not listed in sources"))
-    tag_IBs = tag_IBs_for(tag, cfg)
-    return (; cfg, caches_by_id, tag_IBs)
-end
-
-function calc_scaled_colorranges(tag::AbstractString, caches_by_id, idx_ib::Integer)
-    ids_istp = collect(eachindex(val_istp_plot))
-    auto_ranges = calc_colorrange_by_pair(caches_by_id, idx_ib, ids_istp)
-    manual_ranges = manual_colorranges_for(tag, idx_ib, ids_istp)
-    return Dict(
-        source.id => scale_colorranges(
-            merge_manual_colorranges(auto_ranges[source.id], manual_ranges),
-            get(factor_colorrange_source, source.id, 1.0),
+function draw_prfl_rows!(
+    gl::GridLayout,
+    caption::AbstractString,
+    rows::AbstractVector,
+    istp::AbstractString,
+)
+    Label(gl[1, 1:2], caption; tellwidth=false, tellheight=true, halign=:center, fontsize=10)
+    clrmap = gen_clrmap_solo(hue_theme_istp[istp])
+    n_row = length(rows)
+    for (idx_row, row_spec) in enumerate(rows)
+        row = idx_row + 1
+        Label(gl[row, 0], row_spec.label; tellwidth=true, tellheight=false, fontsize=8)
+        ax = Axis(gl[row, 1]; width=row_spec.width, height=row_spec.height, yticklabelspace=28.0)
+        hm = heatmap!(
+            ax,
+            row_spec.val_t,
+            row_spec.pos,
+            row_spec.prfl';
+            colorrange=row_spec.colorrange,
+            colormap=clrmap,
         )
-        for source in sources
-    )
+        Colorbar(gl[row, 2], hm; width=8, ticklabelsize=7)
+        set_axis_prfl_evol!(ax, idx_row, n_row, row_spec.pos; y_lims=row_spec.y_lims)
+    end
+    rowgap!(gl, 1)
+    colgap!(gl, 2)
+    colsize!(gl, 0, Fixed(36))
+    colsize!(gl, 2, Fixed(16))
+    return nothing
 end
 
-function save_comparison_figure(fig::Figure, name::AbstractString, tag::AbstractString)
+function make_modl_rows(prfls::AbstractVector, labels::AbstractVector, val_t, pos_modl)
+    colorrange = calc_colorrange_auto(prfls)
+    width_prfl = 2.5 * (maximum(val_t) - minimum(val_t))
+    return [
+        (
+            label=string(labels[i]),
+            prfl=prfls[i],
+            val_t,
+            pos=pos_modl,
+            colorrange,
+            width=width_prfl,
+            height=height_prfl_default,
+            y_lims=(0.0, 0.6),
+        )
+        for i in eachindex(prfls)
+    ]
+end
+
+function make_core_rows(prfls_axial::AbstractVector, prfls_radial::AbstractVector, labels::AbstractVector, val_t, pos_axial, pos_radial)
+    length(prfls_axial) == length(prfls_radial) ||
+        throw(DimensionMismatch("axial count $(length(prfls_axial)) does not match radial count $(length(prfls_radial))"))
+    colorrange_axial = calc_colorrange_auto(prfls_axial)
+    colorrange_radial = calc_colorrange_auto(prfls_radial)
+    width_prfl = 2.5 * (maximum(val_t) - minimum(val_t))
+    height_radial = calc_height_same_unit(pos_radial, pos_axial)
+    rows = Any[]
+    for i in eachindex(prfls_axial)
+        push!(
+            rows,
+            (
+                label="$(labels[i]) axial",
+                prfl=prfls_axial[i],
+                val_t,
+                pos=pos_axial,
+                colorrange=colorrange_axial,
+                width=width_prfl,
+                height=height_prfl_default,
+                y_lims=extrema(pos_axial),
+            ),
+        )
+        push!(
+            rows,
+            (
+                label="$(labels[i]) radial",
+                prfl=prfls_radial[i],
+                val_t,
+                pos=pos_radial,
+                colorrange=colorrange_radial,
+                width=width_prfl,
+                height=height_radial,
+                y_lims=extrema(pos_radial),
+            ),
+        )
+    end
+    return rows
+end
+
+function save_profile_figure(fig::Figure, name::AbstractString, tag::AbstractString)
+    mkpath(path_output)
     resize_to_layout!(fig)
     path_pdf = joinpath(path_output, @sprintf("%s.[%s].pdf", name, tag))
     save(path_pdf, fig; backend=CairoMakie)
@@ -297,78 +244,85 @@ function save_comparison_figure(fig::Figure, name::AbstractString, tag::Abstract
     return path_pdf
 end
 
-function make_tag_comparison(tag::AbstractString)
-    ctx = load_tag_context(tag)
-    mkpath(path_output)
+function make_profile_pdf!(cache::SimuCorrCache, name::AbstractString, title::AbstractString, row_builder::Function)
     fig = Figure()
-    grids = set_outer_prfl_layout!(fig, tag, ctx.tag_IBs, "$tag | stacked modulation sidepeak profile")
-    for idx_ib in eachindex(ctx.tag_IBs), idx_istp in eachindex(val_istp_plot)
-        ranges_by_source = calc_scaled_colorranges(tag, ctx.caches_by_id, idx_ib)
-        prfls = [ctx.caches_by_id[source.id].prfl_evol_stacked[idx_ib, idx_istp] for source in sources]
-        labels = [source.id for source in sources]
-        draw_prfl_inner_stack!(
-            grids[idx_ib, idx_istp],
-            string(ctx.tag_IBs[idx_ib]),
-            labels,
-            prfls,
+    grids = set_outer_layout!(fig, cache, title)
+    for idx_as_s in eachindex(val_as_s), idx_istp in eachindex(val_istp_plot)
+        rows = row_builder(idx_as_s, idx_istp)
+        draw_prfl_rows!(
+            grids[idx_as_s, idx_istp],
+            @sprintf("%s=%s", name_param, val_as_s[idx_as_s]),
+            rows,
             val_istp_plot[idx_istp],
-            [ranges_by_source[source.id][idx_istp] for source in sources];
         )
     end
-    return save_comparison_figure(fig, "comparison.processing", tag)
+    return save_profile_figure(fig, name, cache.meta.tag)
 end
 
-function make_tag_monosrc_stack(tag::AbstractString)
-    ctx = load_tag_context(tag)
-    mkpath(path_output)
-    fig = Figure()
-    grids = set_outer_prfl_layout!(fig, tag, ctx.tag_IBs, "$tag | source $id_source_monosrc stacked profile")
-    cache = ctx.caches_by_id[id_source_monosrc]
-    for idx_ib in eachindex(ctx.tag_IBs), idx_istp in eachindex(val_istp_plot)
-        ranges_by_source = calc_scaled_colorranges(tag, ctx.caches_by_id, idx_ib)
-        draw_prfl_inner_stack!(
-            grids[idx_ib, idx_istp],
-            string(ctx.tag_IBs[idx_ib]),
-            ["stack"],
-            [cache.prfl_evol_stacked[idx_ib, idx_istp]],
-            val_istp_plot[idx_istp],
-            [ranges_by_source[id_source_monosrc][idx_istp]],
-        )
-    end
-    return save_comparison_figure(fig, "comparison.monosrc_stack", tag)
+function make_modl_stack_pdf!(cache::SimuCorrCache)
+    val_t = collect(cache.meta.val_vars.t_hold)
+    pos_modl = collect(cache.meta.y_modl)
+    row_builder = (idx_as_s, idx_istp) -> make_modl_rows(
+        [cache.prfl_modl_evol_stacked[idx_as_s, idx_istp]],
+        ["stack"],
+        val_t,
+        pos_modl,
+    )
+    return make_profile_pdf!(cache, "prfl_modl_stack", "$(cache.meta.tag) | modulation profile stack", row_builder)
 end
 
-function make_tag_monosrc_reps_stack(tag::AbstractString)
-    ctx = load_tag_context(tag)
-    mkpath(path_output)
-    fig = Figure()
-    grids = set_outer_prfl_layout!(fig, tag, ctx.tag_IBs, "$tag | source $id_source_monosrc repeats and stack")
-    cache = ctx.caches_by_id[id_source_monosrc]
-    for idx_ib in eachindex(ctx.tag_IBs), idx_istp in eachindex(val_istp_plot)
-        ranges_by_source = calc_scaled_colorranges(tag, ctx.caches_by_id, idx_ib)
-        labels = [@sprintf("rep %d", r) for r in axes(cache.prfl_evol, 2)]
+function make_modl_reps_stack_pdf!(cache::SimuCorrCache)
+    val_t = collect(cache.meta.val_vars.t_hold)
+    pos_modl = collect(cache.meta.y_modl)
+    row_builder = (idx_as_s, idx_istp) -> begin
+        labels = [@sprintf("rep %d", r) for r in axes(cache.prfl_modl_evol, 2)]
         push!(labels, "stack")
-        prfls = [cache.prfl_evol[idx_ib, r, idx_istp] for r in axes(cache.prfl_evol, 2)]
-        push!(prfls, cache.prfl_evol_stacked[idx_ib, idx_istp])
-        draw_prfl_inner_stack!(
-            grids[idx_ib, idx_istp],
-            string(ctx.tag_IBs[idx_ib]),
-            labels,
-            prfls,
-            val_istp_plot[idx_istp],
-            fill(ranges_by_source[id_source_monosrc][idx_istp], length(prfls)),
-        )
+        prfls = [cache.prfl_modl_evol[idx_as_s, r, idx_istp] for r in axes(cache.prfl_modl_evol, 2)]
+        push!(prfls, cache.prfl_modl_evol_stacked[idx_as_s, idx_istp])
+        make_modl_rows(prfls, labels, val_t, pos_modl)
     end
-    return save_comparison_figure(fig, "comparison.monosrc_reps_stack", tag)
+    return make_profile_pdf!(cache, "prfl_modl_reps_stack", "$(cache.meta.tag) | modulation profile reps and stack", row_builder)
+end
+
+function make_core_stack_pdf!(cache::SimuCorrCache)
+    val_t = collect(cache.meta.val_vars.t_hold)
+    pos_axial = collect(((-cache.meta.smwh_core[2]):cache.meta.smwh_core[2]) .* cache.meta.px_in_um[2])
+    pos_radial = collect(((-cache.meta.smwh_core[1]):cache.meta.smwh_core[1]) .* cache.meta.px_in_um[1])
+    row_builder = (idx_as_s, idx_istp) -> make_core_rows(
+        [cache.prfl_axial_evol_stacked[idx_as_s, idx_istp]],
+        [cache.prfl_radial_evol_stacked[idx_as_s, idx_istp]],
+        ["stack"],
+        val_t,
+        pos_axial,
+        pos_radial,
+    )
+    return make_profile_pdf!(cache, "prfl_core_stack", "$(cache.meta.tag) | axial/radial profile stack", row_builder)
+end
+
+function make_core_reps_stack_pdf!(cache::SimuCorrCache)
+    val_t = collect(cache.meta.val_vars.t_hold)
+    pos_axial = collect(((-cache.meta.smwh_core[2]):cache.meta.smwh_core[2]) .* cache.meta.px_in_um[2])
+    pos_radial = collect(((-cache.meta.smwh_core[1]):cache.meta.smwh_core[1]) .* cache.meta.px_in_um[1])
+    row_builder = (idx_as_s, idx_istp) -> begin
+        labels = [@sprintf("rep %d", r) for r in axes(cache.prfl_axial_evol, 2)]
+        push!(labels, "stack")
+        prfls_axial = [cache.prfl_axial_evol[idx_as_s, r, idx_istp] for r in axes(cache.prfl_axial_evol, 2)]
+        prfls_radial = [cache.prfl_radial_evol[idx_as_s, r, idx_istp] for r in axes(cache.prfl_radial_evol, 2)]
+        push!(prfls_axial, cache.prfl_axial_evol_stacked[idx_as_s, idx_istp])
+        push!(prfls_radial, cache.prfl_radial_evol_stacked[idx_as_s, idx_istp])
+        make_core_rows(prfls_axial, prfls_radial, labels, val_t, pos_axial, pos_radial)
+    end
+    return make_profile_pdf!(cache, "prfl_core_reps_stack", "$(cache.meta.tag) | axial/radial profile reps and stack", row_builder)
 end
 
 function main()
     CairoMakie.activate!()
-    for tag in ("CFNM", "NTRC")
-        make_tag_comparison(tag)
-        make_tag_monosrc_stack(tag)
-        make_tag_monosrc_reps_stack(tag)
-    end
+    cache = load_simu_corr_cache(tag_simu)
+    validate_simu_cache!(cache)
+    make_modl_stack_pdf!(cache)
+    make_modl_reps_stack_pdf!(cache)
+    make_core_stack_pdf!(cache)
+    make_core_reps_stack_pdf!(cache)
 end
 
 main()
