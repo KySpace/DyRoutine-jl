@@ -231,7 +231,7 @@ config_corr = (;
 )
 
 meta_corr = merge(
-    meta_extr,
+    meta_extr |> m -> merge(m, (;fmt_dens=merge(m.fmt_dens, (;dens_full_fmt=nothing,)))),
     (;
         kind="excitation_corr",
         path_output,

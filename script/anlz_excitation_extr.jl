@@ -187,6 +187,7 @@ meta_extr = (;
     n_main,
     n_istp,
     n_pca_modes,
+    fmt_dens |> x -> merge(x, (;dens_full_fmt=nothing,)),
     px_in_um,
     smwh_roi,
     smwh_core,
