@@ -1,5 +1,6 @@
-using CairoMakie: Figure, Axis, Colorbar, DataAspect, heatmap!, lines!, scatter!, save, text!, rowgap!, colgap!
+using CairoMakie: Figure, Axis, Colorbar, DataAspect, heatmap!, lines!, band!, scatter!, save, text!, rowgap!, colgap!
 using GLMakie
+using GeometryBasics: Point2f
 using JLD2
 using Printf
 using ImageFiltering
@@ -21,7 +22,7 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\AnlzRoutine"
 tag = "CFNM"
 title_load = "[07.24].100.Extr"
-title_anlz = "[07.24].102.PrflProc.[←100]"
+title_anlz = "[07.24].103.PrflProc.NumberMask.[←100]"
 
 path_load = joinpath(path_root, title_load)
 path_output = joinpath(path_root, title_anlz)

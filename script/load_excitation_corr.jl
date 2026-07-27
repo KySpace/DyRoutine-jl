@@ -49,6 +49,9 @@ trend_sidepeak_nvlp = cache_corr["trend_sidepeak_nvlp"]
 fit_evol_properties = haskey(cache_corr, "fit_evol_properties") ? cache_corr["fit_evol_properties"] : nothing
 trend_extr_stacked_over_rep = cache_corr["trend_extr_stacked_over_rep"]
 trend_stacked_over_rep = cache_corr["trend_stacked_over_rep"]
+num_fit = haskey(cache_corr, "num_fit") ? cache_corr["num_fit"] : nothing
+fits_num = haskey(cache_corr, "fits_num") ? cache_corr["fits_num"] : nothing
+valid_num = haskey(cache_corr, "valid_num") ? cache_corr["valid_num"] : nothing
 if haskey(cache_corr, "prfl_evol_stacked")
     prfl_evol = cache_corr["prfl_evol"]
     prfl_evol_stacked = cache_corr["prfl_evol_stacked"]

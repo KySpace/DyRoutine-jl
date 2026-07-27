@@ -251,11 +251,12 @@ function set_axis_prfl_comparison_table!(
     val_group::AbstractVector,
     val_istp::AbstractVector,
     title::AbstractString,
+    ; size=nothing,
 )
     isempty(val_group) && throw(ArgumentError("val_group must not be empty"))
     isempty(val_istp) && throw(ArgumentError("val_istp must not be empty"))
 
-    fig = Figure()
+    fig = isnothing(size) ? Figure() : Figure(size=size)
     Label(fig[0, 1:length(val_istp)], title; tellwidth=false, tellheight=true, halign=:left)
     grids = Array{GridLayout}(undef, length(val_group), length(val_istp))
     for (idx_group, group) in enumerate(val_group), (idx_istp, istp) in enumerate(val_istp)
@@ -304,6 +305,34 @@ function calc_prfl_colorrange_auto(
     return (0.0, upper > 0 ? upper : 1.0)
 end
 
+function make_masked_prfl_clr(
+    prfl::AbstractMatrix,
+    valid_t::AbstractVector{Bool},
+    hue,
+    max_value::Real;
+    hue_shift::Real=20.0,
+    thres_alpha::Real=0.1,
+    alpha_base::Real=0.1,
+)
+    size(prfl, 2) == length(valid_t) || throw(DimensionMismatch(
+        "profile time dimension $(size(prfl, 2)) does not match validity length $(length(valid_t))"
+    ))
+    max_value > 0 || throw(ArgumentError("masked profile color maximum must be positive"))
+    return [
+        begin
+            # A completely missing stack column still gets a visible invalid
+            # strip; valid columns retain their actual profile value.
+            value = ismissing(prfl[p, t]) ? 0.5 * max_value : Float64(prfl[p, t])
+            value_norm = clamp(value, 0, max_value) / max_value
+            alpha = thres_alpha <= 0 || value_norm > thres_alpha ? 1.0 :
+                clamp(value_norm / thres_alpha * (1 - alpha_base) + alpha_base, 0, 1)
+            hue_use = valid_t[t] ? hue : hue + hue_shift
+            Oklch(1 - 0.8 * value_norm, 0.24 * value_norm, hue_use) |> c -> RGBAf(c, alpha)
+        end
+        for p in axes(prfl, 1), t in axes(prfl, 2)
+    ]
+end
+
 function plot_prfl_comparison_table!(
     fig::Figure,
     grids::AbstractMatrix,
@@ -348,8 +377,13 @@ function plot_prfl_comparison_table!(
                     selector_t_hold=selector_t_hold_row,
                     selector_pos=selector_pos_row,
                 ) : colorrange_row
-            hm = heatmap!(ax, val_t, row_spec.pos, prfl'; colorrange=colorrange_use, colormap=clrmap, rasterize=true)
-            Colorbar(gl[row, 2], hm; width=8.0, ticklabelsize=7.0, tickalign=1)
+            if hasproperty(row_spec, :valid)
+                clr = make_masked_prfl_clr(prfl, row_spec.valid[idx_istp], hue_theme_istp[istp], colorrange_use[2])
+                heatmap!(ax, val_t, row_spec.pos, clr'; rasterize=true)
+            else
+                hm = heatmap!(ax, val_t, row_spec.pos, prfl'; colorrange=colorrange_use, colormap=clrmap, rasterize=true)
+                Colorbar(gl[row, 2], hm; width=8.0, ticklabelsize=7.0, tickalign=1)
+            end
             ylims_row = isnothing(profile_config) ? ylims : profile_config.ylims
             isnothing(ylims_row) ? ylims!(ax, extrema(row_spec.pos)) : ylims!(ax, ylims_row)
             ax.xticks = x_ticks

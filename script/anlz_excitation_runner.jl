@@ -1,6 +1,7 @@
 using HDF5
-using CairoMakie: Figure, Axis, Colorbar, DataAspect, heatmap!, lines!, scatter!, save, text!, rowgap!, colgap!
+using CairoMakie: Figure, Axis, Colorbar, DataAspect, heatmap!, lines!, band!, scatter!, save, text!, rowgap!, colgap!
 using GLMakie
+using GeometryBasics: Point2f
 using JLD2
 using Printf
 using ImageFiltering

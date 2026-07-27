@@ -1,4 +1,5 @@
 ## correlation visualization
+if false
 t_stage = log_step("building and saving spectrum-vs-IB figures")
 trend_spectrum_groups = (;
     stacked=trend_extr_stacked_over_rep,
@@ -31,6 +32,7 @@ for spec in trend_property_specs
     end
 end
 log_done("saved spectrum-vs-IB figures", t_stage)
+end
 
 selector_t_hold_prfl_modl = @isdefined(selector_t_hold_prfl_modl) ? selector_t_hold_prfl_modl : (t -> true)
 selector_pos_prfl_modl = @isdefined(selector_pos_prfl_modl) ? selector_pos_prfl_modl : (k -> true)
@@ -79,20 +81,22 @@ modl_rows_stack_by_IB = [
     for c in axes(prfl_evol_stacked, 1)
 ]
 modl_rows_reps_by_IB = [
-    [
+    begin
+        rows = Any[
         (
             label="rep $(val_vars.rep[r])",
             group_caption="IB=$(val_vars.IB[c])",
             evol=reshape([prfl_evol[c, r, i] for i in axes(prfl_evol, 3)], 1, :),
             pos=y_modl,
+            valid=[valid_num[c, r, :, i] for i in axes(valid_num, 4)],
         )
         for r in axes(prfl_evol, 2)
-    ]
+        ]
+        push!(rows, modl_rows_stack_by_IB[c][1])
+        rows
+    end
     for c in axes(prfl_evol, 1)
 ]
-for (c, rows) in enumerate(modl_rows_reps_by_IB)
-    push!(rows, modl_rows_stack_by_IB[c][1])
-end
 save_prfl_comparison_table!(
     modl_rows_stack_by_IB,
     "$tag modulation profile stack",
@@ -133,8 +137,8 @@ core_rows_reps_by_IB = [
     begin
         rows = Any[]
         for r in axes(prfl_axial_evol, 2)
-            push!(rows, (label="rep $(val_vars.rep[r]) axial", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_axial_evol[c, r, i] for i in axes(prfl_axial_evol, 3)], 1, :), pos=pos_axial, height=vis_evol_prfl_axial.height, profile_config=vis_evol_prfl_axial, selector_t_hold=selector_t_hold_prfl_axial, selector_pos=selector_pos_prfl_axial, hide_x_ticklabels=true))
-            push!(rows, (label="rep $(val_vars.rep[r]) radial", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_radial_evol[c, r, i] for i in axes(prfl_radial_evol, 3)], 1, :), pos=pos_radial, height=height_radial, profile_config=vis_evol_prfl_radial, selector_t_hold=selector_t_hold_prfl_radial, selector_pos=selector_pos_prfl_radial))
+            push!(rows, (label="rep $(val_vars.rep[r]) axial", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_axial_evol[c, r, i] for i in axes(prfl_axial_evol, 3)], 1, :), pos=pos_axial, valid=[valid_num[c, r, :, i] for i in axes(valid_num, 4)], height=vis_evol_prfl_axial.height, profile_config=vis_evol_prfl_axial, selector_t_hold=selector_t_hold_prfl_axial, selector_pos=selector_pos_prfl_axial, hide_x_ticklabels=true))
+            push!(rows, (label="rep $(val_vars.rep[r]) radial", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_radial_evol[c, r, i] for i in axes(prfl_radial_evol, 3)], 1, :), pos=pos_radial, valid=[valid_num[c, r, :, i] for i in axes(valid_num, 4)], height=height_radial, profile_config=vis_evol_prfl_radial, selector_t_hold=selector_t_hold_prfl_radial, selector_pos=selector_pos_prfl_radial))
         end
         append!(rows, core_rows_stack_by_IB[c])
         rows
@@ -173,8 +177,8 @@ core_rows_norm_reps_by_IB = [
     begin
         rows = Any[]
         for r in axes(prfl_axial_evol_norm, 2)
-            push!(rows, (label="normalized rep $(val_vars.rep[r]) axial", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_axial_evol_norm[c, r, i] for i in axes(prfl_axial_evol_norm, 3)], 1, :), pos=pos_axial, height=vis_evol_prfl_axial.height, profile_config=vis_evol_prfl_axial, selector_t_hold=selector_t_hold_prfl_axial, selector_pos=selector_pos_prfl_axial, hide_x_ticklabels=true))
-            push!(rows, (label="normalized rep $(val_vars.rep[r]) radial", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_radial_evol_norm[c, r, i] for i in axes(prfl_radial_evol_norm, 3)], 1, :), pos=pos_radial, height=height_radial, profile_config=vis_evol_prfl_radial, selector_t_hold=selector_t_hold_prfl_radial, selector_pos=selector_pos_prfl_radial))
+            push!(rows, (label="normalized rep $(val_vars.rep[r]) axial", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_axial_evol_norm[c, r, i] for i in axes(prfl_axial_evol_norm, 3)], 1, :), pos=pos_axial, valid=[valid_num[c, r, :, i] for i in axes(valid_num, 4)], height=vis_evol_prfl_axial.height, profile_config=vis_evol_prfl_axial, selector_t_hold=selector_t_hold_prfl_axial, selector_pos=selector_pos_prfl_axial, hide_x_ticklabels=true))
+            push!(rows, (label="normalized rep $(val_vars.rep[r]) radial", group_caption="IB=$(val_vars.IB[c])", evol=reshape([prfl_radial_evol_norm[c, r, i] for i in axes(prfl_radial_evol_norm, 3)], 1, :), pos=pos_radial, valid=[valid_num[c, r, :, i] for i in axes(valid_num, 4)], height=height_radial, profile_config=vis_evol_prfl_radial, selector_t_hold=selector_t_hold_prfl_radial, selector_pos=selector_pos_prfl_radial))
         end
         append!(rows, core_rows_norm_stack_by_IB[c])
         rows
@@ -202,6 +206,61 @@ save_prfl_comparison_table!(
     val_istp,
 )
 
+function save_num_fit_table!(fits_num, title, name, tag, val_IB, val_istp, val_t; width_to_time=2.5, height=100)
+    width = width_to_time * (maximum(val_t) - minimum(val_t))
+    fig, grids = set_axis_prfl_comparison_table!(
+        val_IB,
+        val_istp,
+        title;
+        size=(length(val_istp) * (width + 80), length(val_IB) * (2height + 55)),
+    )
+    hue_rep_num = [279, 127, 85]
+    for c in axes(fits_num, 1), i in axes(fits_num, 2)
+        fit_info = fits_num[c, i]
+        gl = grids[c, i]
+        Label(gl[1, 1:2], "IB=$(val_IB[c]) | $(val_istp[i])"; tellwidth=false, tellheight=true, halign=:center, fontsize=8)
+        ax_num = Axis(gl[2, 1]; width, height, yticklabelspace=28.0)
+        ax_err = Axis(gl[3, 1]; width, height, xlabel="t_hold (ms)", yticklabelspace=28.0)
+        for r in axes(fit_info.nums, 1)
+            clr = RGBAf(Oklch(0.6331, 0.0923, hue_rep_num[r]), 1.0)
+            scatter!(ax_num, fit_info.t, fit_info.nums[r]; color=clr)
+            scatter!(ax_err, fit_info.t, fit_info.errors[r]; color=clr)
+        end
+        lines!(ax_num, fit_info.t, fit_info.fitted[1]; color=:black, linewidth=2)
+        band!(ax_err, fit_info.t, -2fit_info.σ .* fit_info.fitted[1], 2fit_info.σ .* fit_info.fitted[1]; color=(:gray, 0.25))
+        D1, λ1, D2, λ2 = fit_info.params
+        text!(ax_num,
+            "D₁=$(round(D1; digits=1)), λ₁=$(round(λ1; digits=1))\nD₂=$(round(D2; digits=1)), λ₂=$(round(λ2; digits=1))\nσᵣ=$(round(fit_info.σ; digits=4))";
+            position=Point2f(0.98, 0.98), space=:relative, align=(:right, :top), justification=:right, fontsize=10)
+        ax_num.xticklabelsvisible = false
+        ax_num.xlabelvisible = false
+        ax_num.xticks = 0:10:210
+        ax_err.xticks = 0:10:210
+        rowgap!(gl, 4)
+        colgap!(gl, 4)
+        rowsize!(gl, 2, Fixed(height))
+        rowsize!(gl, 3, Fixed(height))
+        colsize!(gl, 1, Fixed(width))
+    end
+    resize_to_layout!(fig)
+    for format in ("svg", "png")
+        save(joinpath(path_output, @sprintf("%s_[%s].%s", name, tag, format)), fig; backend=CairoMakie)
+    end
+end
+
+save_num_fit_table!(
+    fits_num,
+    "$tag fitted number evolution",
+    "num_fit",
+    tag,
+    val_vars.IB,
+    val_vars.istp,
+    val_t;
+    width_to_time=2.5,
+    height=100,
+)
+
+if false
 for (c, tag_IB) in enumerate(tag_IBs)
     local t_stage = log_step("profile comparison figures for $tag_IB")
     runinfo_plot = runinfo_plots[c]
@@ -249,7 +308,9 @@ for (c, tag_IB) in enumerate(tag_IBs)
     end
     log_done("saved PCA figure for $tag_IB", t_stage)
 end
+end
 
+if false
 if !isnothing(modes_pca_prfl_modl)
     t_stage = log_step("building and saving modulation profile PCA figures")
     path_pca_prfl = joinpath(path_output, "PCA prfl modl", tag)
@@ -349,4 +410,5 @@ for spec in trend_property_specs
             )
         end
     end
+end
 end
