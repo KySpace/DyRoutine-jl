@@ -2,6 +2,8 @@ using MultivariateStats: PCA, fit, predict, projection
 using Statistics: mean, quantile
 using Peaks
 using LsqFit: curve_fit, coef, residuals
+using Interpolations
+using Optim
 
 struct ModeWeight{TProfile<:AbstractArray,TWeight<:AbstractArray}
     profile::TProfile

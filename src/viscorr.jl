@@ -205,7 +205,7 @@ function set_axis_prfl_comparison!(
     axs = Array{Axis}(undef, length(rows), length(val_istp))
     colorbars = Array{Any}(undef, length(rows), length(val_istp))
     for (idx_row, row_spec) in enumerate(rows)
-        Label(fig[idx_row, 0], row_spec.label; tellwidth=true, tellheight=false, fontsize=8)
+        Label(fig[idx_row, 0], row_spec.label; tellwidth=true, tellheight=false, fontsize=11, rotation=π/2)
         for idx_istp in eachindex(val_istp)
             row_height = Float64(hasproperty(row_spec, :height) ? row_spec.height : height)
             idx_col = 2 * idx_istp - 1
@@ -265,7 +265,8 @@ function set_axis_prfl_comparison_table!(
             string(group);
             tellwidth=true,
             tellheight=false,
-            fontsize=9,
+            fontsize=11,
+            rotation = π/2,
         )
         idx_group == 1 && Label(
             fig[1, idx_istp],
@@ -273,7 +274,7 @@ function set_axis_prfl_comparison_table!(
             tellwidth=false,
             tellheight=true,
             halign=:center,
-            fontsize=9,
+            fontsize=11,
         )
         gl = GridLayout()
         fig[idx_group + 1, idx_istp] = gl
@@ -354,10 +355,10 @@ function plot_prfl_comparison_table!(
     for (idx_group, rows) in enumerate(rows_by_group), (idx_istp, istp) in enumerate(val_istp)
         isempty(rows) && throw(ArgumentError("profile table group $idx_group has no rows"))
         gl = grids[idx_group, idx_istp]
-        Label(gl[1, 1:2], string(rows[1].group_caption); tellwidth=false, tellheight=true, halign=:center, fontsize=8)
+        Label(gl[1, 1:2], string(rows[1].group_caption); tellwidth=false, tellheight=true, halign=:center, fontsize=11)
         for (idx_row, row_spec) in enumerate(rows)
             row = idx_row + 1
-            Label(gl[row, 0], row_spec.label; tellwidth=true, tellheight=false, fontsize=8)
+            Label(gl[row, 0], row_spec.label; tellwidth=true, tellheight=false, fontsize=11, rotation=π/2)
             profile_config = hasproperty(row_spec, :profile_config) ? row_spec.profile_config : nothing
             width_row = isnothing(profile_config) ? width : profile_config.width_to_time * (maximum(val_t) - minimum(val_t))
             row_height = Float64(hasproperty(row_spec, :height) ? row_spec.height : isnothing(profile_config) ? height : profile_config.height)

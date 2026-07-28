@@ -1,3 +1,7 @@
+include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
+include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
+include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
+
 ## extraction figures from solo or stack
 
 draw_solo_modl_kwargs = @isdefined(draw_solo_modl_kwargs) ? draw_solo_modl_kwargs : NamedTuple()

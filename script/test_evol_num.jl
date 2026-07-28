@@ -78,8 +78,7 @@ function make_num_fit(ib::Int, istp::Int)
     return (; t=t_hold, nums=nums_full, params, fitted=fitted_full, errors=errors_full, errors_rel=errors_rel_full, σ, valid_num=valid_num_local)
 end
 
-ib0 = findfirst(==(5.316), val_vars.IB)
-ib0 = something(ib0, 1)
+ib0 = findfirst(==(5.316), val_vars.IB) |> something
 obs_ib = Observable(ib0)
 obs_rep = Observable(2)
 obs_istp = Observable(2)

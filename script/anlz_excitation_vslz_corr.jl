@@ -1,3 +1,7 @@
+include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
+include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
+include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
+
 ## correlation visualization
 if false
 t_stage = log_step("building and saving spectrum-vs-IB figures")
@@ -219,7 +223,7 @@ function save_num_fit_table!(fits_num, title, name, tag, val_IB, val_istp, val_t
     for c in axes(fits_num, 1), i in axes(fits_num, 2)
         fit_info = fits_num[c, i]
         gl = grids[c, i]
-        Label(gl[1, 1:2], "IB=$(val_IB[c]) | $(val_istp[i])"; tellwidth=false, tellheight=true, halign=:center, fontsize=8)
+        Label(gl[1, 1:2], "IB=$(val_IB[c]) | $(val_istp[i])"; tellwidth=false, tellheight=true, halign=:center, fontsize=11)
         ax_num = Axis(gl[2, 1]; width, height, yticklabelspace=28.0)
         ax_err = Axis(gl[3, 1]; width, height, xlabel="t_hold (ms)", yticklabelspace=28.0)
         for r in axes(fit_info.nums, 1)

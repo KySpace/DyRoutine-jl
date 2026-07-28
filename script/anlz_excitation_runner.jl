@@ -13,9 +13,7 @@ include(joinpath(@__DIR__, "..", "src", "loadfmt.jl"))
 include(joinpath(@__DIR__, "..", "src", "percond.jl"))
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "corr.jl"))
-include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
-include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
-include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
+
 
 # profiles masked by number selection
 # commit e794fd69f788f0ae5ce2a74503900d8542567941

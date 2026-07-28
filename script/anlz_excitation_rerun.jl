@@ -20,7 +20,7 @@ include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 # commit b93372ff41e21a2b410384b55cac1a4687ecf784
 # There is going to be a calibrated version of density profiles
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\AnlzRoutine"
-tag = "CFNM"
+tag = "NTRC"
 title_load = "[07.24].100.Extr"
 title_anlz = "[07.24].103.PrflProc.NumberMask.[←100]"
 
