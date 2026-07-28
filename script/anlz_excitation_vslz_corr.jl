@@ -34,6 +34,7 @@ end
 log_done("saved spectrum-vs-IB figures", t_stage)
 end
 
+##
 selector_t_hold_prfl_modl = @isdefined(selector_t_hold_prfl_modl) ? selector_t_hold_prfl_modl : (t -> true)
 selector_pos_prfl_modl = @isdefined(selector_pos_prfl_modl) ? selector_pos_prfl_modl : (k -> true)
 selector_t_hold_prfl_axial = @isdefined(selector_t_hold_prfl_axial) ? selector_t_hold_prfl_axial : (t -> true)
@@ -212,7 +213,7 @@ function save_num_fit_table!(fits_num, title, name, tag, val_IB, val_istp, val_t
         val_IB,
         val_istp,
         title;
-        size=(length(val_istp) * (width + 80), length(val_IB) * (2height + 55)),
+        size=(length(val_istp) * (width + 120), length(val_IB) * (2height + 55)),
     )
     hue_rep_num = [279, 127, 85]
     for c in axes(fits_num, 1), i in axes(fits_num, 2)
@@ -260,6 +261,7 @@ save_num_fit_table!(
     height=100,
 )
 
+##
 if false
 for (c, tag_IB) in enumerate(tag_IBs)
     local t_stage = log_step("profile comparison figures for $tag_IB")

@@ -17,7 +17,7 @@ include(joinpath(@__DIR__, "..", "src", "vissolo.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
-# With density profiles drawn, extractions as well
+# profiles masked by number selection
 # commit e794fd69f788f0ae5ce2a74503900d8542567941
 title_anlz = "[07.24].100.Extr"
 

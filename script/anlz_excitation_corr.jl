@@ -1,5 +1,7 @@
 using Statistics: std
 
+## 
+if false
 t_stage = log_step("fitting PCA modes")
 selector_t_pca_dens = @isdefined(selector_t_pca_dens) ? selector_t_pca_dens : (@isdefined(selector_t_pca) ? selector_t_pca : (t -> trues(length(t))))
 selector_t_pca_modl = @isdefined(selector_t_pca_modl) ? selector_t_pca_modl : selector_t_pca_dens
@@ -45,7 +47,8 @@ trend_stacked_over_rep = [
     for c in axes(trend_sidepeak_nvlp, 1), i in axes(trend_sidepeak_nvlp, 3)
 ]
 log_done("analyzed stacked trends", t_stage)
-
+end
+##
 t_stage = log_step("composing FT sidepeak profile evolution")
 prfl_evol = [
     [
@@ -239,6 +242,8 @@ prfl_axial_evol_norm_stacked = stack_core_prfl_evol(prfl_axial_evol_norm, valid_
 prfl_radial_evol_norm_stacked = stack_core_prfl_evol(prfl_radial_evol_norm, valid_num)
 log_done("finished composing core density profile evolution", t_stage)
 
+##
+if false
 t_stage = log_step("fitting modulation profile PCA modes")
 mask_y_modl_pca = (0.06 .<= y_modl .<= 0.6)
 any(mask_y_modl_pca) || throw(ArgumentError("modulation profile PCA wavenum selector 0.06-0.6 selected no y_modl values."))
@@ -267,7 +272,8 @@ pca_spectra_prfl_modl = [
     for m in 1:n_pca_modes_prfl_modl, c in axes(samples_pca_prfl_modl, 1)
 ]
 log_done("fit modulation profile PCA modes", t_stage)
-
+end
+##
 config_corr = (;
     filter_core_pca_sigma,
     n_pca_modes_prfl_modl,
@@ -299,13 +305,13 @@ meta_corr = merge(
         kind="excitation_corr",
         path_output,
         config_corr,
-        n_pca_modes_prfl_modl,
-        trend_property_specs,
-        y_modl_pca,
-        freq_query_pca_modl,
-        config_corr.selector_t_pca_dens_val,
-        config_corr.selector_t_pca_modl_val,
-        config_corr.selector_t_spectrum_val,
+        # n_pca_modes_prfl_modl,
+        # trend_property_specs,
+        # y_modl_pca,
+        # freq_query_pca_modl,
+        # config_corr.selector_t_pca_dens_val,
+        # config_corr.selector_t_pca_modl_val,
+        # config_corr.selector_t_spectrum_val,
     ),
 )
 
@@ -314,10 +320,10 @@ path_cache_corr = joinpath(path_output, @sprintf("%s_corr.jld2", tag))
 JLD2.jldsave(
     path_cache_corr;
     meta_corr,
-    trend_sidepeak_nvlp,
-    fit_evol_properties,
-    trend_extr_stacked_over_rep,
-    trend_stacked_over_rep,
+    # trend_sidepeak_nvlp,
+    # fit_evol_properties,
+    # trend_extr_stacked_over_rep,
+    # trend_stacked_over_rep,
     num_fit,
     fits_num,
     valid_num,
@@ -331,9 +337,9 @@ JLD2.jldsave(
     prfl_axial_evol_norm_stacked,
     prfl_radial_evol_norm,
     prfl_radial_evol_norm_stacked,
-    modes_pca_dens2d,
-    pca_spectra,
-    modes_pca_prfl_modl,
-    pca_spectra_prfl_modl,
+    # modes_pca_dens2d,
+    # pca_spectra,
+    # modes_pca_prfl_modl,
+    # pca_spectra_prfl_modl,
 )
 log_done("saved excitation correlation cache", t_stage)
