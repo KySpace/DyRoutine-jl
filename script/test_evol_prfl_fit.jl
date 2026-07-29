@@ -26,10 +26,11 @@ title_extr = raw"[07.24].100.Extr"
 title_corr = raw"[07.24].103.PrflProc.NumberMask.[←100]"
 cache_extr = JLD2.load(joinpath(path_root, "AnlzRoutine", title_extr, "CFNM_essn_extr.jld2"))
 prfl_axial_evol = JLD2.load(joinpath(path_root, "AnlzRoutine", title_corr, "CFNM_corr.jld2"))["prfl_axial_evol_stacked"]
+prfl_radial_evol = JLD2.load(joinpath(path_root, "AnlzRoutine", title_corr, "CFNM_corr.jld2"))["prfl_radial_evol_stacked"]
 meta_extr = cache_extr["meta_extr"]
 val_vars = meta_extr.val_vars
 px_in_um = meta_extr.px_in_um
-coor = meta_extr.smwh_core[2] |> s -> (-s:s)*px_in_um
+coor = meta_extr.smwh_core[1] |> s -> (-s:s)*px_in_um
 
 function fit_peak_trajectory(
     model,
@@ -40,6 +41,8 @@ function fit_peak_trajectory(
     p0::AbstractVector;
     optimizer = ParticleSwarm(),
     iterations::Integer = 10_000,
+    p_upper = nothing,
+    p_lower = nothing,
 )
     nx, nt = size(evol_prfl)
     nx == length(x) || throw(DimensionMismatch("size(evol_prfl, 1) = $nx, but length(x) = $(length(x))"))
@@ -47,11 +50,24 @@ function fit_peak_trajectory(
 
     r_blur >= 0 || throw(ArgumentError("r_blur must be nonnegative"))
 
+    p_upper = p_upper === nothing ? fill(Inf, size(p0)) : p_upper
+    p_lower = p_lower === nothing ? fill(-Inf, size(p0)) : p_lower
+    length(p_upper) == length(p0) || throw(DimensionMismatch(
+        "length(p_upper) = $(length(p_upper)), but length(p0) = $(length(p0))"
+    ))
+    length(p_lower) == length(p0) || throw(DimensionMismatch(
+        "length(p_lower) = $(length(p_lower)), but length(p0) = $(length(p0))"
+    ))
+    all(p_lower[i] <= p_upper[i] for i in eachindex(p0)) || throw(ArgumentError(
+        "each p_lower value must be less than or equal to the corresponding p_upper value"
+    ))
+
     evol_prfl_blur = blur_profile_evolution(evol_prfl, r_blur, x)
     interpolant =
         @pipe interpolate(evol_prfl_blur, (BSpline(Linear()), NoInterp())) |> scale(_, x, axes(evol_prfl_blur, 2))
     xmin, xmax = extrema(x)
     function score(p)
+        all(p_lower[i] <= p[i] <= p_upper[i] for i in eachindex(p0)) || return -Inf
         traj = [model(ti, p) for ti in t]
         all(xi -> xmin <= xi <= xmax, traj) || return -Inf
         sum(i -> interpolant(traj[i], i), eachindex(t))
@@ -136,7 +152,7 @@ function make_fit(
     mask_t = (lo .<= t_evol) .& (t_evol .<= hi)
     any(mask_t) || throw(ArgumentError("fit time range $rng_t_fit selected no t_hold values"))
     t_evol_sel = t_evol[mask_t]
-    evol_prfl_sample = mean(prfl_axial_evol[ib, :])
+    evol_prfl_sample = mean(prfl_radial_evol[ib, :])
     evol_prfl_blur_full = blur_profile_evolution(evol_prfl_sample, r_blur_um, coor)
     evol_prfl_sample_sel = evol_prfl_sample[:, mask_t]
     fit = fit_peak_trajectory(
@@ -145,8 +161,10 @@ function make_fit(
         r_blur_um,
         coor,
         t_evol_sel,
-        [8.0, 40, t0_initial, 200];
+        [2.0, 13, t0_initial, 200];
         optimizer=ParticleSwarm(),
+        p_upper=[ 5.0, 15,  20, 10000],
+        p_lower=[ 0.0, 10, -20, 10],
     )
     return merge(fit, (;
         t_evol_sel,
@@ -178,10 +196,10 @@ heatmap!(ax_prfl, t_evol, coor, obs_prfl_clr)
 traj_plot = lines!(ax_prfl, fit_now.t_evol_sel, fit_now.trajectory; color=:white, linewidth=2)
 
 obs_prfl_162 = Observable(shift_profile_evolution(
-    prfl_axial_evol[ib0, 1], fit_now.trajectory_full, coor,
+    prfl_radial_evol[ib0, 1], fit_now.trajectory_full, coor,
 )')
 obs_prfl_164 = Observable(shift_profile_evolution(
-    prfl_axial_evol[ib0, 2], fit_now.trajectory_full, coor,
+    prfl_radial_evol[ib0, 2], fit_now.trajectory_full, coor,
 )')
 obs_colorrange_162 = Observable(calc_prfl_colorrange_auto(
     obs_prfl_162[]', t_evol, coor,
@@ -219,7 +237,7 @@ end
 add_cycle!(1, obs_ib, val_vars.IB)
 
 Label(ctrl[1, 5], lift(r -> "blur $(round(r; digits=2)) μm", obs_r_blur_um))
-slider_blur = Slider(ctrl[1, 6:9]; range=0.0:0.1:4.0, startvalue=fit_initial_blur, tellwidth=false)
+slider_blur = Slider(ctrl[1, 6:9]; range=0.0:0.2:10.0, startvalue=fit_initial_blur, tellwidth=false)
 Label(ctrl[1, 10], lift(r -> "fit $(r[1])–$(r[2]) ms", obs_rng_t_fit))
 slider_fit_range = IntervalSlider(ctrl[1, 11:16]; range=0.0:1.0:200.0, startvalues=fit_initial_range)
 Label(ctrl[1, 17], lift(t0 -> "initial t₀ $(round(t0; digits=1)) ms", obs_t0_initial))
@@ -246,10 +264,10 @@ function update_plot!()
     )'
     traj_plot[1][] = Point2f.(fit_now.t_evol_sel, fit_now.trajectory)
     obs_prfl_162[] = shift_profile_evolution(
-        prfl_axial_evol[obs_ib[], 1], fit_now.trajectory_full, coor,
+        prfl_radial_evol[obs_ib[], 1], fit_now.trajectory_full, coor,
     )'
     obs_prfl_164[] = shift_profile_evolution(
-        prfl_axial_evol[obs_ib[], 2], fit_now.trajectory_full, coor,
+        prfl_radial_evol[obs_ib[], 2], fit_now.trajectory_full, coor,
     )'
     obs_colorrange_162[] = calc_prfl_colorrange_auto(obs_prfl_162[]', t_evol, coor)
     obs_colorrange_164[] = calc_prfl_colorrange_auto(obs_prfl_164[]', t_evol, coor)
