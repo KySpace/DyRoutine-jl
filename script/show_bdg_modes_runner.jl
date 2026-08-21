@@ -16,7 +16,7 @@ log_done(msg, t_start) = (println("  [$tag] $msg ($(round(time() - t_start; digi
 
 title = "Anlz.18.BdG-02.[2026.06.16].04"
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations"
-dir_test = raw"02.[2026.06.12]"
+dir_test = raw"02.[2026.06.12].BdG"
 dir_static = raw"static"
 dir_animation = raw"animation"
 path_show = joinpath(@__DIR__, "show_bdg_modes.jl")
