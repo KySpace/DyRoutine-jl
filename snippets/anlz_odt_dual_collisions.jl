@@ -4,6 +4,7 @@ using LsqFit: coef, curve_fit
 using Pipe: @pipe
 using Printf: @sprintf
 path_root = raw"\\10.16.18.204\Experimental data\2026-09\0908"
+path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\IsotopePairs\2026-09\0908"
 val_istp = [:161, :163]
 val_type = [:MX, :Sw]
 val_626_163 = [:detuned, :on_resn]
@@ -31,7 +32,7 @@ function exp_decay(t::AbstractVector, params::AbstractVector)
     @. num_initial * exp(-t / tau_decay) + background
 end
 
-# mask_t_fit = @pipe [0, 1, 0, 1, 0, 0, 0] |> Bool.(_)
+mask_t_fit = @pipe [0, 1, 1, 1, 1, 1, 1] |> Bool.(_)
 
 function fit_exp_decay(t::AbstractVector{<:Real}, decay::AbstractVector{<:Real}, mask_t::AbstractVector{<:Bool}=trues(size(t)))
     t_fit = Float64.(t) ./ 1e3
@@ -104,16 +105,21 @@ cp(abspath(@__FILE__), joinpath(dir_output, basename(@__FILE__)); force=true)
 
 ## commonly used comparisons
 # 200 ms / 50 ms 
+ratio_200_50 = nums[:, :, 4, :] ./ nums[:, :, 2, :]
 ratio_decay_simu = @pipe tau_decay |> exp.(-0.15./_) |> round.(_; digits=2)
 @pipe ratio_decay_simu |> vcat(_[2,3,:] ./ _[2,1,:], _[1,3,:] ./ _[1,1,:])'
 rate_decay = @pipe tau_decay |> 1 ./ _
 
 display_table = q -> @pipe [q[a,:,:] for a in 2:-1:1] |> hcat(_...) |> round.(_; digits=2)
 
-tau_decay_compose = @pipe [ 
-    if a == 1 || p == 1 
-        NaN
-    else
-        rate[1, p, ty] + rate[a, 1, ty] - rate[1, 1, ty] 
-    end
-    for a in axes(rate, 1), p in axes(rate, 2), ty in axes(rate, 3)] |> 1 ./ _
+tau_decay_compose = rate_decay |> (rate -> [ 
+        if a == 1 || p == 1 
+            NaN
+        else
+            rate[1, p, ty] + rate[a, 1, ty] - rate[1, 1, ty] 
+        end
+        for a in axes(rate, 1), p in axes(rate, 2), ty in axes(rate, 3)]) |> 
+            a -> 1 ./ a
+
+
+
