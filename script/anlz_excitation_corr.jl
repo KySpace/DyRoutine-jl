@@ -77,9 +77,10 @@ end
 
 rng_t_num_decay = @isdefined(rng_t_num_decay) ? rng_t_num_decay : (0.0, 150.0)
 mask_t_num_decay = rng_t_num_decay[1] .<= val_vars.t_hold .<= rng_t_num_decay[2]
+area_px = length(px_in_um) == 1 ? px_in_um^2 : prod(px_in_um)
 num_fit = map(extr_fmt) do extr
     p = extr.envelope.params_asymm
-    2π * prod(p.size) * p.max / (px_in_um^2)
+    2π * prod(p.size) * p.max / area_px
 end
 
 function make_num_fit(ib::Int, istp::Int)

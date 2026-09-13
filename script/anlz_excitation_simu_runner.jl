@@ -18,11 +18,11 @@ include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 include(joinpath(@__DIR__, "..", "src", "vispca.jl"))
 
 # axial and radial profiles integrated into saved data
-# commit f895ed70eb888f4caa9008041f63d776e1fc772d
-title_anlz = "Anlz.16.Simu-03.[2025.07.22]"
+# commit 5f9470ec728fd05155680af7895329fd468155dd
+title_anlz = "Anlz.19.Simu-04.[2026.09.04].Cache"
 
 path_root = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations"
-dir_test = raw"03.[2026.06.10]"
+dir_test = raw"04.[2026.09.04].quench"
 istp = ["162", "164"]
 unit_t = 0.1798
 unit_in_um = 0.2613
@@ -31,7 +31,7 @@ a22 = [80, 85, 90, 95, 100, 105]
 runinfos = [
     (
         tag_head="SIMU-NTRC",
-        date="2026.06.10",
+        date="2026.09.04",
         runids=eachindex(a22),
         bind_id=:IB,
         dir=dir_test,
@@ -64,6 +64,9 @@ fmt_probe = format_dens_simulation_runinfo(
     unit_t,
     unit_in_um,
     sel_vars,
+    pattern_filename_data=Regex(raw"^density_xy_t=(?<idx_time>\d+).*\.mat$"),
+    pattern_folder_data=Regex(raw"^as22=(?<value>[-+]?\d+(?:\.\d+)?)$"),
+    names_density=["n1_xy", "n2_xy"],
 )
 px_in_um = fmt_probe.px_in_um
 unit_x = fmt_probe.unit_x
@@ -81,6 +84,9 @@ format_dens_runinfo_kwargs = (;
     unit_t,
     unit_in_um,
     sel_vars,
+    pattern_filename_data=Regex(raw"^density_xy_t=(?<idx_time>\d+).*\.mat$"),
+    pattern_folder_data=Regex(raw"^as22=(?<value>[-+]?\d+(?:\.\d+)?)$"),
+    names_density=["n1_xy", "n2_xy"],
 )
 format_dens_runinfo_fn = format_dens_simulation_runinfo
 
@@ -257,7 +263,20 @@ trend_spectrum_IB_plot_kwargs = (colorrange=(0.3, 1.00),)
 plot_corr_figures = true
 plot_extr_figures = false
 draw_solo_modl_kwargs = (; dens_max=64.0, peak_height_max=3.0)
+vis_evol_prfl_modl = (height=400, width_to_time=10, ylims=(0, 0.6), colorrange=nothing)
+vis_evol_prfl_axial = (height=400, width_to_time=10, ylims=nothing, colorrange=nothing)
+vis_evol_prfl_radial = (height=400, width_to_time=10, ylims=nothing, colorrange=nothing)
+vis_evol_prfl_core = vis_evol_prfl_axial
+quantile_mask_prfl = 0.05
+thres_frac_bot_mask_prfl = 0.1
+selector_t_hold_prfl_modl = t -> true
+selector_pos_prfl_modl = k -> 0.2 < k < 0.4
+selector_t_hold_prfl_axial = t -> true
+selector_pos_prfl_axial = x -> true
+selector_t_hold_prfl_radial = t -> true
+selector_pos_prfl_radial = x -> true
 
+##
 cp(@__FILE__, joinpath(path_output, basename(@__FILE__)); force=true)
 copy_and_include = (name_script) -> begin
     path_script = joinpath(@__DIR__, name_script)
@@ -275,5 +294,5 @@ for idx_runinfo_iter in ids_runinfo
     "anlz_excitation_extr.jl" |> copy_and_include
     "anlz_excitation_corr.jl" |> copy_and_include
     "anlz_excitation_vslz_corr.jl" |> copy_and_include
-    # "anlz_excitation_vslz_extr.jl" |> copy_and_include
+    "anlz_excitation_vslz_extr.jl" |> copy_and_include
 end
