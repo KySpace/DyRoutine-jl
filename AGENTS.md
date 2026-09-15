@@ -32,6 +32,11 @@ Please summarize completed work in `Agent-Log.md`. Use one entry per finished ta
 While a task is still in progress, mostly edit the latest relevant log entry instead of adding new entries. Add a new entry only when a task is finished or when the user clearly starts a separate task. If you have doubt, ask before writing to `Agent-Log.md`.
 
 ## Code Style and Conventions
+- CMOT pair analysis uses `multidualmot/anlz_cmot_lifetime_runner.jl` and reads
+  per-pair `config.toml`. Its axes run slowest to fastest as
+  `(rep, β_MOT, t_hold, loadcfg, istp)`; DCS contributes to reshaping even when
+  omitted from plots. Use `Symbol("162")` (or `Symbol.(string.(values))`) for
+  isotope symbols: Julia's `:162` evaluates to an integer, not a Symbol.
 - Prefer Julia functions with clear, narrow responsibilities. Keep processing logic in `src/` and script-specific orchestration in `script/`.
 - Use `snake_case` for variables and functions. Function names usually read as verb + noun, such as `calc_dens_sum`, `crop_center`, `find_peak_position_moving`, or `set_axis_full`.
 - Put the kind of quantity first, then attributes: examples include `wh_corner`, `smwh_peak`, `val_t`, `path_plot_peak`, and `dens_full_fmt`.
