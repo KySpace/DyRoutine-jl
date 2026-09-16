@@ -35,7 +35,10 @@ While a task is still in progress, mostly edit the latest relevant log entry ins
 - CMOT pair analysis uses `multidualmot/anlz_cmot_lifetime_runner.jl` and reads
   per-pair `config.toml`. Its axes run slowest to fastest as
   `(rep, β_MOT, t_hold, loadcfg, istp)`; DCS contributes to reshaping even when
-  omitted from plots. Use `Symbol("162")` (or `Symbol.(string.(values))`) for
+  omitted from plots. The config's `vars` array includes `rep` and specifies the
+  complete acquisition order; `rep` may be `:auto` and need not be outermost.
+  reshape in that order, then permute into the standard axis order above. Use
+  `Symbol("162")` (or `Symbol.(string.(values))`) for
   isotope symbols: Julia's `:162` evaluates to an integer, not a Symbol.
 - Prefer Julia functions with clear, narrow responsibilities. Keep processing logic in `src/` and script-specific orchestration in `script/`.
 - Use `snake_case` for variables and functions. Function names usually read as verb + noun, such as `calc_dens_sum`, `crop_center`, `find_peak_position_moving`, or `set_axis_full`.

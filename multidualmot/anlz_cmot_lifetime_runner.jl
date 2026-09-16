@@ -25,13 +25,15 @@ function read_cmot_runinfo(path_root::AbstractString, pair::AbstractString;
         t_hold=Float64.(config["t_hold"]),
         loadcfg=Symbol.(string.(config["loadcfg"])),
         istp=Symbol.(string.(config["istp"])))
+    var_order = Symbol.(replace.(string.(config["vars"]), "tbiasmot" => "β_MOT"))
+    Set(var_order) == Set((:rep, :β_MOT, :t_hold, :loadcfg, :istp)) && length(var_order) == 5 ||
+        throw(ArgumentError("$pair: vars must order rep, tbiasmot, t_hold, loadcfg, and istp exactly once"))
     join(string.(vars.istp), "-") == pair ||
         throw(ArgumentError("$pair: istp values must match the pair in order"))
     length(vars.istp) == 2 || throw(ArgumentError("$pair: expected two isotopes"))
     all(in(vars.loadcfg), (:DDM, :DIS)) ||
         throw(ArgumentError("$pair: loadcfg must include DDM and DIS"))
-    all(>(0), vars.t_hold) || throw(ArgumentError("$pair: log plots require positive hold times"))
-    for key in (:β_MOT, :t_hold, :loadcfg, :istp)
+    for key in (:β_MOT, :loadcfg, :istp)
         values = getproperty(vars, key)
         allunique(values) || throw(ArgumentError("$pair: duplicate values in $key"))
     end
@@ -50,7 +52,7 @@ function read_cmot_runinfo(path_root::AbstractString, pair::AbstractString;
     files, date_runid = files[keep], date_runid[keep]
     isempty(files) && throw(ArgumentError("$pair: no liferes files remain after exclusions"))
     order = sortperm(date_runid)
-    (; tag_head=String(pair), date_runid=date_runid[order], vars,
+    (; tag_head=String(pair), date_runid=date_runid[order], vars, var_order,
         files=joinpath.(path_pair, files[order]))
 end
 
@@ -59,11 +61,12 @@ runinfos = runinfos_grouped
 ids_runinfo = eachindex(runinfos)
 
 hue_istp = Dict(Symbol(string(i)) => h for (i, h) in
-    ((160, 195), (161, 306), (162, 21), (163, 59), (164, 259)))
+    ((160, 195), (161, 306), (162, 21), (163, 90), (164, 259)))
 lightness_stroke, chroma_stroke = 0.45, 0.10
 lightness_face, chroma_face = 0.85, 0.06
+lightness_dis_line, chroma_dis_line = 0.65, 0.08
 marker_loadcfg = Dict(:DDM => :circle, :DIS => :utriangle)
-size_figure = (900, 650)
+size_figure = (500, 360)
 
 for idx_runinfo_iter in ids_runinfo
     global idx_runinfo = idx_runinfo_iter
