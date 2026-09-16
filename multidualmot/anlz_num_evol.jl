@@ -1,23 +1,33 @@
 # Included by a dataset-specific runner. Configured variable order is slowest to fastest.
-shot_data = read_cres_fields(runinfo.files, ("atomnum", "sigmax", "sigmay"))
+length(runinfo.data) == 1 ||
+    throw(ArgumentError("$tag_head: anlz_num_evol.jl requires exactly one rectangular data entry"))
+runinfo_data = only(runinfo.data)
+shot_data = read_cres_fields(runinfo_data.files, ("atomnum", "sigmax", "sigmay"))
 num_data, sigmax_data, sigmay_data = shot_data
 all(isfinite, num_data) || throw(ArgumentError("$tag_head: atomnum must contain only finite values"))
 len_data = length(num_data)
-n_variation = prod(length(getproperty(runinfo.vars, key)) for key in keys(runinfo.vars) if key != :rep)
+n_variation = prod(length(getproperty(runinfo_data.vars, key)) for key in keys(runinfo_data.vars) if key != :rep)
 len_data > 0 && rem(len_data, n_variation) == 0 ||
     throw(DimensionMismatch("$tag_head: $len_data atom numbers must be a positive integer multiple of $n_variation variations"))
 n_rep = div(len_data, n_variation)
 val_rep = 1:n_rep
-vars = merge(runinfo.vars, (; rep=val_rep))
+vars = merge(runinfo_data.vars, (; rep=val_rep))
 name, val_vars = keys(vars), values(vars)
 
-name_acq = runinfo.var_order
+name_acq = runinfo_data.var_order
 n_dims_acq = map(key -> length(getproperty(vars, key)), name_acq)
 mask_size = isfinite.(sigmax_data) .& isfinite.(sigmay_data) .&
     (sigmax_data .>= size_min_num) .& (sigmay_data .>= size_min_num)
+mask_num_low = num_data .>= 0
+mask_num_high = num_data .<= num_max_num
+mask_num = mask_num_low .& mask_num_high
+mask_valid = mask_size .& mask_num
 num_data_masked = Vector{Union{Missing, Float64}}(num_data)
-num_data_masked[.!mask_size] .= missing
+num_data_masked[.!mask_valid] .= missing
 n_masked_size = count(!, mask_size)
+n_masked_num_low = count(!, mask_num_low)
+n_masked_num_high = count(!, mask_num_high)
+n_masked_total = count(!, mask_valid)
 
 num_acq = reshape(num_data_masked, reverse(n_dims_acq)) |>
     data -> permutedims(data, reverse(1:length(n_dims_acq)))
@@ -36,7 +46,8 @@ n_rep_stat = dropdims(sum(.!ismissing.(num_fmt); dims=idx_rep_axis); dims=idx_re
 name_stat = Tuple(key for key in name if key != :rep)
 n_rep == 1 && @warn "$tag_head: one repetition; sample standard deviations are undefined (NaN)"
 println("$tag_head: $len_data samples / $n_variation variations = $n_rep repetitions; " *
-    "$n_masked_size rejected for σ_x or σ_y < $size_min_num")
+    "$n_masked_total rejected ($n_masked_size by size, $n_masked_num_low below zero, " *
+    "$n_masked_num_high above $num_max_num)")
 
 key_x = plot_num_evol.key_x
 key_panel = plot_num_evol.key_panel
@@ -46,6 +57,7 @@ Set(keys_plot) == Set(name_stat) && length(keys_plot) == length(name_stat) ||
     throw(ArgumentError("$tag_head: plot axes must cover $(join(name_stat, ", ")) exactly once"))
 
 val_x = getproperty(vars, key_x)
+val_x_plot = val_x ./ plot_num_evol.scale_x
 val_panel = getproperty(vars, key_panel)
 vals_curve = map(keys_curve) do key
     values_all = getproperty(vars, key)
@@ -88,7 +100,7 @@ for (idx_panel, panel) in enumerate(val_panel), scale in plot_num_evol.scales
         !all(mask) && @warn "$tag_head: omitting nonpositive log points" panel condition count=count(!, mask)
         nums_plot = ifelse.(mask, nums ./ scale_num, NaN)
         style = plot_num_evol.curve_style(condition)
-        scatterlines!(ax, val_x, nums_plot; style...,
+        scatterlines!(ax, val_x_plot, nums_plot; style...,
             label=plot_num_evol.curve_label(condition))
 
         mask_error = mask .& isfinite.(stds)
@@ -97,11 +109,11 @@ for (idx_panel, panel) in enumerate(val_panel), scale in plot_num_evol.scales
             count_crossing = count(mask .& isfinite.(stds) .& (nums .- stds .<= 0))
             count_crossing > 0 && @warn "$tag_head: log error bars crossing zero omitted" panel condition count_crossing
         end
-        errorbars!(ax, val_x[mask_error], nums[mask_error] ./ scale_num,
+        errorbars!(ax, val_x_plot[mask_error], nums[mask_error] ./ scale_num,
             stds[mask_error] ./ scale_num;
             color=style.color, whiskerwidth=7, linewidth=1.2)
     end
-    axislegend(ax; position=:rt)
+    axislegend(ax; position=plot_num_evol.legend_position)
     name_output = plot_num_evol.filename(scale, panel)
     for format in plot_num_evol.formats
         save(joinpath(path_output, "$name_output.$format"), fig)

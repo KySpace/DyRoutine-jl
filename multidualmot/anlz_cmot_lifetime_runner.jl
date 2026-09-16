@@ -1,28 +1,30 @@
 include(joinpath(@__DIR__, "dualmotcommons.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\CMOT lifetime"
-val_pair = ["162-164", "162-160", "161-162", "161-164", "163-164", "162-163", "163-161"]
-exclude_date_runid = Dict("161-162" => [("0805", 43)])
+val_pair = ["162-164", "160-162", "161-162", "161-164", "163-164", "162-163", "163-161"]
 var_specs_num = DUALMOT_VAR_SPECS
 key_x_num = :t_hold
 size_min_num = 4e-4
+num_max_num = 1e8
 
-runinfos_grouped = [read_num_evol_runinfo(path_root, pair;
+runinfos_grouped = [read_num_evol_runinfos(path_root, pair;
     var_specs=var_specs_num,
     validate_vars=validate_dualmot_vars,
-    excluded_date_runid=get(exclude_date_runid, pair, Tuple{String, Int}[])) for pair in val_pair]
-runinfos = runinfos_grouped
+) for pair in val_pair]
+runinfos = vcat(runinfos_grouped...)
 ids_runinfo = eachindex(runinfos)
 plot_num_evol = dualmot_lifetime_plot_spec("CMOT";
     key_x=key_x_num,
-    xlabel="t_hold (ms)",
+    scale_x=1000,
+    xlabel="CMOT holding time (s)",
+    ylabel="CMOT number",
 )
 
 for idx_runinfo_iter in ids_runinfo
     global idx_runinfo = idx_runinfo_iter
     global runinfo = runinfos[idx_runinfo]
-    global tag_head = runinfo.tag_head
-    global path_output = joinpath(path_root, tag_head)
+    global tag_head = "$(runinfo.folder) $(runinfo.tag)"
+    global path_output = joinpath(path_root, runinfo.folder)
     println("Processing: $tag_head")
     include(joinpath(@__DIR__, "anlz_num_evol.jl"))
 end

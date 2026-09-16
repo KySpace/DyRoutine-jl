@@ -1,9 +1,10 @@
 include(joinpath(@__DIR__, "dualmotcommons.jl"))
 
-path_root = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\MOT lifetime"
-val_pair = ["162-164", "160-162", "161-162", "161-164", "163-164", "162-163", "163-161"]
-var_specs_num = DUALMOT_VAR_SPECS
-key_x_num = :t_hold
+path_root = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\MOT loading 421"
+val_pair = ["162-164", "160-162", "161-162", "161-164", "163-164",
+    "162-163", "163-161"]
+var_specs_num = DUALMOT_LOADING_VAR_SPECS
+key_x_num = :t_load
 size_min_num = 4e-4
 num_max_num = 1e8
 
@@ -13,11 +14,14 @@ runinfos_grouped = [read_num_evol_runinfos(path_root, pair;
 ) for pair in val_pair]
 runinfos = vcat(runinfos_grouped...)
 ids_runinfo = eachindex(runinfos)
-plot_num_evol = dualmot_lifetime_plot_spec("MOT";
+plot_num_evol = dualmot_num_evol_plot_spec("MOT";
     key_x=key_x_num,
-    scale_x=1000,
-    xlabel="MOT holding time (s)",
+    scale_x=1,
+    xlabel="MOT loading time (s)",
     ylabel="CMOT number",
+    file_head="MOT.loading.421",
+    legend_position=:rb,
+    loadcfg_plot=(:DDM, :DIS, :DCS),
 )
 
 for idx_runinfo_iter in ids_runinfo

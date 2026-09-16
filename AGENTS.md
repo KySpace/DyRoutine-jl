@@ -33,21 +33,30 @@ While a task is still in progress, mostly edit the latest relevant log entry ins
 
 ## Code Style and Conventions
 - Number-evolution analysis uses `multidualmot/anlz_num_evol.jl`; dataset runners
-  declare the canonical variable specification, x-axis key, roots, exclusions,
-  and plotting configuration. Shared dual-isotope TOML/MAT readers and plot
-  styles live in `multidualmot/dualmotcommons.jl`. The config's `vars` array
-  includes `rep` and specifies the complete acquisition order; `rep` may be
-  `:auto` and need not be outermost. Reshape in that order, then permute into the
-  runner's canonical order. DCS contributes to reshaping even when omitted from
-  plots. Use
+  declare the canonical variable specification, x-axis key, roots, and plotting
+  configuration. Shared dual-isotope YAML/MAT readers and plot styles live in
+  `multidualmot/dualmotcommons.jl`. Each pair folder's `config.yaml` is a
+  top-level processing sequence; every processing entry has a unique `tag` and
+  a nonempty `data` sequence, and each rectangular data block explicitly lists
+  its `source` MAT filenames. A block's `vars` array includes `rep` and specifies
+  the complete acquisition order; `rep` may be `:auto` and need not be
+  outermost. Reshape in that order, then permute into the runner's canonical
+  order. `anlz_num_evol.jl` handles one rectangular block per processing entry;
+  keep multi-block post-statistics combination in a separate analysis script.
+  DCS always contributes to reshaping; lifetime plots
+  omit it, while MOT-loading plots include it with a square marker. Use
   `Symbol("162")` (or `Symbol.(string.(values))`) for
   isotope symbols: Julia's `:162` evaluates to an integer, not a Symbol.
-  Folder tags may extend the ordered isotope pair with a descriptive suffix
-  (for example, `162-163 n-balanced`); validate the configured pair as a
-  complete numeric token within the tag rather than requiring exact equality.
+  Pair folder names must contain the configured ordered isotope pair as a
+  complete numeric token. Processing descriptions such as `n-balanced` belong
+  in the YAML `tag` rather than the folder name.
   Keep rejected number-evolution shots as `missing` entries in `num_fmt` so
-  acquisition axes remain intact. Compute means, sample deviations, and valid
-  repetition counts by condition from the nonmissing repetitions.
+  acquisition axes remain intact. A shot is invalid when either fitted size is
+  nonfinite or below `size_min_num`, or when `atomnum` lies outside the inclusive
+  range `0:num_max_num`. Compute means, sample deviations, and valid repetition
+  counts by condition from the nonmissing repetitions.
+  Configure display-unit conversion through the plot spec's `scale_x`; keep
+  configured/acquired variable values unchanged and divide only `val_x_plot`.
 - Prefer Julia functions with clear, narrow responsibilities. Keep processing logic in `src/` and script-specific orchestration in `script/`.
 - Use `snake_case` for variables and functions. Function names usually read as verb + noun, such as `calc_dens_sum`, `crop_center`, `find_peak_position_moving`, or `set_axis_full`.
 - Put the kind of quantity first, then attributes: examples include `wh_corner`, `smwh_peak`, `val_t`, `path_plot_peak`, and `dens_full_fmt`.
