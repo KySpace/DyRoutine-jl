@@ -1,5 +1,7 @@
 # Included by a dataset-specific runner. Configured variable order is slowest to fastest.
-num_data = read_atomnums(runinfo.files)
+shot_data = read_cres_fields(runinfo.files, ("atomnum", "sigmax", "sigmay"))
+num_data, sigmax_data, sigmay_data = shot_data
+all(isfinite, num_data) || throw(ArgumentError("$tag_head: atomnum must contain only finite values"))
 len_data = length(num_data)
 n_variation = prod(length(getproperty(runinfo.vars, key)) for key in keys(runinfo.vars) if key != :rep)
 len_data > 0 && rem(len_data, n_variation) == 0 ||
@@ -11,16 +13,30 @@ name, val_vars = keys(vars), values(vars)
 
 name_acq = runinfo.var_order
 n_dims_acq = map(key -> length(getproperty(vars, key)), name_acq)
-num_acq = reshape(num_data, reverse(n_dims_acq)) |>
+mask_size = isfinite.(sigmax_data) .& isfinite.(sigmay_data) .&
+    (sigmax_data .>= size_min_num) .& (sigmay_data .>= size_min_num)
+num_data_masked = Vector{Union{Missing, Float64}}(num_data)
+num_data_masked[.!mask_size] .= missing
+n_masked_size = count(!, mask_size)
+
+num_acq = reshape(num_data_masked, reverse(n_dims_acq)) |>
     data -> permutedims(data, reverse(1:length(n_dims_acq)))
 num_fmt = permutedims(num_acq, indexin(collect(name), collect(name_acq)))
 
 idx_rep_axis = findfirst(==(:rep), name)
-num_stat = dropdims(mean(num_fmt; dims=idx_rep_axis); dims=idx_rep_axis)
-std_num_stat = dropdims(std(num_fmt; dims=idx_rep_axis); dims=idx_rep_axis)
+num_stat = dropdims(mapslices(num_fmt; dims=idx_rep_axis) do values
+    valid = collect(skipmissing(vec(values)))
+    isempty(valid) ? NaN : mean(valid)
+end; dims=idx_rep_axis)
+std_num_stat = dropdims(mapslices(num_fmt; dims=idx_rep_axis) do values
+    valid = collect(skipmissing(vec(values)))
+    length(valid) < 2 ? NaN : std(valid)
+end; dims=idx_rep_axis)
+n_rep_stat = dropdims(sum(.!ismissing.(num_fmt); dims=idx_rep_axis); dims=idx_rep_axis)
 name_stat = Tuple(key for key in name if key != :rep)
 n_rep == 1 && @warn "$tag_head: one repetition; sample standard deviations are undefined (NaN)"
-println("$tag_head: $len_data samples / $n_variation variations = $n_rep repetitions")
+println("$tag_head: $len_data samples / $n_variation variations = $n_rep repetitions; " *
+    "$n_masked_size rejected for σ_x or σ_y < $size_min_num")
 
 key_x = plot_num_evol.key_x
 key_panel = plot_num_evol.key_panel
@@ -48,9 +64,14 @@ figs_num_evol = Dict{Tuple{Any, Symbol}, Figure}()
 for (idx_panel, panel) in enumerate(val_panel), scale in plot_num_evol.scales
     scale_num = scale == :lin ? plot_num_evol.scale_num_linear : 1.0
     fig = Figure(size=plot_num_evol.size)
+    indices_panel = Any[Colon() for _ in name_stat]
+    indices_panel[idx_axis_stat[key_panel]] = idx_panel
+    reps_panel = vec(@view n_rep_stat[indices_panel...])
+    reps_min, reps_max = extrema(reps_panel)
+    reps_used = reps_min == reps_max ? string(reps_min) : "$(reps_min)–$(reps_max)"
     ax = Axis(fig[1, 1]; xlabel=plot_num_evol.xlabel,
         ylabel=scale == :lin ? "$(plot_num_evol.ylabel) (×10⁷)" : plot_num_evol.ylabel,
-        title=plot_num_evol.title(tag_head, panel, n_rep),
+        title=plot_num_evol.title(tag_head, panel, reps_used),
         yscale=scale == :log ? log10 : identity,
         yminorticks=IntervalsBetween(5), yminorticksvisible=true)
 

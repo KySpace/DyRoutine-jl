@@ -45,6 +45,9 @@ While a task is still in progress, mostly edit the latest relevant log entry ins
   Folder tags may extend the ordered isotope pair with a descriptive suffix
   (for example, `162-163 n-balanced`); validate the configured pair as a
   complete numeric token within the tag rather than requiring exact equality.
+  Keep rejected number-evolution shots as `missing` entries in `num_fmt` so
+  acquisition axes remain intact. Compute means, sample deviations, and valid
+  repetition counts by condition from the nonmissing repetitions.
 - Prefer Julia functions with clear, narrow responsibilities. Keep processing logic in `src/` and script-specific orchestration in `script/`.
 - Use `snake_case` for variables and functions. Function names usually read as verb + noun, such as `calc_dens_sum`, `crop_center`, `find_peak_position_moving`, or `set_axis_full`.
 - Put the kind of quantity first, then attributes: examples include `wh_corner`, `smwh_peak`, `val_t`, `path_plot_peak`, and `dens_full_fmt`.

@@ -83,27 +83,40 @@ read_dualmot_runinfo(path_root::AbstractString, pair::AbstractString; kwargs...)
     read_num_evol_runinfo(path_root, pair; var_specs=DUALMOT_VAR_SPECS,
         validate_vars=validate_dualmot_vars, kwargs...)
 
-function read_atomnums(paths::AbstractVector{<:AbstractString})
-    nums = map(paths) do path
+function read_cres_fields(paths::AbstractVector{<:AbstractString}, fields::Tuple{Vararg{String}})
+    isempty(fields) && throw(ArgumentError("at least one cres field is required"))
+    names = Tuple(Symbol.(fields))
+    values_by_file = map(paths) do path
         matopen(path) do file
             cres = read(file, "liferes")["cres"]
             entries = if cres isa MAT.MatlabStructArray
-                [cres[idx] for idx in 1:length(cres["atomnum"])]
+                [cres[idx] for idx in 1:length(cres[first(fields)])]
             elseif cres isa AbstractDict
                 [cres]
             else
                 vec(cres)
             end
-            map(entries) do entry
-                value = entry["atomnum"]
-                value = value isa AbstractArray ? only(value) : value
-                value isa Real && isfinite(value) ||
-                    throw(ArgumentError("$path: atomnum must be a finite numeric scalar"))
-                Float64(value)
-            end
+            map(fields) do field
+                map(entries) do entry
+                    value = entry[field]
+                    value = value isa AbstractArray ? only(value) : value
+                    value isa Real ||
+                        throw(ArgumentError("$path: $field must be a numeric scalar"))
+                    Float64(value)
+                end
+            end |> Tuple
         end
     end
-    vcat(nums...)
+    values = map(eachindex(fields)) do idx
+        vcat((values_file[idx] for values_file in values_by_file)...)
+    end |> Tuple
+    NamedTuple{names}(values)
+end
+
+function read_atomnums(paths::AbstractVector{<:AbstractString})
+    nums = read_cres_fields(paths, ("atomnum",)).atomnum
+    all(isfinite, nums) || throw(ArgumentError("atomnum must contain only finite values"))
+    nums
 end
 
 function dualmot_curve_style(condition::NamedTuple)
@@ -134,8 +147,8 @@ function dualmot_lifetime_plot_spec(kind::AbstractString;
         scale_num_linear=1e7,
         xlabel,
         ylabel="$kind atom number",
-        title=(tag, bias, n_rep) ->
-            "$tag · β_MOT = $bias · $(balance_tag(bias))-balanced · reps = $n_rep",
+        title=(tag, bias, reps_used) ->
+            "$tag · β_MOT = $bias · $(balance_tag(bias))-balanced · reps = $reps_used",
         filename=(scale, bias) ->
             "[$file_head].[$scale].[$(balance_tag(bias))-balanced]",
         curve_label=condition -> "$(condition.istp) $(condition.loadcfg)",

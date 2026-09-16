@@ -5,6 +5,7 @@ val_pair = ["162-164", "162-160", "161-162", "161-164", "163-164", "162-163", "1
 exclude_date_runid = Dict("161-162" => [("0805", 43)])
 var_specs_num = DUALMOT_VAR_SPECS
 key_x_num = :t_hold
+size_min_num = 4e-4
 
 runinfos_grouped = [read_num_evol_runinfo(path_root, pair;
     var_specs=var_specs_num,
