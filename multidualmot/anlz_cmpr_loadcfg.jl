@@ -122,8 +122,7 @@ for istp in val_istp
         (curve_dcs.nums[mask_error] .* curve_scs.stds[mask_error] ./ denom[mask_error].^2).^2)
     curves_ratio[istp] = (; ratios, stds)
 
-    base_style = dualmot_curve_style((; loadcfg=:DCS, istp))
-    style = merge(base_style, (; marker=:circle))
+    style = dualmot_ratio_style(istp)
     scatterlines!(ax_ratio, val_t_load, ratios; style..., label=string(istp))
     errorbars!(ax_ratio, val_t_load[mask_error], ratios[mask_error], stds[mask_error];
         color=style.color, whiskerwidth=7, linewidth=1.2)

@@ -2,7 +2,7 @@ using YAML
 using MAT
 using Statistics: mean, std
 using CairoMakie
-using Colors: Oklch, RGB
+using Colors: RGB
 
 const DUALMOT_VAR_SPECS = (
     β_MOT=(config="tbiasmot", convert=values -> Float64.(values)),
@@ -24,13 +24,20 @@ const DUALMOT_LOADCFG_VAR_SPECS = (
     istp=(config="istp", convert=values -> Symbol.(string.(values))),
 )
 
-const HUE_ISTP = Dict(Symbol(string(i)) => h for (i, h) in
-    ((160, 195), (161, 306), (162, 21), (163, 90), (164, 259)))
-const LIGHTNESS_STROKE, CHROMA_STROKE = 0.45, 0.10
-const LIGHTNESS_FACE, CHROMA_FACE = 0.85, 0.06
-const LIGHTNESS_DIS_LINE, CHROMA_DIS_LINE = 0.65, 0.08
-const MARKER_LOADCFG = Dict(
-    :DDM => :circle, :DIS => :utriangle, :DCS => :rect, :SCS => :circle)
+const MARKER_ISTP = Dict(
+    Symbol("160") => :diamond,
+    Symbol("161") => :utriangle,
+    Symbol("162") => :rect,
+    Symbol("163") => :dtriangle,
+    Symbol("164") => :circle,
+)
+const COLOR_LOADCFG = Dict(
+    :DDM => RGB(0x3a / 255, 0x6a / 255, 0xc4 / 255),
+    :DIS => RGB(0xb4 / 255, 0x45 / 255, 0x2a / 255),
+    :DCS => RGB(0xf4 / 255, 0xd3 / 255, 0x3d / 255),
+    :SCS => RGB(0x55 / 255, 0xca / 255, 0x6f / 255),
+)
+const COLOR_RATIO = RGB(0.28, 0.28, 0.28)
 
 function validate_dualmot_vars(vars::NamedTuple, tag_head::AbstractString)
     pair = join(string.(vars.istp), "-")
@@ -184,14 +191,15 @@ end
 
 function dualmot_curve_style(condition::NamedTuple)
     loadcfg, istp = condition.loadcfg, condition.istp
-    hue = HUE_ISTP[istp]
-    stroke = RGB(Oklch(LIGHTNESS_STROKE, CHROMA_STROKE, hue))
-    face = RGB(Oklch(LIGHTNESS_FACE, CHROMA_FACE, hue))
-    line_color = loadcfg in (:DIS, :SCS) ?
-        RGB(Oklch(LIGHTNESS_DIS_LINE, CHROMA_DIS_LINE, hue)) : stroke
-    (; color=line_color, markercolor=face, linewidth=2, strokecolor=stroke,
-        strokewidth=1.5, markersize=11, marker=MARKER_LOADCFG[loadcfg])
+    color = COLOR_LOADCFG[loadcfg]
+    (; color, markercolor=color, linewidth=2, strokecolor=color,
+        strokewidth=1.5, markersize=11, marker=MARKER_ISTP[istp])
 end
+
+dualmot_ratio_style(istp::Symbol) =
+    (; color=COLOR_RATIO, markercolor=COLOR_RATIO, linewidth=2,
+        strokecolor=COLOR_RATIO, strokewidth=1.5, markersize=11,
+        marker=MARKER_ISTP[istp])
 
 balance_tag(bias::Real) = iszero(bias) ? "t" : "n"
 
