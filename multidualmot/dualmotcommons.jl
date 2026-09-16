@@ -18,12 +18,19 @@ const DUALMOT_LOADING_VAR_SPECS = (
     istp=(config="istp", convert=values -> Symbol.(string.(values))),
 )
 
+const DUALMOT_LOADCFG_VAR_SPECS = (
+    t_load=(config="t_load", convert=values -> Float64.(values)),
+    loadcfg=(config="loadcfg", convert=values -> Symbol.(string.(values))),
+    istp=(config="istp", convert=values -> Symbol.(string.(values))),
+)
+
 const HUE_ISTP = Dict(Symbol(string(i)) => h for (i, h) in
     ((160, 195), (161, 306), (162, 21), (163, 90), (164, 259)))
 const LIGHTNESS_STROKE, CHROMA_STROKE = 0.45, 0.10
 const LIGHTNESS_FACE, CHROMA_FACE = 0.85, 0.06
 const LIGHTNESS_DIS_LINE, CHROMA_DIS_LINE = 0.65, 0.08
-const MARKER_LOADCFG = Dict(:DDM => :circle, :DIS => :utriangle, :DCS => :rect)
+const MARKER_LOADCFG = Dict(
+    :DDM => :circle, :DIS => :utriangle, :DCS => :rect, :SCS => :circle)
 
 function validate_dualmot_vars(vars::NamedTuple, tag_head::AbstractString)
     pair = join(string.(vars.istp), "-")
@@ -35,6 +42,23 @@ function validate_dualmot_vars(vars::NamedTuple, tag_head::AbstractString)
     for key in (:β_MOT, :loadcfg, :istp)
         values = getproperty(vars, key)
         allunique(values) || throw(ArgumentError("$pair: duplicate values in $key"))
+    end
+    nothing
+end
+
+function validate_loadcfg_comparison_vars(vars::NamedTuple, folder::AbstractString)
+    pair = Symbol.(split(folder, "-"))
+    length(pair) == 2 || throw(ArgumentError("$folder: expected an isotope-pair folder"))
+    allunique(vars.t_load) || throw(ArgumentError("$folder: duplicate t_load values"))
+    length(vars.loadcfg) == 1 && only(vars.loadcfg) in (:DCS, :SCS) ||
+        throw(ArgumentError("$folder: each data block must contain exactly one of DCS or SCS"))
+    allunique(vars.istp) || throw(ArgumentError("$folder: duplicate isotope values"))
+    if only(vars.loadcfg) == :DCS
+        vars.istp == pair ||
+            throw(ArgumentError("$folder: DCS isotope order must be $(collect(pair))"))
+    else
+        length(vars.istp) == 1 && only(vars.istp) in pair ||
+            throw(ArgumentError("$folder: each SCS block must contain one isotope from $(collect(pair))"))
     end
     nothing
 end
@@ -163,7 +187,7 @@ function dualmot_curve_style(condition::NamedTuple)
     hue = HUE_ISTP[istp]
     stroke = RGB(Oklch(LIGHTNESS_STROKE, CHROMA_STROKE, hue))
     face = RGB(Oklch(LIGHTNESS_FACE, CHROMA_FACE, hue))
-    line_color = loadcfg == :DIS ?
+    line_color = loadcfg in (:DIS, :SCS) ?
         RGB(Oklch(LIGHTNESS_DIS_LINE, CHROMA_DIS_LINE, hue)) : stroke
     (; color=line_color, markercolor=face, linewidth=2, strokecolor=stroke,
         strokewidth=1.5, markersize=11, marker=MARKER_LOADCFG[loadcfg])

@@ -5,7 +5,7 @@ val_pair = ["162-164", "160-162", "161-162", "161-164", "163-164", "162-163", "1
 var_specs_num = DUALMOT_VAR_SPECS
 key_x_num = :t_hold
 size_min_num = 4e-4
-num_max_num = 1e8
+num_max_num = 2e8
 
 runinfos_grouped = [read_num_evol_runinfos(path_root, pair;
     var_specs=var_specs_num,

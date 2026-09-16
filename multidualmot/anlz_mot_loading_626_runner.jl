@@ -1,0 +1,33 @@
+include(joinpath(@__DIR__, "dualmotcommons.jl"))
+
+path_root = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\MOT loading 626"
+val_pair = ["160-162"]
+var_specs_num = DUALMOT_LOADCFG_VAR_SPECS
+size_min_num = 4e-4
+num_max_num = 2e8
+
+runinfos_grouped = [read_num_evol_runinfos(path_root, pair;
+    var_specs=var_specs_num,
+    validate_vars=validate_loadcfg_comparison_vars,
+) for pair in val_pair]
+all(length(runinfos) == 1 for runinfos in runinfos_grouped) ||
+    throw(ArgumentError("MOT loading 626 requires exactly one processing tag per pair folder"))
+runinfos = only.(runinfos_grouped)
+ids_runinfo = eachindex(runinfos)
+plot_cmpr_loadcfg = (
+    file_head="MOT.loading.626",
+    xlabel="MOT loading time (s)",
+    ylabel_num="CMOT number",
+    scale_num=1e7,
+    formats=("svg", "png"),
+    size=(500, 360),
+)
+
+for idx_runinfo_iter in ids_runinfo
+    global idx_runinfo = idx_runinfo_iter
+    global runinfo = runinfos[idx_runinfo]
+    global tag_head = "$(runinfo.folder) $(runinfo.tag)"
+    global path_output = joinpath(path_root, runinfo.folder)
+    println("Processing: $tag_head")
+    include(joinpath(@__DIR__, "anlz_cmpr_loadcfg.jl"))
+end

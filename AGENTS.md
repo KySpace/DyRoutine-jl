@@ -42,7 +42,10 @@ While a task is still in progress, mostly edit the latest relevant log entry ins
   the complete acquisition order; `rep` may be `:auto` and need not be
   outermost. Reshape in that order, then permute into the runner's canonical
   order. `anlz_num_evol.jl` handles one rectangular block per processing entry;
-  keep multi-block post-statistics combination in a separate analysis script.
+  use `anlz_cmpr_loadcfg.jl` for the three-block DCS/SCS loading comparison,
+  which calculates each block independently and combines curves only after
+  statistics. Its ratio uncertainty assumes independent DCS and SCS samples and
+  propagates their sample standard deviations through `DCS/SCS`.
   DCS always contributes to reshaping; lifetime plots
   omit it, while MOT-loading plots include it with a square marker. Use
   `Symbol("162")` (or `Symbol.(string.(values))`) for
