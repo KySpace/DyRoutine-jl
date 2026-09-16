@@ -2,7 +2,7 @@ include(joinpath(@__DIR__, "dualmotcommons.jl"))
 
 path_root = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\MOT loading 421"
 val_pair = ["162-164", "160-162", "161-162", "161-164", "163-164",
-    "162-163", "163-161"]
+    "162-163", "161-163"]
 var_specs_num = DUALMOT_LOADING_VAR_SPECS
 key_x_num = :t_load
 size_min_num = 4e-4
