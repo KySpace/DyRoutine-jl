@@ -24,6 +24,12 @@ const DUALMOT_LOADCFG_VAR_SPECS = (
     istp=(config="istp", convert=values -> Symbol.(string.(values))),
 )
 
+const DUALMOT_ODT_BFIELD_VAR_SPECS = (
+    ib=(config="ib", convert=values -> Float64.(values)),
+    loadcfg=(config="loadcfg", convert=values -> Symbol.(string.(values))),
+    istp=(config="istp", convert=values -> Symbol.(string.(values))),
+)
+
 const MARKER_ISTP = Dict(
     Symbol("160") => :diamond,
     Symbol("161") => :utriangle,
@@ -50,6 +56,21 @@ function validate_dualmot_vars(vars::NamedTuple, tag_head::AbstractString)
         values = getproperty(vars, key)
         allunique(values) || throw(ArgumentError("$pair: duplicate values in $key"))
     end
+    nothing
+end
+
+function validate_odt_bfield_vars(vars::NamedTuple, folder::AbstractString)
+    pair = Symbol.(split(folder, "-"))
+    length(pair) == 2 || throw(ArgumentError("$folder: expected an isotope-pair folder"))
+    vars.istp == pair ||
+        throw(ArgumentError("$folder: isotope order must be $(collect(pair))"))
+    allunique(vars.ib) || throw(ArgumentError("$folder: duplicate ib values"))
+    all(isfinite, vars.ib) || throw(ArgumentError("$folder: ib values must be finite"))
+    allunique(vars.loadcfg) || throw(ArgumentError("$folder: duplicate loadcfg values"))
+    all(in((:DDM, :DIS, :DCS)), vars.loadcfg) ||
+        throw(ArgumentError("$folder: loadcfg values must be DDM, DIS, or DCS"))
+    all(in(vars.loadcfg), (:DDM, :DIS)) ||
+        throw(ArgumentError("$folder: loadcfg must include DDM and DIS"))
     nothing
 end
 

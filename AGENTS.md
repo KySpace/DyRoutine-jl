@@ -56,9 +56,10 @@ While a task is still in progress, mostly edit the latest relevant log entry ins
   complete numeric token. Processing descriptions such as `n-balanced` belong
   in the YAML `tag` rather than the folder name.
   Keep rejected number-evolution shots as `missing` entries in `num_fmt` so
-  acquisition axes remain intact. A shot is invalid when either fitted size is
-  nonfinite or below `size_min_num`, or when `atomnum` lies outside the inclusive
-  range `0:num_max_num`. Compute means, sample deviations, and valid repetition
+  acquisition axes remain intact. In `anlz_num_evol.jl`, a shot is invalid when
+  either fitted size is nonfinite or outside the runner's inclusive
+  `bounds_sigmax_num` / `bounds_sigmay_num`, or when `atomnum` lies outside the
+  inclusive range `0:num_max_num`. Compute means, sample deviations, and valid repetition
   counts by condition from the nonmissing repetitions.
   Configure display-unit conversion through the plot spec's `scale_x`; keep
   configured/acquired variable values unchanged and divide only `val_x_plot`.

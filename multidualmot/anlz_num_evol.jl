@@ -16,8 +16,17 @@ name, val_vars = keys(vars), values(vars)
 
 name_acq = runinfo_data.var_order
 n_dims_acq = map(key -> length(getproperty(vars, key)), name_acq)
-mask_size = isfinite.(sigmax_data) .& isfinite.(sigmay_data) .&
-    (sigmax_data .>= size_min_num) .& (sigmay_data .>= size_min_num)
+for (name_bound, bounds) in
+    (("sigmax", bounds_sigmax_num), ("sigmay", bounds_sigmay_num))
+    lower, upper = bounds
+    isfinite(lower) && !isnan(upper) && lower <= upper ||
+        throw(ArgumentError("$name_bound bounds must satisfy finite lower <= upper, got $bounds"))
+end
+mask_sigmax = isfinite.(sigmax_data) .&
+    (sigmax_data .>= bounds_sigmax_num[1]) .& (sigmax_data .<= bounds_sigmax_num[2])
+mask_sigmay = isfinite.(sigmay_data) .&
+    (sigmay_data .>= bounds_sigmay_num[1]) .& (sigmay_data .<= bounds_sigmay_num[2])
+mask_size = mask_sigmax .& mask_sigmay
 mask_num_low = num_data .>= 0
 mask_num_high = num_data .<= num_max_num
 mask_num = mask_num_low .& mask_num_high
@@ -25,6 +34,8 @@ mask_valid = mask_size .& mask_num
 num_data_masked = Vector{Union{Missing, Float64}}(num_data)
 num_data_masked[.!mask_valid] .= missing
 n_masked_size = count(!, mask_size)
+n_masked_sigmax = count(!, mask_sigmax)
+n_masked_sigmay = count(!, mask_sigmay)
 n_masked_num_low = count(!, mask_num_low)
 n_masked_num_high = count(!, mask_num_high)
 n_masked_total = count(!, mask_valid)
@@ -46,19 +57,20 @@ n_rep_stat = dropdims(sum(.!ismissing.(num_fmt); dims=idx_rep_axis); dims=idx_re
 name_stat = Tuple(key for key in name if key != :rep)
 n_rep == 1 && @warn "$tag_head: one repetition; sample standard deviations are undefined (NaN)"
 println("$tag_head: $len_data samples / $n_variation variations = $n_rep repetitions; " *
-    "$n_masked_total rejected ($n_masked_size by size, $n_masked_num_low below zero, " *
+    "$n_masked_total rejected ($n_masked_size by size: $n_masked_sigmax sigmax, " *
+    "$n_masked_sigmay sigmay; $n_masked_num_low below zero, " *
     "$n_masked_num_high above $num_max_num)")
 
 key_x = plot_num_evol.key_x
 key_panel = plot_num_evol.key_panel
 keys_curve = keys(plot_num_evol.curves)
-keys_plot = (key_x, key_panel, keys_curve...)
+keys_plot = isnothing(key_panel) ? (key_x, keys_curve...) : (key_x, key_panel, keys_curve...)
 Set(keys_plot) == Set(name_stat) && length(keys_plot) == length(name_stat) ||
     throw(ArgumentError("$tag_head: plot axes must cover $(join(name_stat, ", ")) exactly once"))
 
 val_x = getproperty(vars, key_x)
 val_x_plot = val_x ./ plot_num_evol.scale_x
-val_panel = getproperty(vars, key_panel)
+val_panel = isnothing(key_panel) ? (nothing,) : getproperty(vars, key_panel)
 vals_curve = map(keys_curve) do key
     values_all = getproperty(vars, key)
     selector = getproperty(plot_num_evol.curves, key)
@@ -77,7 +89,7 @@ for (idx_panel, panel) in enumerate(val_panel), scale in plot_num_evol.scales
     scale_num = scale == :lin ? plot_num_evol.scale_num_linear : 1.0
     fig = Figure(size=plot_num_evol.size)
     indices_panel = Any[Colon() for _ in name_stat]
-    indices_panel[idx_axis_stat[key_panel]] = idx_panel
+    isnothing(key_panel) || (indices_panel[idx_axis_stat[key_panel]] = idx_panel)
     reps_panel = vec(@view n_rep_stat[indices_panel...])
     reps_min, reps_max = extrema(reps_panel)
     reps_used = reps_min == reps_max ? string(reps_min) : "$(reps_min)–$(reps_max)"
@@ -89,7 +101,7 @@ for (idx_panel, panel) in enumerate(val_panel), scale in plot_num_evol.scales
 
     for condition in conditions_curve
         indices = Any[Colon() for _ in name_stat]
-        indices[idx_axis_stat[key_panel]] = idx_panel
+        isnothing(key_panel) || (indices[idx_axis_stat[key_panel]] = idx_panel)
         for key in keys_curve
             values_axis = getproperty(vars, key)
             indices[idx_axis_stat[key]] = findfirst(==(getproperty(condition, key)), values_axis)

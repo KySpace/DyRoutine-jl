@@ -13,6 +13,7 @@ const COLUMN_PARENT_NAMES = [
     "MOT loading 626",
     "MOT lifetime",
     "CMOT lifetime",
+    "ODT BField",
 ]
 const ROW_PAIR_NAMES = [
     "162-164",
