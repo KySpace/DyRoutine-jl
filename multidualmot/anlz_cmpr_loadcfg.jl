@@ -1,60 +1,7 @@
-function calc_num_evol_block(runinfo_data::NamedTuple;
-    label::AbstractString,
-    size_min_num::Real,
-    num_max_num::Real,
-)
-    shot_data = read_cres_fields(runinfo_data.files, ("atomnum", "sigmax", "sigmay"))
-    num_data, sigmax_data, sigmay_data = shot_data
-    all(isfinite, num_data) || throw(ArgumentError("$label: atomnum must contain only finite values"))
-    len_data = length(num_data)
-    n_variation = prod(length(getproperty(runinfo_data.vars, key))
-        for key in keys(runinfo_data.vars) if key != :rep)
-    len_data > 0 && rem(len_data, n_variation) == 0 ||
-        throw(DimensionMismatch("$label: $len_data atom numbers must be a positive integer multiple of $n_variation variations"))
-    n_rep = div(len_data, n_variation)
-    vars = merge(runinfo_data.vars, (; rep=1:n_rep))
-    name = keys(vars)
-
-    name_acq = runinfo_data.var_order
-    n_dims_acq = map(key -> length(getproperty(vars, key)), name_acq)
-    mask_size = isfinite.(sigmax_data) .& isfinite.(sigmay_data) .&
-        (sigmax_data .>= size_min_num) .& (sigmay_data .>= size_min_num)
-    mask_num_low = num_data .>= 0
-    mask_num_high = num_data .<= num_max_num
-    mask_valid = mask_size .& mask_num_low .& mask_num_high
-    num_data_masked = Vector{Union{Missing, Float64}}(num_data)
-    num_data_masked[.!mask_valid] .= missing
-
-    num_acq = reshape(num_data_masked, reverse(n_dims_acq)) |>
-        data -> permutedims(data, reverse(1:length(n_dims_acq)))
-    num_fmt = permutedims(num_acq, indexin(collect(name), collect(name_acq)))
-    idx_rep_axis = findfirst(==(:rep), name)
-    num_stat = dropdims(mapslices(num_fmt; dims=idx_rep_axis) do values
-        valid = collect(skipmissing(vec(values)))
-        isempty(valid) ? NaN : mean(valid)
-    end; dims=idx_rep_axis)
-    std_num_stat = dropdims(mapslices(num_fmt; dims=idx_rep_axis) do values
-        valid = collect(skipmissing(vec(values)))
-        length(valid) < 2 ? NaN : std(valid)
-    end; dims=idx_rep_axis)
-    n_rep_stat = dropdims(sum(.!ismissing.(num_fmt); dims=idx_rep_axis); dims=idx_rep_axis)
-    name_stat = Tuple(key for key in name if key != :rep)
-
-    n_masked_size = count(!, mask_size)
-    n_masked_num_low = count(!, mask_num_low)
-    n_masked_num_high = count(!, mask_num_high)
-    n_masked_total = count(!, mask_valid)
-    println("$label: $len_data samples / $n_variation variations = $n_rep repetitions; " *
-        "$n_masked_total rejected ($n_masked_size by size, $n_masked_num_low below zero, " *
-        "$n_masked_num_high above $num_max_num)")
-    (; vars, name_stat, num_fmt, num_stat, std_num_stat, n_rep_stat, n_rep,
-        mask_valid, n_masked_total)
-end
-
 length(runinfo.data) == 3 ||
     throw(ArgumentError("$tag_head: expected exactly three rectangular data blocks"))
 stats_data = [calc_num_evol_block(data;
-    label="$tag_head data[$idx]", size_min_num, num_max_num)
+    label="$tag_head data[$idx]", bounds_sigmax_num, bounds_sigmay_num, num_max_num)
     for (idx, data) in enumerate(runinfo.data)]
 
 val_istp = Symbol.(split(runinfo.folder, "-"))

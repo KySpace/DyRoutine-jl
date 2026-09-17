@@ -174,6 +174,75 @@ function read_num_evol_runinfos(path_root::AbstractString, folder::AbstractStrin
     runinfos
 end
 
+function calc_num_evol_block(runinfo_data::NamedTuple;
+    label::AbstractString,
+    bounds_sigmax_num::Tuple{<:Real,<:Real},
+    bounds_sigmay_num::Tuple{<:Real,<:Real},
+    num_max_num::Real,
+)
+    for (name_bound, bounds) in
+        (("sigmax", bounds_sigmax_num), ("sigmay", bounds_sigmay_num))
+        lower, upper = bounds
+        isfinite(lower) && !isnan(upper) && lower <= upper ||
+            throw(ArgumentError("$label: $name_bound bounds must satisfy finite lower <= upper, got $bounds"))
+    end
+    isfinite(num_max_num) && num_max_num >= 0 ||
+        throw(ArgumentError("$label: num_max_num must be finite and nonnegative"))
+
+    shot_data = read_cres_fields(runinfo_data.files, ("atomnum", "sigmax", "sigmay"))
+    num_data, sigmax_data, sigmay_data = shot_data
+    all(isfinite, num_data) || throw(ArgumentError("$label: atomnum must contain only finite values"))
+    len_data = length(num_data)
+    n_variation = prod(length(getproperty(runinfo_data.vars, key))
+        for key in keys(runinfo_data.vars) if key != :rep)
+    len_data > 0 && rem(len_data, n_variation) == 0 ||
+        throw(DimensionMismatch("$label: $len_data atom numbers must be a positive integer multiple of $n_variation variations"))
+    n_rep = div(len_data, n_variation)
+    vars = merge(runinfo_data.vars, (; rep=1:n_rep))
+    name = keys(vars)
+
+    name_acq = runinfo_data.var_order
+    n_dims_acq = map(key -> length(getproperty(vars, key)), name_acq)
+    mask_sigmax = isfinite.(sigmax_data) .&
+        (sigmax_data .>= bounds_sigmax_num[1]) .& (sigmax_data .<= bounds_sigmax_num[2])
+    mask_sigmay = isfinite.(sigmay_data) .&
+        (sigmay_data .>= bounds_sigmay_num[1]) .& (sigmay_data .<= bounds_sigmay_num[2])
+    mask_size = mask_sigmax .& mask_sigmay
+    mask_num_low = num_data .>= 0
+    mask_num_high = num_data .<= num_max_num
+    mask_valid = mask_size .& mask_num_low .& mask_num_high
+    num_data_masked = Vector{Union{Missing, Float64}}(num_data)
+    num_data_masked[.!mask_valid] .= missing
+
+    num_acq = reshape(num_data_masked, reverse(n_dims_acq)) |>
+        data -> permutedims(data, reverse(1:length(n_dims_acq)))
+    num_fmt = permutedims(num_acq, indexin(collect(name), collect(name_acq)))
+    idx_rep_axis = findfirst(==(:rep), name)
+    num_stat = dropdims(mapslices(num_fmt; dims=idx_rep_axis) do values
+        valid = collect(skipmissing(vec(values)))
+        isempty(valid) ? NaN : mean(valid)
+    end; dims=idx_rep_axis)
+    std_num_stat = dropdims(mapslices(num_fmt; dims=idx_rep_axis) do values
+        valid = collect(skipmissing(vec(values)))
+        length(valid) < 2 ? NaN : std(valid)
+    end; dims=idx_rep_axis)
+    n_rep_stat = dropdims(sum(.!ismissing.(num_fmt); dims=idx_rep_axis); dims=idx_rep_axis)
+    name_stat = Tuple(key for key in name if key != :rep)
+
+    n_masked_size = count(!, mask_size)
+    n_masked_sigmax = count(!, mask_sigmax)
+    n_masked_sigmay = count(!, mask_sigmay)
+    n_masked_num_low = count(!, mask_num_low)
+    n_masked_num_high = count(!, mask_num_high)
+    n_masked_total = count(!, mask_valid)
+    println("$label: $len_data samples / $n_variation variations = $n_rep repetitions; " *
+        "$n_masked_total rejected ($n_masked_size by size: $n_masked_sigmax sigmax, " *
+        "$n_masked_sigmay sigmay; $n_masked_num_low below zero, " *
+        "$n_masked_num_high above $num_max_num)")
+    (; vars, name_stat, num_fmt, num_stat, std_num_stat, n_rep_stat, n_rep,
+        mask_valid, n_masked_total)
+end
+
 function read_cres_fields(paths::AbstractVector{<:AbstractString}, fields::Tuple{Vararg{String}})
     isempty(fields) && throw(ArgumentError("at least one cres field is required"))
     names = Tuple(Symbol.(fields))

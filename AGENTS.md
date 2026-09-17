@@ -63,6 +63,10 @@ While a task is still in progress, mostly edit the latest relevant log entry ins
   counts by condition from the nonmissing repetitions.
   Configure display-unit conversion through the plot spec's `scale_x`; keep
   configured/acquired variable values unchanged and divide only `val_x_plot`.
+  Cross-pair MOT-loading summaries use each dataset's final acquired `t_load`.
+  For 421 data, select the unique processing entry containing `β_MOT = 0` and
+  use that zero-bias panel; for 626 data, process DCS/SCS blocks independently
+  before combining their final statistics and propagating ratio uncertainty.
 - Prefer Julia functions with clear, narrow responsibilities. Keep processing logic in `src/` and script-specific orchestration in `script/`.
 - Use `snake_case` for variables and functions. Function names usually read as verb + noun, such as `calc_dens_sum`, `crop_center`, `find_peak_position_moving`, or `set_axis_full`.
 - Put the kind of quantity first, then attributes: examples include `wh_corner`, `smwh_peak`, `val_t`, `path_plot_peak`, and `dens_full_fmt`.
