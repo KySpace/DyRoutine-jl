@@ -102,7 +102,7 @@ for loadcfg in (:DCS, :SCS), istp in val_istp
         curve.stds[mask_error] ./ plot_cmpr_loadcfg.scale_num;
         color=style.color, whiskerwidth=7, linewidth=1.2)
 end
-axislegend(ax_nums; position=:rb)
+dualmot_axislegend(ax_nums; position=:rb)
 
 curves_ratio = Dict{Symbol, NamedTuple}()
 fig_ratio = Figure(size=plot_cmpr_loadcfg.size)
@@ -127,7 +127,7 @@ for istp in val_istp
     errorbars!(ax_ratio, val_t_load[mask_error], ratios[mask_error], stds[mask_error];
         color=style.color, whiskerwidth=7, linewidth=1.2)
 end
-axislegend(ax_ratio; position=:rb)
+dualmot_axislegend(ax_ratio; position=:rb)
 
 for format in plot_cmpr_loadcfg.formats
     save(joinpath(path_output, "[$(plot_cmpr_loadcfg.file_head)].[$(runinfo.tag)].[nums].$format"), fig_nums)

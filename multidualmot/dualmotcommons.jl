@@ -34,7 +34,7 @@ const MARKER_ISTP = Dict(
 const COLOR_LOADCFG = Dict(
     :DDM => RGB(0x3a / 255, 0x6a / 255, 0xc4 / 255),
     :DIS => RGB(0xb4 / 255, 0x45 / 255, 0x2a / 255),
-    :DCS => RGB(0xf4 / 255, 0xd3 / 255, 0x3d / 255),
+    :DCS => RGB(0xbd / 255, 0x9f / 255, 0x21 / 255),
     :SCS => RGB(0x55 / 255, 0xca / 255, 0x6f / 255),
 )
 const COLOR_RATIO = RGB(0.28, 0.28, 0.28)
@@ -192,7 +192,8 @@ end
 function dualmot_curve_style(condition::NamedTuple)
     loadcfg, istp = condition.loadcfg, condition.istp
     color = COLOR_LOADCFG[loadcfg]
-    (; color, markercolor=color, linewidth=2, strokecolor=color,
+    markercolor = loadcfg in (:DIS, :DCS) ? :transparent : color
+    (; color, markercolor, linewidth=2, strokecolor=color,
         strokewidth=1.5, markersize=11, marker=MARKER_ISTP[istp])
 end
 
@@ -200,6 +201,17 @@ dualmot_ratio_style(istp::Symbol) =
     (; color=COLOR_RATIO, markercolor=COLOR_RATIO, linewidth=2,
         strokecolor=COLOR_RATIO, strokewidth=1.5, markersize=11,
         marker=MARKER_ISTP[istp])
+
+dualmot_axislegend(ax; position::Symbol=:rt) = axislegend(ax;
+    position,
+    labelsize=9.6,
+    patchsize=(12, 12),
+    rowgap=1.8,
+    colgap=6,
+    margin=(6, 6, 6, 6),
+    padding=(6, 6, 6, 6),
+    backgroundcolor=(:white, 0.5),
+)
 
 balance_tag(bias::Real) = iszero(bias) ? "t" : "n"
 
@@ -239,3 +251,58 @@ dualmot_lifetime_plot_spec(kind::AbstractString; key_x::Symbol,
     xlabel::AbstractString, scale_x::Real=1.0, ylabel::AbstractString="CMOT number") =
     dualmot_num_evol_plot_spec(kind; key_x, xlabel, scale_x, ylabel,
         file_head="$kind.lifetime")
+using LsqFit: curve_fit, stderror
+using Printf: @sprintf
+
+"""One- and two-body loss, with p = [N₀ (atoms), τ (s), κ (atom⁻¹ s⁻¹)]."""
+function model_num_decay(t::AbstractVector, p::AbstractVector)
+    n0, tau, kappa = p
+    @. n0 * exp(-t / tau) / (1 + kappa * n0 * tau * (-expm1(-t / tau)))
+end
+
+"""Bounded, unweighted least squares; uncertainties are local residual-based 1σ errors."""
+function fit_num_decay(t::AbstractVector{<:Real}, nums::AbstractVector{<:Real};
+    model=model_num_decay, bounds_n0::Tuple{<:Real,<:Real}=(0.5, 2.0),
+    bounds_tau::Tuple{<:Real,<:Real}=(0.1, 50.0),
+    bounds_kappa::Tuple{<:Real,<:Real}=(eps(Float64), Inf),
+)
+    length(t) == length(nums) || throw(DimensionMismatch("time and number lengths differ"))
+    for (name, bounds) in (("N₀ multiplier", bounds_n0), ("τ", bounds_tau), ("κ", bounds_kappa))
+        0 < bounds[1] < bounds[2] || throw(ArgumentError("$name bounds must satisfy 0 < lower < upper, got $bounds"))
+    end
+    mask = isfinite.(t) .& isfinite.(nums) .& (nums .>= 0)
+    ts, ns = Float64.(t[mask]), Float64.(nums[mask])
+    length(unique(ts)) > 3 || throw(ArgumentError("decay fitting needs at least four distinct valid times"))
+    minimum(ts) >= 0 || throw(ArgumentError("holding times must be nonnegative"))
+    n_initial = ns[argmin(ts)]
+    n_initial > 0 || throw(ArgumentError("initial number must be positive, got $n_initial"))
+    # Scale numbers and parameters to avoid ill-conditioned finite differences for tiny κ.
+    scale = [n_initial, 1.0, inv(n_initial)]
+    lower = [bounds_n0[1], bounds_tau[1], bounds_kappa[1] * n_initial]
+    upper = [bounds_n0[2], bounds_tau[2], bounds_kappa[2] * n_initial]
+    model_scaled = (x, p) -> model(x, p .* scale) ./ n_initial
+    fits = []
+    for tau in (0.3, 3.0, 30.0), loss in (0.01, 1.0)
+        p0 = clamp.([1.0, tau, loss], lower, upper)
+        fit = curve_fit(model_scaled, ts, ns ./ n_initial, p0; lower, upper, maxIter=1000)
+        fit.converged && push!(fits, fit)
+    end
+    isempty(fits) && error("decay fit did not converge for any initial guess")
+    fit = fits[argmin([sum(abs2, f.resid) for f in fits])]
+    params = fit.param .* scale
+    errors = try
+        stderror(fit) .* scale
+    catch err
+        @warn "Decay parameter covariance unavailable" exception=err
+        fill(NaN, 3)
+    end
+    at_bound = any(isapprox.(fit.param, lower; atol=1e-7, rtol=1e-4) .|
+        isapprox.(fit.param, upper; atol=1e-7, rtol=1e-4))
+    (; params, errors, at_bound, fit, mask)
+end
+
+function label_num_decay(result)
+    p, e = result.params, result.errors
+    @sprintf("N₀ = %.2e ± %.1e\nτ = %.3g ± %.2g s\nκ = %.2e ± %.1e atom⁻¹ s⁻¹%s",
+        p[1], e[1], p[2], e[2], p[3], e[3], result.at_bound ? " *" : "")
+end

@@ -113,7 +113,7 @@ for (idx_panel, panel) in enumerate(val_panel), scale in plot_num_evol.scales
             stds[mask_error] ./ scale_num;
             color=style.color, whiskerwidth=7, linewidth=1.2)
     end
-    axislegend(ax; position=plot_num_evol.legend_position)
+    dualmot_axislegend(ax; position=plot_num_evol.legend_position)
     name_output = plot_num_evol.filename(scale, panel)
     for format in plot_num_evol.formats
         save(joinpath(path_output, "$name_output.$format"), fig)
