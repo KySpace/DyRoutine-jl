@@ -76,8 +76,14 @@ vals_curve = map(keys_curve) do key
     selector = getproperty(plot_num_evol.curves, key)
     selector == :all ? values_all : [value for value in values_all if value in selector]
 end
-conditions_curve = [NamedTuple{keys_curve}(reverse(Tuple(values)))
-    for values in Iterators.product(reverse(vals_curve)...)]
+conditions_curve = vec([NamedTuple{keys_curve}(reverse(Tuple(values)))
+    for values in Iterators.product(reverse(vals_curve)...)])
+if :loadcfg in keys_curve
+    # Stable ordering preserves isotope order while drawing outline-only curves last.
+    sort!(conditions_curve;
+        by=condition -> getproperty(condition, :loadcfg) in (:DIS, :SCS) ? 1 : 0,
+        alg=Base.Sort.MergeSort)
+end
 idx_axis_stat = Dict(key => idx for (idx, key) in enumerate(name_stat))
 
 names_output = [plot_num_evol.filename(scale, panel)

@@ -30,7 +30,7 @@ const OUTER_GAP = 6.0
 const ROW_LABEL_WIDTH = 150.0
 const COLUMN_LABEL_HEIGHT = 34.0
 const PAGE_PADDING = 8.0
-const PNG_SCALE = 5.0
+const PNG_SCALE = 2.0
 const PNG_RENDER_TIMEOUT = 60.0
 
 struct SvgEntry

@@ -47,9 +47,10 @@ While a task is still in progress, mostly edit the latest relevant log entry ins
   statistics. Its ratio uncertainty assumes independent DCS and SCS samples and
   propagates their sample standard deviations through `DCS/SCS`.
   DCS always contributes to reshaping; lifetime plots omit it, while MOT-loading
-  plots include it. Plot colors encode `loadcfg`: DDM `#3a6ac4`, DIS `#b4452a`,
-  DCS `#f4d33d`, and SCS `#55ca6f`. Marker shapes encode isotope: 160 diamond,
-  161 up-triangle, 162 square, 163 down-triangle, and 164 circle. Use
+  plots include it. Plot color encodes isotope using hues 160–164 =
+  195°, 306°, 21°, 90°, and 259°. Marker shape encodes loadcfg: DDM square,
+  DIS up-triangle, DCS circle, and SCS diamond. DIS and SCS are outline-only and
+  must be drawn after the filled DDM/DCS markers and curves. Use
   `Symbol("162")` (or `Symbol.(string.(values))`) for
   isotope symbols: Julia's `:162` evaluates to an integer, not a Symbol.
   Pair folder names must contain the configured ordered isotope pair as a

@@ -2,7 +2,7 @@ using YAML
 using MAT
 using Statistics: mean, std
 using CairoMakie
-using Colors: RGB
+using Colors: Oklch, RGB
 
 const DUALMOT_VAR_SPECS = (
     β_MOT=(config="tbiasmot", convert=values -> Float64.(values)),
@@ -30,20 +30,19 @@ const DUALMOT_ODT_BFIELD_VAR_SPECS = (
     istp=(config="istp", convert=values -> Symbol.(string.(values))),
 )
 
-const MARKER_ISTP = Dict(
-    Symbol("160") => :diamond,
-    Symbol("161") => :utriangle,
-    Symbol("162") => :rect,
-    Symbol("163") => :dtriangle,
-    Symbol("164") => :circle,
-)
-const COLOR_LOADCFG = Dict(
-    :DDM => RGB(0x3a / 255, 0x6a / 255, 0xc4 / 255),
-    :DIS => RGB(0xb4 / 255, 0x45 / 255, 0x2a / 255),
-    :DCS => RGB(0xbd / 255, 0x9f / 255, 0x21 / 255),
-    :SCS => RGB(0x55 / 255, 0xca / 255, 0x6f / 255),
-)
-const COLOR_RATIO = RGB(0.28, 0.28, 0.28)
+const HUE_ISTP = Dict(Symbol(string(i)) => h for (i, h) in
+    ((160, 195), (161, 306), (162, 21), (163, 90), (164, 259)))
+const LIGHTNESS_STROKE, CHROMA_STROKE = 0.45, 0.10
+const LIGHTNESS_FACE, CHROMA_FACE = 0.85, 0.06
+const LIGHTNESS_DIS_LINE, CHROMA_DIS_LINE = 0.65, 0.08
+const MARKER_LOADCFG = Dict(
+    :DDM => :rect, :DIS => :utriangle, :DCS => :circle, :SCS => :diamond)
+#        stroke      face
+# 160    #006566     #a0dbda
+# 161    #634581     #d7c4ee
+# 162    #843b3d     #f3bfbd
+# 163    #6b5200     #ddcda1
+# 164    #31558c     #b7cff6
 
 function validate_dualmot_vars(vars::NamedTuple, tag_head::AbstractString)
     pair = join(string.(vars.istp), "-")
@@ -281,16 +280,18 @@ end
 
 function dualmot_curve_style(condition::NamedTuple)
     loadcfg, istp = condition.loadcfg, condition.istp
-    color = COLOR_LOADCFG[loadcfg]
-    markercolor = loadcfg in (:DIS, :DCS) ? :transparent : color
-    (; color, markercolor, linewidth=2, strokecolor=color,
-        strokewidth=1.5, markersize=11, marker=MARKER_ISTP[istp])
+    hue = HUE_ISTP[istp]
+    strokecolor = RGB(Oklch(LIGHTNESS_STROKE, CHROMA_STROKE, hue))
+    markercolor = loadcfg in (:DIS, :SCS) ? :transparent :
+        RGB(Oklch(LIGHTNESS_FACE, CHROMA_FACE, hue))
+    color = loadcfg in (:DIS, :SCS) ?
+        RGB(Oklch(LIGHTNESS_DIS_LINE, CHROMA_DIS_LINE, hue)) : strokecolor
+    (; color, markercolor, linewidth=2, strokecolor,
+        strokewidth=1.5, markersize=11, marker=MARKER_LOADCFG[loadcfg])
 end
 
-dualmot_ratio_style(istp::Symbol) =
-    (; color=COLOR_RATIO, markercolor=COLOR_RATIO, linewidth=2,
-        strokecolor=COLOR_RATIO, strokewidth=1.5, markersize=11,
-        marker=MARKER_ISTP[istp])
+dualmot_ratio_style(istp::Symbol; numerator::Symbol=:DCS) =
+    dualmot_curve_style((; loadcfg=numerator, istp))
 
 dualmot_axislegend(ax; position::Symbol=:rt) = axislegend(ax;
     position,

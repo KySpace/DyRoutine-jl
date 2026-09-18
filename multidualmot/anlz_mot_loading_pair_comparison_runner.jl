@@ -114,6 +114,16 @@ marker_style(style::NamedTuple; markersize::Real=style.markersize) = (
     strokewidth=style.strokewidth,
 )
 
+function draw_pair_spans!(ax::Axis)
+    color_span = RGB(Oklch(0.966, 0, 0))
+    for idx_pair in eachindex(val_pair)
+        isodd(idx_pair) || continue
+        vspan!(ax, idx_pair - 0.5, idx_pair + 0.5; color=color_span) |>
+            span -> translate!(span, 0, 0, -100)
+    end
+    nothing
+end
+
 function draw_style_key!(fig::Figure, loadcfgs::Tuple)
     val_istp_key = Symbol.(string.(160:164))
     pos_y = collect(5:-1:1)
@@ -155,9 +165,11 @@ function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denomi
         xlabel="Isotope pair",
         ylabel,
         title,
+        xgridvisible=false,
         yminorticks=IntervalsBetween(5),
         yminorticksvisible=true,
     )
+    draw_pair_spans!(ax)
     for (idx_pair, pair) in enumerate(val_pair),
         (idx_istp, istp) in enumerate(Symbol.(split(pair, "-")))
         point_num = points_by_pair[pair][(numerator, istp)]
@@ -171,7 +183,7 @@ function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denomi
         else
             NaN
         end
-        x = idx_pair
+        x = idx_pair + (idx_istp == 1 ? -1 / 8 : 1 / 8)
         style = dualmot_curve_style((; loadcfg=numerator, istp))
         scatter!(ax, [x], [ratio]; marker_style(style; markersize=17)...)
         isfinite(std_ratio) && errorbars!(ax, [x], [ratio], [std_ratio];
@@ -194,19 +206,19 @@ function draw_pair_numbers(points_by_pair::AbstractDict, loadcfgs::Tuple;
         ylabel,
         title,
         yscale=log10,
+        xgridvisible=false,
         yminorticks=IntervalsBetween(5),
         yminorticksvisible=true,
     )
-    # Draw filled markers first and open markers second so coincident loadcfgs remain visible.
-    loadcfgs_draw = sort(collect(loadcfgs); by=loadcfg -> loadcfg in (:DDM, :SCS) ? 0 : 1)
+    draw_pair_spans!(ax)
     for (idx_pair, pair) in enumerate(val_pair)
         val_istp = Symbol.(split(pair, "-"))
-        for loadcfg in loadcfgs_draw, istp in val_istp
+        for loadcfg in loadcfgs, (idx_istp, istp) in enumerate(val_istp)
             key = (loadcfg, istp)
             point = points_by_pair[pair][key]
             isfinite(point.num) && point.num > 0 ||
                 throw(ArgumentError("$pair $key: number must be finite and positive"))
-            x = idx_pair
+            x = idx_pair + (idx_istp == 1 ? -1 / 8 : 1 / 8)
             style = dualmot_curve_style((; loadcfg, istp))
             scatter!(ax, [x], [point.num]; marker_style(style; markersize=17)...)
             isfinite(point.std) && point.num - point.std > 0 &&
