@@ -8,6 +8,9 @@ val_istp = Symbol.(split(runinfo.folder, "-"))
 val_t_load = stats_data[1].vars.t_load
 all(stats -> stats.vars.t_load == val_t_load, stats_data) ||
     throw(ArgumentError("$tag_head: all data blocks must use the same t_load values"))
+isfinite(plot_cmpr_loadcfg.γ_active) && plot_cmpr_loadcfg.γ_active > 0 ||
+    throw(ArgumentError("γ_active must be finite and positive, got $(plot_cmpr_loadcfg.γ_active)"))
+val_t_load_plot = val_t_load .* plot_cmpr_loadcfg.γ_active
 
 curves_num = Dict{Tuple{Symbol, Symbol}, NamedTuple}()
 for stats in stats_data
@@ -38,24 +41,37 @@ title_plot = "$tag_head · reps = $reps_used"
 fig_nums = Figure(size=plot_cmpr_loadcfg.size)
 ax_nums = Axis(fig_nums[1, 1]; xlabel=plot_cmpr_loadcfg.xlabel,
     ylabel="$(plot_cmpr_loadcfg.ylabel_num) (×10⁷)", title=title_plot,
-    yminorticks=IntervalsBetween(5), yminorticksvisible=true)
-for loadcfg in (:DCS, :SCS), istp in val_istp
+    dualmot_axis_kwargs()...)
+curves_nums_plot = [begin
     curve = curves_num[(loadcfg, istp)]
     style = dualmot_curve_style((; loadcfg, istp))
     nums_plot = curve.nums ./ plot_cmpr_loadcfg.scale_num
-    scatterlines!(ax_nums, val_t_load, nums_plot; style..., label="$istp $loadcfg")
     mask_error = isfinite.(curve.nums) .& isfinite.(curve.stds)
-    errorbars!(ax_nums, val_t_load[mask_error], nums_plot[mask_error],
-        curve.stds[mask_error] ./ plot_cmpr_loadcfg.scale_num;
-        color=style.color, whiskerwidth=7, linewidth=1.2)
+    (; loadcfg, istp, curve, style, nums_plot, mask_error)
+end for loadcfg in (:DCS, :SCS) for istp in val_istp]
+for curve_plot in curves_nums_plot
+    lines!(ax_nums, val_t_load_plot, curve_plot.nums_plot;
+        curve_plot.style.line_options...)
 end
-dualmot_axislegend(ax_nums; position=:rb)
+for curve_plot in curves_nums_plot
+    mask_error = curve_plot.mask_error
+    errorbars!(ax_nums, val_t_load_plot[mask_error], curve_plot.nums_plot[mask_error],
+        curve_plot.curve.stds[mask_error] ./ plot_cmpr_loadcfg.scale_num;
+        curve_plot.style.errorbar_options...)
+    scatter!(ax_nums, val_t_load_plot, curve_plot.nums_plot;
+        curve_plot.style.marker_options...,
+        marker=curve_plot.style.marker,
+        label="$(curve_plot.istp) $(curve_plot.loadcfg)")
+end
+set_time_minor_ticks!(ax_nums)
+axislegend(ax_nums; position=:rb, DUALMOT_LEGEND_OPTIONS...)
 
 curves_ratio = Dict{Symbol, NamedTuple}()
 fig_ratio = Figure(size=plot_cmpr_loadcfg.size)
 ax_ratio = Axis(fig_ratio[1, 1]; xlabel=plot_cmpr_loadcfg.xlabel,
     ylabel="DCS / SCS number", title=title_plot,
-    yminorticks=IntervalsBetween(5), yminorticksvisible=true)
+    dualmot_axis_kwargs()...)
+curves_ratio_plot = NamedTuple[]
 for istp in val_istp
     curve_dcs = curves_num[(:DCS, istp)]
     curve_scs = curves_num[(:SCS, istp)]
@@ -69,12 +85,24 @@ for istp in val_istp
         (curve_dcs.nums[mask_error] .* curve_scs.stds[mask_error] ./ denom[mask_error].^2).^2)
     curves_ratio[istp] = (; ratios, stds)
 
-    style = dualmot_ratio_style(istp)
-    scatterlines!(ax_ratio, val_t_load, ratios; style..., label=string(istp))
-    errorbars!(ax_ratio, val_t_load[mask_error], ratios[mask_error], stds[mask_error];
-        color=style.color, whiskerwidth=7, linewidth=1.2)
+    style = merge(dualmot_ratio_style(istp), (; marker=:diamond))
+    push!(curves_ratio_plot, (; istp, ratios, stds, mask_error, style))
 end
-dualmot_axislegend(ax_ratio; position=:rb)
+for curve_plot in curves_ratio_plot
+    lines!(ax_ratio, val_t_load_plot, curve_plot.ratios;
+        curve_plot.style.line_options...)
+end
+for curve_plot in curves_ratio_plot
+    mask_error = curve_plot.mask_error
+    errorbars!(ax_ratio, val_t_load_plot[mask_error], curve_plot.ratios[mask_error],
+        curve_plot.stds[mask_error]; curve_plot.style.errorbar_options...)
+    scatter!(ax_ratio, val_t_load_plot, curve_plot.ratios;
+        curve_plot.style.marker_options...,
+        marker=curve_plot.style.marker,
+        label=string(curve_plot.istp))
+end
+set_time_minor_ticks!(ax_ratio)
+axislegend(ax_ratio; position=:rb, DUALMOT_LEGEND_OPTIONS...)
 
 for format in plot_cmpr_loadcfg.formats
     save(joinpath(path_output, "[$(plot_cmpr_loadcfg.file_head)].[$(runinfo.tag)].[nums].$format"), fig_nums)

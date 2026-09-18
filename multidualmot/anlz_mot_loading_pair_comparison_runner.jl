@@ -3,8 +3,8 @@ include(joinpath(@__DIR__, "dualmotcommons.jl"))
 path_root_421 = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\MOT loading 421"
 path_root_626 = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\MOT loading 626"
 path_output = joinpath(dirname(path_root_421), "MOT loading pair comparison")
-val_pair = ["162-164", "161-162", "162-163", "161-164", "163-164",
-    "161-163", "160-162"]
+val_pair = ["160-162", "162-164", "161-162", "161-164", "162-163",
+    "163-164", "161-163"]
 bounds_sigmax_num = (4e-4, Inf)
 bounds_sigmay_num = (4e-4, Inf)
 num_max_num = 2e8
@@ -116,62 +116,92 @@ marker_style(style::NamedTuple; markersize::Real=style.markersize) = (
 
 function draw_pair_spans!(ax::Axis)
     color_span = RGB(Oklch(0.966, 0, 0))
-    for idx_pair in eachindex(val_pair)
-        isodd(idx_pair) || continue
+    pairs_gray = Set(("160-162", "162-164", "161-163"))
+    for (idx_pair, pair) in enumerate(val_pair)
+        pair in pairs_gray || continue
         vspan!(ax, idx_pair - 0.5, idx_pair + 0.5; color=color_span) |>
             span -> translate!(span, 0, 0, -100)
     end
     nothing
 end
 
-function draw_style_key!(fig::Figure, loadcfgs::Tuple)
-    val_istp_key = Symbol.(string.(160:164))
-    pos_y = collect(5:-1:1)
-    ax_key = Axis(fig[1, 1];
-        width=125,
+function style_key_axis(fig::Figure; width::Real, limits, xticks)
+    border_color = RGBAf(0.25, 0.25, 0.25, 0.45)
+    Axis(fig[1, 1];
+        width,
         height=155,
-        halign=0.04,
+        halign=0.035,
         valign=:bottom,
         tellwidth=false,
         tellheight=false,
-        limits=(0.5, 2.5, 0.5, 5.5),
-        xticks=(Float64.(1:length(loadcfgs)), string.(collect(loadcfgs))),
-        yticks=(pos_y, string.(val_istp_key)),
+        limits,
+        xticks,
+        yticks=(collect(5:-1:1), string.(160:164)),
         xaxisposition=:top,
         xgridvisible=false,
         ygridvisible=false,
+        bottomspinecolor=border_color,
+        leftspinecolor=border_color,
+        topspinecolor=border_color,
+        rightspinecolor=border_color,
+        spinewidth=0.8,
         xticksize=0,
         yticksize=0,
         xticklabelsize=10,
         yticklabelsize=10,
-        xticklabelpad=3,
-        yticklabelpad=3,
-        backgroundcolor=:white,
+        xticklabelpad=2,
+        yticklabelpad=2,
+        backgroundcolor=RGBAf(1, 1, 1, 0.86),
+    )
+end
+
+function draw_number_style_key!(fig::Figure, loadcfgs::Tuple)
+    val_istp_key = Symbol.(string.(160:164))
+    pos_y = collect(5:-1:1)
+    pos_x = 1 .+ 0.68 .* (0:length(loadcfgs)-1)
+    ax_key = style_key_axis(fig;
+        width=108,
+        limits=(first(pos_x) - 0.38, last(pos_x) + 0.38, 0.5, 5.5),
+        xticks=(pos_x, string.(collect(loadcfgs))),
     )
     for (idx_loadcfg, loadcfg) in enumerate(loadcfgs),
         (idx_istp, istp) in enumerate(val_istp_key)
         style = dualmot_curve_style((; loadcfg, istp))
-        scatter!(ax_key, [idx_loadcfg], [pos_y[idx_istp]];
-            marker_style(style; markersize=10)...)
+        scatter!(ax_key, [pos_x[idx_loadcfg]], [pos_y[idx_istp]];
+            marker_style(style; markersize=17)...)
+    end
+    ax_key
+end
+
+function draw_ratio_style_key!(fig::Figure)
+    val_istp_key = Symbol.(string.(160:164))
+    pos_y = collect(5:-1:1)
+    ax_key = style_key_axis(fig;
+        width=62,
+        limits=(0.6, 1.4, 0.5, 5.5),
+        xticks=(Float64[], String[]),
+    )
+    for (idx_istp, istp) in enumerate(val_istp_key)
+        style = dualmot_curve_style((; loadcfg=:DDM, istp))
+        scatter!(ax_key, [1.0], [pos_y[idx_istp]];
+            merge(marker_style(style; markersize=17), (; marker=:hexagon))...)
     end
     ax_key
 end
 
 function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denominator::Symbol;
-    ylabel::AbstractString, title::AbstractString, filename::AbstractString)
+    ylabel, title::AbstractString, filename::AbstractString)
     fig = Figure(size=(900, 420))
     ax = Axis(fig[1, 1];
         xticks=(eachindex(val_pair), val_pair),
         xlabel="Isotope pair",
         ylabel,
         title,
-        xgridvisible=false,
-        yminorticks=IntervalsBetween(5),
-        yminorticksvisible=true,
+        dualmot_axis_kwargs()...,
     )
     draw_pair_spans!(ax)
     for (idx_pair, pair) in enumerate(val_pair),
-        (idx_istp, istp) in enumerate(Symbol.(split(pair, "-")))
+        istp in Symbol.(split(pair, "-"))
         point_num = points_by_pair[pair][(numerator, istp)]
         point_den = points_by_pair[pair][(denominator, istp)]
         isfinite(point_num.num) && isfinite(point_den.num) && point_den.num > 0 ||
@@ -183,14 +213,15 @@ function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denomi
         else
             NaN
         end
-        x = idx_pair + (idx_istp == 1 ? -1 / 8 : 1 / 8)
+        x = idx_pair
         style = dualmot_curve_style((; loadcfg=numerator, istp))
-        scatter!(ax, [x], [ratio]; marker_style(style; markersize=17)...)
+        scatter!(ax, [x], [ratio];
+            merge(marker_style(style; markersize=17), (; marker=:hexagon))...)
         isfinite(std_ratio) && errorbars!(ax, [x], [ratio], [std_ratio];
-            color=style.color, whiskerwidth=7, linewidth=1.2)
+            color=style.color, whiskerwidth=0, linewidth=1.2)
     end
     ylims!(ax, 0, nothing)
-    draw_style_key!(fig, (numerator, denominator))
+    draw_ratio_style_key!(fig)
     for format in formats_output
         save(joinpath(path_output, "$filename.$format"), fig)
     end
@@ -198,7 +229,7 @@ function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denomi
 end
 
 function draw_pair_numbers(points_by_pair::AbstractDict, loadcfgs::Tuple;
-    ylabel::AbstractString, title::AbstractString, filename::AbstractString)
+    ylabel, title::AbstractString, filename::AbstractString)
     fig = Figure(size=(980, 420))
     ax = Axis(fig[1, 1];
         xticks=(eachindex(val_pair), val_pair),
@@ -206,27 +237,26 @@ function draw_pair_numbers(points_by_pair::AbstractDict, loadcfgs::Tuple;
         ylabel,
         title,
         yscale=log10,
-        xgridvisible=false,
-        yminorticks=IntervalsBetween(5),
-        yminorticksvisible=true,
+        dualmot_axis_kwargs(; log_y=true)...,
     )
     draw_pair_spans!(ax)
     for (idx_pair, pair) in enumerate(val_pair)
         val_istp = Symbol.(split(pair, "-"))
-        for loadcfg in loadcfgs, (idx_istp, istp) in enumerate(val_istp)
+        for loadcfg in loadcfgs, istp in val_istp
             key = (loadcfg, istp)
             point = points_by_pair[pair][key]
             isfinite(point.num) && point.num > 0 ||
                 throw(ArgumentError("$pair $key: number must be finite and positive"))
-            x = idx_pair + (idx_istp == 1 ? -1 / 8 : 1 / 8)
+            x = idx_pair
             style = dualmot_curve_style((; loadcfg, istp))
             scatter!(ax, [x], [point.num]; marker_style(style; markersize=17)...)
             isfinite(point.std) && point.num - point.std > 0 &&
                 errorbars!(ax, [x], [point.num], [point.std];
-                    color=style.color, whiskerwidth=7, linewidth=1.2)
+                    color=style.color, whiskerwidth=0, linewidth=1.2)
         end
     end
-    draw_style_key!(fig, loadcfgs)
+    ylims!(ax, 0.5e6, nothing)
+    draw_number_style_key!(fig, loadcfgs)
     for format in formats_output
         save(joinpath(path_output, "$filename.$format"), fig)
     end
@@ -235,22 +265,22 @@ end
 
 mkpath(path_output)
 fig_ratio_ddm_dis = draw_pair_ratio(points_421, :DDM, :DIS;
-    ylabel="N_DDM / N_DIS",
+    ylabel=rich("N", subscript("DDM"), " / N", subscript("DIS")),
     title="MOT loading 421 · final acquired point · β_MOT = 0",
     filename="[MOT.loading.pairs].[DDM-DIS].[ratio]",
 )
 fig_ratio_dcs_scs = draw_pair_ratio(points_626, :DCS, :SCS;
-    ylabel="N_DCS / N_SCS",
+    ylabel=rich("N", subscript("DCS"), " / N", subscript("SCS")),
     title="MOT loading 626 · final acquired point",
     filename="[MOT.loading.pairs].[DCS-SCS].[ratio]",
 )
 fig_nums_ddm_dis = draw_pair_numbers(points_421, (:DDM, :DIS);
-    ylabel="MOT number",
+    ylabel=rich("N", subscript("DDM"), ", N", subscript("DIS")),
     title="MOT loading 421 · final acquired point · β_MOT = 0",
     filename="[MOT.loading.pairs].[DDM-DIS].[nums]",
 )
 fig_nums_dcs_scs = draw_pair_numbers(points_626, (:DCS, :SCS);
-    ylabel="MOT number",
+    ylabel=rich("N", subscript("DCS"), ", N", subscript("SCS")),
     title="MOT loading 626 · final acquired point",
     filename="[MOT.loading.pairs].[DCS-SCS].[nums]",
 )

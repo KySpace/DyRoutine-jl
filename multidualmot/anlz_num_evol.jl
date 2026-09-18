@@ -79,7 +79,7 @@ end
 conditions_curve = vec([NamedTuple{keys_curve}(reverse(Tuple(values)))
     for values in Iterators.product(reverse(vals_curve)...)])
 if :loadcfg in keys_curve
-    # Stable ordering preserves isotope order while drawing outline-only curves last.
+    # Stable ordering preserves isotope order while keeping DIS/SCS visible at coincident points.
     sort!(conditions_curve;
         by=condition -> getproperty(condition, :loadcfg) in (:DIS, :SCS) ? 1 : 0,
         alg=Base.Sort.MergeSort)
@@ -99,13 +99,13 @@ for (idx_panel, panel) in enumerate(val_panel), scale in plot_num_evol.scales
     reps_panel = vec(@view n_rep_stat[indices_panel...])
     reps_min, reps_max = extrema(reps_panel)
     reps_used = reps_min == reps_max ? string(reps_min) : "$(reps_min)–$(reps_max)"
-    ax = Axis(fig[1, 1]; xlabel=plot_num_evol.xlabel,
+    ax = Axis(fig[1, 1]; xlabel=plot_num_evol.xlabel(panel),
         ylabel=scale == :lin ? "$(plot_num_evol.ylabel) (×10⁷)" : plot_num_evol.ylabel,
         title=plot_num_evol.title(tag_head, panel, reps_used),
         yscale=scale == :log ? log10 : identity,
-        yminorticks=IntervalsBetween(5), yminorticksvisible=true)
+        dualmot_axis_kwargs(; log_y=scale == :log)...)
 
-    for condition in conditions_curve
+    curves_plot = map(conditions_curve) do condition
         indices = Any[Colon() for _ in name_stat]
         isnothing(key_panel) || (indices[idx_axis_stat[key_panel]] = idx_panel)
         for key in keys_curve
@@ -118,20 +118,49 @@ for (idx_panel, panel) in enumerate(val_panel), scale in plot_num_evol.scales
         !all(mask) && @warn "$tag_head: omitting nonpositive log points" panel condition count=count(!, mask)
         nums_plot = ifelse.(mask, nums ./ scale_num, NaN)
         style = plot_num_evol.curve_style(condition)
-        scatterlines!(ax, val_x_plot, nums_plot; style...,
-            label=plot_num_evol.curve_label(condition))
-
+        idx_istp = :istp in keys_curve ?
+            findfirst(==(condition.istp), vars.istp) : nothing
+        val_x_curve = plot_num_evol.transform_x(
+            val_x_plot, condition, panel, idx_istp)
+        length(val_x_curve) == length(val_x_plot) ||
+            throw(DimensionMismatch("$tag_head: transformed x length $(length(val_x_curve)) must equal $(length(val_x_plot))"))
+        all(isfinite, val_x_curve) ||
+            throw(ArgumentError("$tag_head: transformed x values must be finite for $condition"))
+        xautolimits = plot_num_evol.xautolimits(condition, panel)
+        xautolimits isa Bool ||
+            throw(ArgumentError("$tag_head: xautolimits must return Bool for $condition"))
+        yautolimits = plot_num_evol.yautolimits(condition, panel)
+        yautolimits isa Bool ||
+            throw(ArgumentError("$tag_head: yautolimits must return Bool for $condition"))
         mask_error = mask .& isfinite.(stds)
         if scale == :log
             mask_error .&= nums .- stds .> 0
             count_crossing = count(mask .& isfinite.(stds) .& (nums .- stds .<= 0))
             count_crossing > 0 && @warn "$tag_head: log error bars crossing zero omitted" panel condition count_crossing
         end
-        errorbars!(ax, val_x_plot[mask_error], nums[mask_error] ./ scale_num,
-            stds[mask_error] ./ scale_num;
-            color=style.color, whiskerwidth=7, linewidth=1.2)
+        (; condition, nums, stds, nums_plot, val_x_curve, mask_error, style,
+            xautolimits, yautolimits)
     end
-    dualmot_axislegend(ax; position=plot_num_evol.legend_position)
+    for curve in curves_plot
+        lines!(ax, curve.val_x_curve, curve.nums_plot;
+            curve.style.line_options...,
+            xautolimits=curve.xautolimits, yautolimits=curve.yautolimits)
+    end
+    for curve in curves_plot
+        mask_error = curve.mask_error
+        scatter!(ax, curve.val_x_curve, curve.nums_plot;
+            curve.style.marker_options...,
+            marker=curve.style.marker,
+            xautolimits=curve.xautolimits,
+            yautolimits=curve.yautolimits,
+            label=plot_num_evol.curve_label(curve.condition))
+        errorbars!(ax, curve.val_x_curve[mask_error], curve.nums[mask_error] ./ scale_num,
+            curve.stds[mask_error] ./ scale_num;
+            curve.style.errorbar_options...,
+            xautolimits=curve.xautolimits, yautolimits=curve.yautolimits)
+    end
+    key_x in (:t_load, :t_hold) && set_time_minor_ticks!(ax)
+    axislegend(ax; position=plot_num_evol.legend_position, DUALMOT_LEGEND_OPTIONS...)
     name_output = plot_num_evol.filename(scale, panel)
     for format in plot_num_evol.formats
         save(joinpath(path_output, "$name_output.$format"), fig)

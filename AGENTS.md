@@ -49,8 +49,13 @@ While a task is still in progress, mostly edit the latest relevant log entry ins
   DCS always contributes to reshaping; lifetime plots omit it, while MOT-loading
   plots include it. Plot color encodes isotope using hues 160–164 =
   195°, 306°, 21°, 90°, and 259°. Marker shape encodes loadcfg: DDM square,
-  DIS up-triangle, DCS circle, and SCS diamond. DIS and SCS are outline-only and
-  must be drawn after the filled DDM/DCS markers and curves. Use
+  DIS up-triangle, DCS circle, and SCS diamond. All load configurations use the
+  same filled isotope face/stroke/line palette. Shared axes use
+  inward mirrored ticks on all four sides, no grids, frameless transparent
+  legends, and capless error bars. Log-y axes use integer-decade major ticks and
+  ten subdivisions per decade. Loading/holding-time axes use five minor
+  subdivisions when fewer than four major ticks are shown and two otherwise;
+  curve legends show markers without line samples. Use
   `Symbol("162")` (or `Symbol.(string.(values))`) for
   isotope symbols: Julia's `:162` evaluates to an integer, not a Symbol.
   Pair folder names must contain the configured ordered isotope pair as a

@@ -6,6 +6,7 @@ var_specs_num = DUALMOT_LOADCFG_VAR_SPECS
 bounds_sigmax_num = (4e-4, Inf)
 bounds_sigmay_num = (4e-4, Inf)
 num_max_num = 2e8
+γ_active = 0.43
 
 runinfos_grouped = [read_num_evol_runinfos(path_root, pair;
     var_specs=var_specs_num,
@@ -17,8 +18,9 @@ runinfos = only.(runinfos_grouped)
 ids_runinfo = eachindex(runinfos)
 plot_cmpr_loadcfg = (
     file_head="MOT.loading.626",
-    xlabel="MOT loading time (s)",
+    xlabel="Effective loading time (s)",
     ylabel_num="CMOT number",
+    γ_active,
     scale_num=1e7,
     formats=("svg", "png"),
     size=(500, 360),

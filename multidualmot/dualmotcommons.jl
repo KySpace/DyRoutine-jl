@@ -282,41 +282,79 @@ function dualmot_curve_style(condition::NamedTuple)
     loadcfg, istp = condition.loadcfg, condition.istp
     hue = HUE_ISTP[istp]
     strokecolor = RGB(Oklch(LIGHTNESS_STROKE, CHROMA_STROKE, hue))
-    markercolor = loadcfg in (:DIS, :SCS) ? :transparent :
-        RGB(Oklch(LIGHTNESS_FACE, CHROMA_FACE, hue))
-    color = loadcfg in (:DIS, :SCS) ?
-        RGB(Oklch(LIGHTNESS_DIS_LINE, CHROMA_DIS_LINE, hue)) : strokecolor
-    (; color, markercolor, linewidth=2, strokecolor,
-        strokewidth=1.5, markersize=11, marker=MARKER_LOADCFG[loadcfg])
+    markercolor = RGB(Oklch(LIGHTNESS_FACE, CHROMA_FACE, hue))
+    color = strokecolor
+    linewidth, strokewidth, markersize = 2, 1.5, 11
+    marker = MARKER_LOADCFG[loadcfg]
+    line_options = (; color, linewidth)
+    marker_options = (; color=markercolor, markersize, strokecolor, strokewidth)
+    errorbar_options = (; color, whiskerwidth=0, linewidth=1.2)
+    (; color, markercolor, linewidth, strokecolor, strokewidth, markersize, marker,
+        line_options, marker_options, errorbar_options)
 end
 
 dualmot_ratio_style(istp::Symbol; numerator::Symbol=:DCS) =
     dualmot_curve_style((; loadcfg=numerator, istp))
 
-dualmot_axislegend(ax; position::Symbol=:rt) = axislegend(ax;
-    position,
+function dualmot_axis_kwargs(; log_y::Bool=false)
+    common = (
+        xgridvisible=false,
+        ygridvisible=false,
+        xminorgridvisible=false,
+        yminorgridvisible=false,
+        xtickalign=1,
+        ytickalign=1,
+        xminortickalign=1,
+        yminortickalign=1,
+        xticksmirrored=true,
+        yticksmirrored=true,
+    )
+    log_y ? merge(common, (
+        yticks=LogTicks(-20:20),
+        yminorticks=IntervalsBetween(10),
+        yminorticksvisible=true,
+    )) : merge(common, (
+        yminorticks=IntervalsBetween(5),
+        yminorticksvisible=true,
+    ))
+end
+
+const DUALMOT_LEGEND_OPTIONS = (
     labelsize=9.6,
     patchsize=(12, 12),
     rowgap=1.8,
     colgap=6,
     margin=(6, 6, 6, 6),
     padding=(6, 6, 6, 6),
-    backgroundcolor=(:white, 0.5),
+    framevisible=false,
+    backgroundcolor=:transparent,
 )
+
+function set_time_minor_ticks!(ax::Axis)
+    reset_limits!(ax)
+    n_major_ticks = length(ax.xaxis.tickvalues[])
+    ax.xminorticks = IntervalsBetween(n_major_ticks < 4 ? 5 : 2)
+    ax.xminorticksvisible = true
+    nothing
+end
 
 balance_tag(bias::Real) = iszero(bias) ? "t" : "n"
 
 function dualmot_num_evol_plot_spec(kind::AbstractString;
     key_x::Symbol,
-    xlabel::AbstractString,
+    xlabel::Union{AbstractString,Function},
     file_head::AbstractString,
     scale_x::Real=1.0,
+    transform_x=(values, condition, panel, idx_istp) -> values,
+    xautolimits=(condition, panel) -> true,
+    yautolimits=(condition, panel) -> true,
     legend_position::Symbol=:rt,
     loadcfg_plot::Tuple=(:DDM, :DIS),
     ylabel::AbstractString="CMOT number",
 )
     isfinite(scale_x) && scale_x > 0 ||
         throw(ArgumentError("scale_x must be finite and positive, got $scale_x"))
+    xlabel_panel = xlabel isa AbstractString ? (_ -> xlabel) : xlabel
     (
         key_x,
         scale_x=Float64(scale_x),
@@ -326,7 +364,10 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
         formats=("svg", "png"),
         size=(500, 360),
         scale_num_linear=1e7,
-        xlabel,
+        xlabel=xlabel_panel,
+        transform_x,
+        xautolimits,
+        yautolimits,
         ylabel,
         title=(tag, bias, reps_used) ->
             "$tag · β_MOT = $bias · $(balance_tag(bias))-balanced · reps = $reps_used",

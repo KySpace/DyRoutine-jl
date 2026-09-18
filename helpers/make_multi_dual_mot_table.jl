@@ -333,7 +333,7 @@ function make_multi_dual_mot_table(root::AbstractString, output_path::AbstractSt
     abspath(output_path)
 end
 
-function main(args::AbstractVector{<:AbstractString}=ARGS)
+function main_multi_dual_mot_table(args::AbstractVector{<:AbstractString}=ARGS)
     length(args) <= 3 || throw(ArgumentError(
         "usage: julia helpers/make_multi_dual_mot_table.jl [data_root] [output.svg] [output.png]",
     ))
@@ -344,5 +344,5 @@ function main(args::AbstractVector{<:AbstractString}=ARGS)
 end
 
 if abspath(PROGRAM_FILE) == abspath(@__FILE__) || isinteractive()
-    main()
+    main_multi_dual_mot_table()
 end

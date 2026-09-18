@@ -22,7 +22,7 @@ plot_num_evol_base = dualmot_num_evol_plot_spec("ODT";
     ylabel="ODT number",
     file_head="ODT.BField",
     legend_position=:rt,
-    loadcfg_plot=(:DDM, :DIS, :DCS),
+    loadcfg_plot=(:DDM, :DIS),
 )
 
 for idx_runinfo_iter in ids_runinfo
@@ -36,7 +36,7 @@ for idx_runinfo_iter in ids_runinfo
     global path_output = joinpath(path_root, runinfo.folder)
     global plot_num_evol = merge(plot_num_evol_base, (
         key_panel=nothing,
-        xlabel="$label_direction (A)",
+        xlabel=_ -> "$label_direction (A)",
         title=(tag, _, reps_used) -> "$tag · reps = $reps_used",
         filename=(scale, _) -> "[ODT.BField].[$scale].[$direction]",
     ))
