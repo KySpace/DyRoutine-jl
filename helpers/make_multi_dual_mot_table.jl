@@ -2,6 +2,9 @@ using Base64
 
 const DEFAULT_ROOT = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data"
 const DEFAULT_OUTPUT_NAME = "multi_dual_mot_table.svg"
+const DEFAULT_ONENOTE_OUTPUT_NAME = "multi_dual_mot_table.one"
+const ONENOTE_HELPER_PATH = joinpath(@__DIR__, "make_multi_dual_mot_onenote.ps1")
+const WINDOWS_POWERSHELL = raw"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
 const INKSCAPE_CANDIDATES = [
     raw"C:\Program Files\Inkscape\bin\inkscape.exe",
     raw"C:\Program Files\Inkscape\inkscape.exe",
@@ -240,10 +243,33 @@ function render_svg_png(svg_path::AbstractString, png_path::AbstractString,
     error("PNG rendering failed after $max_attempts attempts: $detail")
 end
 
+function generate_onenote_section(root::AbstractString, one_path::AbstractString)
+    isfile(ONENOTE_HELPER_PATH) || throw(ArgumentError(
+        "OneNote output helper does not exist: $ONENOTE_HELPER_PATH",
+    ))
+    isfile(WINDOWS_POWERSHELL) || throw(ArgumentError(
+        "OneNote output requires Windows PowerShell: $WINDOWS_POWERSHELL",
+    ))
+
+    destination = abspath(one_path)
+    mkpath(dirname(destination))
+    command = Cmd([
+        WINDOWS_POWERSHELL,
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", ONENOTE_HELPER_PATH,
+        "-DataRoot", abspath(root),
+        "-OutputPath", destination,
+    ])
+    run(command)
+    destination
+end
+
 function make_multi_dual_mot_table(root::AbstractString, output_path::AbstractString;
                                    parent_names::AbstractVector{<:AbstractString}=COLUMN_PARENT_NAMES,
                                    pair_names::AbstractVector{<:AbstractString}=ROW_PAIR_NAMES,
-                                   png_path::Union{Nothing,AbstractString}=nothing)
+                                   png_path::Union{Nothing,AbstractString}=nothing,
+                                   one_path::Union{Nothing,AbstractString}=nothing)
     isdir(root) || throw(ArgumentError("data root does not exist: $root"))
     isempty(parent_names) && throw(ArgumentError("parent_names cannot be empty"))
     isempty(pair_names) && throw(ArgumentError("pair_names cannot be empty"))
@@ -330,17 +356,79 @@ function make_multi_dual_mot_table(root::AbstractString, output_path::AbstractSt
     println("Wrote $(length(parent_names))-column × $(length(pair_names))-row SVG table to:")
     println(abspath(output_path))
     isnothing(png_path) || render_svg_png(output_path, png_path, canvas_width, canvas_height)
+    isnothing(one_path) || generate_onenote_section(root, one_path)
     abspath(output_path)
 end
 
-function main_multi_dual_mot_table(args::AbstractVector{<:AbstractString}=ARGS)
-    length(args) <= 3 || throw(ArgumentError(
-        "usage: julia helpers/make_multi_dual_mot_table.jl [data_root] [output.svg] [output.png]",
+function parse_multi_dual_mot_table_args(args::AbstractVector{<:AbstractString})
+    positional = String[]
+    formats = Set(["svg", "png"])
+    one_path = nothing
+    index = 1
+
+    while index <= length(args)
+        argument = args[index]
+        if startswith(argument, "--formats=")
+            value = split(argument, '='; limit=2)[2]
+            formats = Set(lowercase.(strip.(split(value, ','))))
+        elseif argument == "--formats"
+            index == length(args) && throw(ArgumentError("--formats requires a value"))
+            index += 1
+            formats = Set(lowercase.(strip.(split(args[index], ','))))
+        elseif startswith(argument, "--one-output=")
+            one_path = abspath(split(argument, '='; limit=2)[2])
+        elseif argument == "--one-output"
+            index == length(args) && throw(ArgumentError("--one-output requires a path"))
+            index += 1
+            one_path = abspath(args[index])
+        elseif startswith(argument, "--")
+            throw(ArgumentError("unknown option: $argument"))
+        else
+            push!(positional, argument)
+        end
+        index += 1
+    end
+
+    isempty(formats) && throw(ArgumentError("--formats cannot be empty"))
+    allowed_formats = Set(["svg", "png", "one"])
+    unsupported = setdiff(formats, allowed_formats)
+    isempty(unsupported) || throw(ArgumentError(
+        "unsupported output format(s): $(join(sort!(collect(unsupported)), ", "))",
     ))
-    root = isempty(args) ? DEFAULT_ROOT : abspath(args[1])
-    output_path = length(args) < 2 ? joinpath(root, DEFAULT_OUTPUT_NAME) : abspath(args[2])
-    png_path = length(args) < 3 ? splitext(output_path)[1] * ".png" : abspath(args[3])
-    make_multi_dual_mot_table(root, output_path; png_path)
+    "png" in formats && !("svg" in formats) && throw(ArgumentError(
+        "PNG output requires SVG output; include both in --formats",
+    ))
+    length(positional) <= 3 || throw(ArgumentError(
+        "usage: julia helpers/make_multi_dual_mot_table.jl " *
+        "[data_root] [output.svg] [output.png] " *
+        "[--formats=svg,png,one] [--one-output=output.one]",
+    ))
+
+    (; positional, formats, one_path)
+end
+
+function main_multi_dual_mot_table(args::AbstractVector{<:AbstractString}=ARGS)
+    options = parse_multi_dual_mot_table_args(args)
+    positional = options.positional
+    formats = options.formats
+    root = isempty(positional) ? DEFAULT_ROOT : abspath(positional[1])
+    output_path = length(positional) < 2 ? joinpath(root, DEFAULT_OUTPUT_NAME) : abspath(positional[2])
+    png_path = if "png" in formats
+        length(positional) < 3 ? splitext(output_path)[1] * ".png" : abspath(positional[3])
+    else
+        nothing
+    end
+    one_path = if "one" in formats
+        isnothing(options.one_path) ? joinpath(root, DEFAULT_ONENOTE_OUTPUT_NAME) : options.one_path
+    else
+        nothing
+    end
+
+    if "svg" in formats
+        make_multi_dual_mot_table(root, output_path; png_path, one_path)
+    elseif "one" in formats
+        generate_onenote_section(root, one_path)
+    end
 end
 
 if abspath(PROGRAM_FILE) == abspath(@__FILE__) || isinteractive()
