@@ -18,7 +18,9 @@ space.
 Keyword arguments `marker`, `markersize`, `color`, `strokecolor`, and
 `strokewidth` are passed to `scatter!`. `errorlinewidth` controls the width of
 the two error segments. `markeredgeoffset` adds an optional pixel adjustment
-outside the visible marker stroke. Other keyword arguments are forwarded to
+outside the backend-adjusted visible marker stroke. GLMakie retains its full-
+stroke expansion; CairoMakie uses half-stroke expansion. The mode is selected
+from Makie's active backend when the plot is created. Other keywords go to
 `scatter!`. The marker is drawn first and the segments second, so inward
 segments remain visible on top of the marker.
 
@@ -87,6 +89,7 @@ function marker_errorbars!(
         strokewidth,
         kwargs...,
     )
+    stroke_factor = _marker_stroke_factor()
 
     segments = lift(
         ax.finallimits,
@@ -114,7 +117,7 @@ function marker_errorbars!(
             y_pixel_1, y_pixel_2 = _visible_marker_y_edges(
                 marker_i,
                 markersize_i,
-                strokewidth_i + edgeoffset_i,
+                stroke_factor * strokewidth_i + edgeoffset_i,
             )
             y_scaled = Float64(yscale(y[i]))
             y_bottom = inverse_yscale(
@@ -173,6 +176,11 @@ function marker_errorbars!(
         errorbars=error_plots,
         segments,
     )
+end
+
+function _marker_stroke_factor()
+    backend = Makie.current_backend()
+    return backend isa Module && nameof(backend) === :CairoMakie ? 0.5 : 1.0
 end
 
 function _check_scale_domain(yscale, y, yerror_low, yerror_high)

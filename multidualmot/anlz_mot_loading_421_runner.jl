@@ -39,6 +39,7 @@ plot_num_evol = dualmot_num_evol_plot_spec("MOT";
     legend_position=:rb,
     loadcfg_plot=(:DDM, :DIS, :DCS),
 )
+plot_num_evol_target = nothing
 
 for idx_runinfo_iter in ids_runinfo
     global idx_runinfo = idx_runinfo_iter
@@ -47,4 +48,5 @@ for idx_runinfo_iter in ids_runinfo
     global path_output = joinpath(path_root, runinfo.folder)
     println("Processing: $tag_head")
     include(joinpath(@__DIR__, "anlz_num_evol.jl"))
+    include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 end

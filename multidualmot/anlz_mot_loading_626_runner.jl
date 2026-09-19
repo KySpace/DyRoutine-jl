@@ -23,9 +23,11 @@ plot_cmpr_loadcfg = (
     γ_active,
     scale_num=1e7,
     formats=("svg", "png"),
-    size=(160, 150),
+    size=(275, 205),
+    frame_size=(227, 151),
     fontsize=8,
 )
+plot_cmpr_loadcfg_target = nothing
 
 for idx_runinfo_iter in ids_runinfo
     global idx_runinfo = idx_runinfo_iter

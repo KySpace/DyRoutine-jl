@@ -287,7 +287,7 @@ function dualmot_curve_style(condition::NamedTuple)
     strokecolor = RGB(Oklch(LIGHTNESS_STROKE, CHROMA_STROKE, hue))
     markercolor = RGB(Oklch(LIGHTNESS_FACE, CHROMA_FACE, hue))
     color = strokecolor
-    linewidth, strokewidth, markersize = 1.0, 0.75, 5
+    linewidth, strokewidth, markersize = 0.75, 0.75, 5
     marker = MARKER_LOADCFG[loadcfg]
     line_options = (; color, linewidth)
     marker_options = (; color=markercolor, markersize, strokecolor, strokewidth)
@@ -299,7 +299,8 @@ end
 dualmot_ratio_style(istp::Symbol; numerator::Symbol=:DCS) =
     dualmot_curve_style((; loadcfg=numerator, istp))
 
-function dualmot_axis_kwargs(; log_y::Bool=false, text_size::Real=8)
+function dualmot_axis_kwargs(; log_y::Bool=false, text_size::Real=8,
+    compact_spacing::Bool=false)
     common = (
         xgridvisible=false,
         ygridvisible=false,
@@ -316,11 +317,16 @@ function dualmot_axis_kwargs(; log_y::Bool=false, text_size::Real=8)
         xticklabelsize=text_size,
         yticklabelsize=text_size,
         titlesize=text_size,
-        xlabelpadding=2,
-        ylabelpadding=3,
-        xticklabelpad=1,
-        yticklabelpad=2,
+        spinewidth=0.75,
+        xtickwidth=0.75,
+        ytickwidth=0.75,
+        xminortickwidth=0.75,
+        yminortickwidth=0.75,
     )
+    compact_spacing && (common = merge(common, (
+        xlabelpadding=2, ylabelpadding=3,
+        xticklabelpad=1, yticklabelpad=2,
+    )))
     log_y ? merge(common, (
         yticks=LogTicks(-20:20),
         yminorticks=IntervalsBetween(10),
@@ -332,7 +338,7 @@ function dualmot_axis_kwargs(; log_y::Bool=false, text_size::Real=8)
 end
 
 const DUALMOT_LEGEND_OPTIONS = (
-    labelsize=8,
+    labelsize=22 / 3,
     patchsize=(6, 6),
     nbanks=2,
     rowgap=1,
@@ -375,10 +381,11 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
         curves=(loadcfg=loadcfg_plot, istp=:all),
         scales=(:lin, :log),
         formats=("svg", "png"),
-        size=(160, 150),
+        size=(275, 205),
+        frame_size=(227, 151),
         fontsize=8,
-        fit_size=(810, 360),
-        fit_fontsize=11,
+        fit_size=(570, 270),
+        fit_fontsize=8,
         scale_num_linear=1e7,
         xlabel=xlabel_panel,
         transform_x,

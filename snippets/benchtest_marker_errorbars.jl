@@ -1,20 +1,29 @@
-using GLMakie
+using GLMakie, CairoMakie
 
 include(joinpath(@__DIR__, "marker_errorbars.jl"))
 
-GLMakie.activate!()
+backend_name = isempty(ARGS) ? "gl" : lowercase(ARGS[1])
+if backend_name == "gl"
+    GLMakie.activate!()
+elseif backend_name == "cairo"
+    CairoMakie.activate!()
+else
+    throw(ArgumentError("backend must be gl or cairo, got $(ARGS[1])"))
+end
+@assert nameof(Makie.current_backend()) ===
+    (backend_name == "gl" ? :GLMakie : :CairoMakie)
 
 x = collect(1.0:4.0)
 markers = [:circle, :rect, :utriangle, :diamond]
-markersizes = [2, 12, 30, 50]
+markersizes = [4, 12, 30, 50]
 markercolors = Makie.wong_colors()[[2,2,2,2]]
 stroke_colors = [:black, :darkred, :darkgreen, :navy]
-tick_labels = ["circle\n2", "rect\n12", "utriangle\n30", "diamond\n50"]
+tick_labels = ["circle\n4", "rect\n12", "utriangle\n30", "diamond\n50"]
 
 linear_y = zeros(4)
 linear_error_low = [0.005, 0.018, 0.025, 0.045]
 linear_error_high = [0.008, 0.018, 0.035, 0.060]
-linear_limits = [(-0.8, 0.8), (-0.45, 0.45), (-0.10, 0.10)]
+linear_limits = [(-0.3, 0.3), (-0.45, 0.45), (-0.10, 0.10)]
 
 log_y = fill(1_000.0, 4)
 log_error_low = [50.0, 120.0, 250.0, 400.0]
@@ -143,7 +152,7 @@ function assert_marker_edges(result, ax, y)
         markersize_i = _marker_size_value(markersizes, i)
         strokewidth_i = _marker_value(strokewidths, i)
         expected_bottom, expected_top = _visible_marker_y_edges(
-            marker_i, markersize_i, strokewidth_i
+            marker_i, markersize_i, _marker_stroke_factor() * strokewidth_i
         )
         actual_bottom = (
             yscale(result.segments[][j][2]) - yscale(y[i])
@@ -200,9 +209,9 @@ catch error
 end
 @assert invalid_log_rejected
 
-path_output = isempty(ARGS) ?
-    joinpath(tempdir(), "benchtest_marker_errorbars.png") :
-    only(ARGS)
+path_output = length(ARGS) < 2 ?
+    joinpath(tempdir(), "benchtest_marker_errorbars_$(backend_name).png") :
+    ARGS[2]
 save(path_output, fig)
 println("Saved marker-errorbar bench test to: $path_output")
 

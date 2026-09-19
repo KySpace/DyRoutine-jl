@@ -38,12 +38,20 @@ reps_min, reps_max = extrema(all_n_reps)
 reps_used = reps_min == reps_max ? string(reps_min) : "$(reps_min)–$(reps_max)"
 title_plot = "$tag_head · reps = $reps_used"
 
-fig_nums = Figure(size=plot_cmpr_loadcfg.size, fontsize=plot_cmpr_loadcfg.fontsize,
-    figure_padding=1)
-ax_nums = Axis(fig_nums[1, 1]; xlabel=plot_cmpr_loadcfg.xlabel,
-    ylabel="$(plot_cmpr_loadcfg.ylabel_num) (×10⁷)", title=title_plot,
-    aspect=AxisAspect(4 / 3),
-    dualmot_axis_kwargs()...)
+fig_nums = isnothing(plot_cmpr_loadcfg_target) ?
+    Figure(size=plot_cmpr_loadcfg.size, fontsize=plot_cmpr_loadcfg.fontsize,
+        figure_padding=1) : plot_cmpr_loadcfg_target.fig
+slot_nums = isnothing(plot_cmpr_loadcfg_target) ? fig_nums[1, 1] :
+    plot_cmpr_loadcfg_target.slot
+frame_options_nums = isnothing(plot_cmpr_loadcfg_target) ?
+    (; width=plot_cmpr_loadcfg.frame_size[1],
+        height=plot_cmpr_loadcfg.frame_size[2]) :
+    (; aspect=AxisAspect(4 / 3))
+ax_nums = Axis(slot_nums; xlabel=plot_cmpr_loadcfg.xlabel,
+    ylabel="$(plot_cmpr_loadcfg.ylabel_num) (×10⁷)",
+    title=isnothing(plot_cmpr_loadcfg_target) ? title_plot : "",
+    frame_options_nums...,
+    dualmot_axis_kwargs(; compact_spacing=!isnothing(plot_cmpr_loadcfg_target))...)
 curves_nums_plot = [begin
     curve = curves_num[(loadcfg, istp)]
     style = dualmot_curve_style((; loadcfg, istp))
@@ -84,11 +92,13 @@ set_time_minor_ticks!(ax_nums)
 axislegend(ax_nums; position=:rb, DUALMOT_LEGEND_OPTIONS...)
 
 curves_ratio = Dict{Symbol, NamedTuple}()
+if isnothing(plot_cmpr_loadcfg_target)
 fig_ratio = Figure(size=plot_cmpr_loadcfg.size, fontsize=plot_cmpr_loadcfg.fontsize,
     figure_padding=1)
 ax_ratio = Axis(fig_ratio[1, 1]; xlabel=plot_cmpr_loadcfg.xlabel,
     ylabel="DCS / SCS number", title=title_plot,
-    aspect=AxisAspect(4 / 3),
+    width=plot_cmpr_loadcfg.frame_size[1],
+    height=plot_cmpr_loadcfg.frame_size[2],
     dualmot_axis_kwargs()...)
 curves_ratio_plot = NamedTuple[]
 for istp in val_istp
@@ -142,4 +152,5 @@ axislegend(ax_ratio; position=:rb, DUALMOT_LEGEND_OPTIONS...)
 for format in plot_cmpr_loadcfg.formats
     save(joinpath(path_output, "[$(plot_cmpr_loadcfg.file_head)].[$(runinfo.tag)].[nums].$format"), fig_nums)
     save(joinpath(path_output, "[$(plot_cmpr_loadcfg.file_head)].[$(runinfo.tag)].[ratio].$format"), fig_ratio)
+end
 end

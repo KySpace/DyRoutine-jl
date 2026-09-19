@@ -27,6 +27,7 @@ plot_num_evol = dualmot_lifetime_plot_spec("MOT";
     xlabel="MOT holding time (s)",
     ylabel="CMOT number",
 )
+plot_num_evol_target = nothing
 
 for idx_runinfo_iter in ids_runinfo
     global idx_runinfo = idx_runinfo_iter
@@ -36,5 +37,6 @@ for idx_runinfo_iter in ids_runinfo
     println("Processing: $tag_head")
     GC.gc() # Release figures from preceding datasets before rendering more.
     include(joinpath(@__DIR__, "anlz_num_evol.jl"))
+    include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
     include(joinpath(@__DIR__, "anlz_num_evol_decay.jl"))
 end

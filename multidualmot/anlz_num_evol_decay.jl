@@ -10,6 +10,7 @@ for (idx_panel, panel) in enumerate(val_panel)
     ax = Axis(fig[1, 1]; xlabel=plot_num_evol.xlabel(panel), ylabel=plot_num_evol.ylabel,
         title=plot_num_evol.title(tag_head, panel, reps_used),
         yscale=log10,
+        width=plot_num_evol.frame_size[1], height=plot_num_evol.frame_size[2],
         dualmot_axis_kwargs(; log_y=true, text_size=plot_num_evol.fit_fontsize)...)
     labels_fit = fig[1, 2] = GridLayout()
     curves_decay = map(enumerate(conditions_curve)) do (idx_condition, condition)
@@ -68,11 +69,11 @@ for (idx_panel, panel) in enumerate(val_panel)
                 label=curve.label)
         end
         Label(labels_fit[curve.idx_condition, 1], curve.text_fit; color=curve.style.color,
-            fontsize=11, halign=:left, justification=:left)
+            fontsize=8, halign=:left, justification=:left)
     end
     Label(labels_fit[length(conditions_curve) + 1, 1],
         "± approximate 1σ fit errors\n* parameter at bound; errors are local";
-        fontsize=9, halign=:left, justification=:left)
+        fontsize=7, halign=:left, justification=:left)
     key_x in (:t_load, :t_hold) && set_time_minor_ticks!(ax)
     axislegend(ax; position=plot_num_evol.legend_position, DUALMOT_LEGEND_OPTIONS...)
     name_output = replace(plot_num_evol.filename(:log, panel), ".[log]." => ".[fit.log].")

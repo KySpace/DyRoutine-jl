@@ -131,7 +131,7 @@ function style_key_axis(fig::Figure; width::Real, limits)
         width,
         height=58,
         halign=0.05,
-        valign=:bottom,
+        valign=0.10,
         tellwidth=false,
         tellheight=false,
         limits,
@@ -145,7 +145,7 @@ function style_key_axis(fig::Figure; width::Real, limits)
         leftspinecolor=border_color,
         topspinecolor=border_color,
         rightspinecolor=border_color,
-        spinewidth=0.6,
+        spinewidth=0.75,
         backgroundcolor=RGBAf(1, 1, 1, 0.86),
     )
 end
@@ -153,17 +153,17 @@ end
 function draw_number_style_key!(fig::Figure, loadcfgs::Tuple)
     val_istp_key = Symbol.(string.(160:164))
     pos_y = collect(5:-1:1)
-    pos_x = 1.08 .+ 0.28 .* (0:length(loadcfgs)-1)
+    pos_x = 1.10 .+ 0.34 .* (0:length(loadcfgs)-1)
     ax_key = style_key_axis(fig;
-        width=46,
-        limits=(0.65, 1.52, 0.5, 6.2),
+        width=56,
+        limits=(0.65, 1.70, 0.5, 6.2),
     )
     text!(ax_key, mean(pos_x), 5.8;
         text=join(string.(loadcfgs), "  "),
-        align=(:center, :center), fontsize=8)
+        align=(:center, :center), fontsize=22 / 3)
     for (idx_istp, istp) in enumerate(val_istp_key)
         text!(ax_key, 0.72, pos_y[idx_istp]; text=string(istp),
-            align=(:left, :center), fontsize=8)
+            align=(:left, :center), fontsize=22 / 3)
     end
     for (idx_loadcfg, loadcfg) in enumerate(loadcfgs),
         (idx_istp, istp) in enumerate(val_istp_key)
@@ -183,7 +183,7 @@ function draw_ratio_style_key!(fig::Figure)
     )
     for (idx_istp, istp) in enumerate(val_istp_key)
         text!(ax_key, 0.7, pos_y[idx_istp]; text=string(istp),
-            align=(:left, :center), fontsize=8)
+            align=(:left, :center), fontsize=22 / 3)
         style = dualmot_curve_style((; loadcfg=:DDM, istp))
         scatter!(ax_key, [1.07], [pos_y[idx_istp]];
             merge(marker_style(style; markersize=6), (; marker=:hexagon))...)
@@ -193,7 +193,7 @@ end
 
 function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denominator::Symbol;
     ylabel, title::AbstractString, filename::AbstractString)
-    fig = Figure(size=(320, 179), fontsize=8, figure_padding=1)
+    fig = Figure(size=(320, 149), fontsize=8, figure_padding=1)
     ax = Axis(fig[1, 1];
         xticks=(eachindex(val_pair), val_pair),
         xlabel="Isotope pair",

@@ -24,6 +24,7 @@ plot_num_evol_base = dualmot_num_evol_plot_spec("ODT";
     legend_position=:rt,
     loadcfg_plot=(:DDM, :DIS),
 )
+plot_num_evol_target = nothing
 
 for idx_runinfo_iter in ids_runinfo
     global idx_runinfo = idx_runinfo_iter
@@ -43,4 +44,5 @@ for idx_runinfo_iter in ids_runinfo
     println("Processing: $tag_head")
     GC.gc()
     include(joinpath(@__DIR__, "anlz_num_evol.jl"))
+    include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 end
