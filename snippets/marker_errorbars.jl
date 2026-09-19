@@ -137,6 +137,10 @@ function marker_errorbars!(
     error_plots = []
     marker_overlays = []
     overlay_kwargs = merge((; kwargs...), (; label=nothing, inspectable=false))
+    segment_autolimits = (
+        xautolimits=get(kwargs, :xautolimits, true),
+        yautolimits=get(kwargs, :yautolimits, true),
+    )
     for i in eachindex(x, y)
         segment_i = lift(points -> points[(4i - 3):(4i)], segments)
         push!(error_plots, linesegments!(
@@ -144,7 +148,9 @@ function marker_errorbars!(
             segment_i;
             color=_marker_value(strokecolor, i),
             linewidth=_marker_value(errorlinewidth, i),
+            label=nothing,
             inspectable=false,
+            segment_autolimits...,
         ))
 
         i == n && continue

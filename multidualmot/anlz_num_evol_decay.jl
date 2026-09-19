@@ -2,14 +2,15 @@
 fits_num_decay = Dict()
 figs_num_decay = Dict()
 for (idx_panel, panel) in enumerate(val_panel)
-    fig = Figure(size=(plot_num_evol.size[1] + 310, plot_num_evol.size[2]))
+    fig = Figure(size=plot_num_evol.fit_size, fontsize=plot_num_evol.fit_fontsize)
     indices_panel = Any[Colon() for _ in name_stat]
     indices_panel[idx_axis_stat[key_panel]] = idx_panel
     reps_min, reps_max = extrema(@view n_rep_stat[indices_panel...])
     reps_used = reps_min == reps_max ? string(reps_min) : "$(reps_min)–$(reps_max)"
     ax = Axis(fig[1, 1]; xlabel=plot_num_evol.xlabel(panel), ylabel=plot_num_evol.ylabel,
         title=plot_num_evol.title(tag_head, panel, reps_used),
-        yscale=log10, dualmot_axis_kwargs(; log_y=true)...)
+        yscale=log10,
+        dualmot_axis_kwargs(; log_y=true, text_size=plot_num_evol.fit_fontsize)...)
     labels_fit = fig[1, 2] = GridLayout()
     curves_decay = map(enumerate(conditions_curve)) do (idx_condition, condition)
         indices = copy(indices_panel)
@@ -47,12 +48,25 @@ for (idx_panel, panel) in enumerate(val_panel)
     end
     for curve in curves_decay
         mask_error = curve.mask_error
-        errorbars!(ax, val_x_plot[mask_error], curve.nums[mask_error],
-            curve.stds[mask_error]; curve.style.errorbar_options...)
-        scatter!(ax, val_x_plot[curve.mask], curve.nums[curve.mask];
-            curve.style.marker_options...,
-            marker=curve.style.marker,
-            label=curve.label)
+        if any(mask_error)
+            marker_errorbars!(ax,
+                val_x_plot[mask_error], curve.nums[mask_error], curve.stds[mask_error];
+                curve.style.marker_options...,
+                curve.style.errorbar_options...,
+                marker=curve.style.marker,
+                label=curve.label)
+            mask_marker_only = curve.mask .& .!mask_error
+            any(mask_marker_only) && scatter!(ax,
+                val_x_plot[mask_marker_only], curve.nums[mask_marker_only];
+                curve.style.marker_options...,
+                marker=curve.style.marker,
+                label=nothing)
+        else
+            scatter!(ax, val_x_plot[curve.mask], curve.nums[curve.mask];
+                curve.style.marker_options...,
+                marker=curve.style.marker,
+                label=curve.label)
+        end
         Label(labels_fit[curve.idx_condition, 1], curve.text_fit; color=curve.style.color,
             fontsize=11, halign=:left, justification=:left)
     end

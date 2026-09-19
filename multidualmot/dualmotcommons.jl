@@ -4,6 +4,9 @@ using Statistics: mean, std
 using CairoMakie
 using Colors: Oklch, RGB
 
+isdefined(@__MODULE__, :marker_errorbars!) ||
+    include(joinpath(@__DIR__, "..", "snippets", "marker_errorbars.jl"))
+
 const DUALMOT_VAR_SPECS = (
     β_MOT=(config="tbiasmot", convert=values -> Float64.(values)),
     t_hold=(config="t_hold", convert=values -> Float64.(values)),
@@ -284,11 +287,11 @@ function dualmot_curve_style(condition::NamedTuple)
     strokecolor = RGB(Oklch(LIGHTNESS_STROKE, CHROMA_STROKE, hue))
     markercolor = RGB(Oklch(LIGHTNESS_FACE, CHROMA_FACE, hue))
     color = strokecolor
-    linewidth, strokewidth, markersize = 2, 1.5, 11
+    linewidth, strokewidth, markersize = 1.0, 0.75, 5
     marker = MARKER_LOADCFG[loadcfg]
     line_options = (; color, linewidth)
     marker_options = (; color=markercolor, markersize, strokecolor, strokewidth)
-    errorbar_options = (; color, whiskerwidth=0, linewidth=1.2)
+    errorbar_options = (; errorlinewidth=0.75)
     (; color, markercolor, linewidth, strokecolor, strokewidth, markersize, marker,
         line_options, marker_options, errorbar_options)
 end
@@ -296,7 +299,7 @@ end
 dualmot_ratio_style(istp::Symbol; numerator::Symbol=:DCS) =
     dualmot_curve_style((; loadcfg=numerator, istp))
 
-function dualmot_axis_kwargs(; log_y::Bool=false)
+function dualmot_axis_kwargs(; log_y::Bool=false, text_size::Real=8)
     common = (
         xgridvisible=false,
         ygridvisible=false,
@@ -308,6 +311,15 @@ function dualmot_axis_kwargs(; log_y::Bool=false)
         yminortickalign=1,
         xticksmirrored=true,
         yticksmirrored=true,
+        xlabelsize=text_size,
+        ylabelsize=text_size,
+        xticklabelsize=text_size,
+        yticklabelsize=text_size,
+        titlesize=text_size,
+        xlabelpadding=2,
+        ylabelpadding=3,
+        xticklabelpad=1,
+        yticklabelpad=2,
     )
     log_y ? merge(common, (
         yticks=LogTicks(-20:20),
@@ -320,12 +332,13 @@ function dualmot_axis_kwargs(; log_y::Bool=false)
 end
 
 const DUALMOT_LEGEND_OPTIONS = (
-    labelsize=9.6,
-    patchsize=(12, 12),
-    rowgap=1.8,
-    colgap=6,
-    margin=(6, 6, 6, 6),
-    padding=(6, 6, 6, 6),
+    labelsize=8,
+    patchsize=(6, 6),
+    nbanks=2,
+    rowgap=1,
+    colgap=3,
+    margin=(2, 2, 2, 2),
+    padding=(2, 2, 2, 2),
     framevisible=false,
     backgroundcolor=:transparent,
 )
@@ -362,7 +375,10 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
         curves=(loadcfg=loadcfg_plot, istp=:all),
         scales=(:lin, :log),
         formats=("svg", "png"),
-        size=(500, 360),
+        size=(160, 150),
+        fontsize=8,
+        fit_size=(810, 360),
+        fit_fontsize=11,
         scale_num_linear=1e7,
         xlabel=xlabel_panel,
         transform_x,
@@ -370,7 +386,7 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
         yautolimits,
         ylabel,
         title=(tag, bias, reps_used) ->
-            "$tag · β_MOT = $bias · $(balance_tag(bias))-balanced · reps = $reps_used",
+            "$tag · reps = $reps_used\nβ_MOT = $bias",
         filename=(scale, bias) ->
             "[$file_head].[$scale].[$(balance_tag(bias))-balanced]",
         curve_label=condition -> "$(condition.istp) $(condition.loadcfg)",

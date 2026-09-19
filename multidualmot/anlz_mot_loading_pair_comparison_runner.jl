@@ -125,32 +125,27 @@ function draw_pair_spans!(ax::Axis)
     nothing
 end
 
-function style_key_axis(fig::Figure; width::Real, limits, xticks)
+function style_key_axis(fig::Figure; width::Real, limits)
     border_color = RGBAf(0.25, 0.25, 0.25, 0.45)
     Axis(fig[1, 1];
         width,
-        height=155,
-        halign=0.035,
+        height=58,
+        halign=0.05,
         valign=:bottom,
         tellwidth=false,
         tellheight=false,
         limits,
-        xticks,
-        yticks=(collect(5:-1:1), string.(160:164)),
-        xaxisposition=:top,
+        xticksvisible=false,
+        xticklabelsvisible=false,
+        yticksvisible=false,
+        yticklabelsvisible=false,
         xgridvisible=false,
         ygridvisible=false,
         bottomspinecolor=border_color,
         leftspinecolor=border_color,
         topspinecolor=border_color,
         rightspinecolor=border_color,
-        spinewidth=0.8,
-        xticksize=0,
-        yticksize=0,
-        xticklabelsize=10,
-        yticklabelsize=10,
-        xticklabelpad=2,
-        yticklabelpad=2,
+        spinewidth=0.6,
         backgroundcolor=RGBAf(1, 1, 1, 0.86),
     )
 end
@@ -158,17 +153,23 @@ end
 function draw_number_style_key!(fig::Figure, loadcfgs::Tuple)
     val_istp_key = Symbol.(string.(160:164))
     pos_y = collect(5:-1:1)
-    pos_x = 1 .+ 0.68 .* (0:length(loadcfgs)-1)
+    pos_x = 1.08 .+ 0.28 .* (0:length(loadcfgs)-1)
     ax_key = style_key_axis(fig;
-        width=108,
-        limits=(first(pos_x) - 0.38, last(pos_x) + 0.38, 0.5, 5.5),
-        xticks=(pos_x, string.(collect(loadcfgs))),
+        width=46,
+        limits=(0.65, 1.52, 0.5, 6.2),
     )
+    text!(ax_key, mean(pos_x), 5.8;
+        text=join(string.(loadcfgs), "  "),
+        align=(:center, :center), fontsize=8)
+    for (idx_istp, istp) in enumerate(val_istp_key)
+        text!(ax_key, 0.72, pos_y[idx_istp]; text=string(istp),
+            align=(:left, :center), fontsize=8)
+    end
     for (idx_loadcfg, loadcfg) in enumerate(loadcfgs),
         (idx_istp, istp) in enumerate(val_istp_key)
         style = dualmot_curve_style((; loadcfg, istp))
         scatter!(ax_key, [pos_x[idx_loadcfg]], [pos_y[idx_istp]];
-            marker_style(style; markersize=17)...)
+            marker_style(style; markersize=6)...)
     end
     ax_key
 end
@@ -177,27 +178,28 @@ function draw_ratio_style_key!(fig::Figure)
     val_istp_key = Symbol.(string.(160:164))
     pos_y = collect(5:-1:1)
     ax_key = style_key_axis(fig;
-        width=62,
-        limits=(0.6, 1.4, 0.5, 5.5),
-        xticks=(Float64[], String[]),
+        width=28,
+        limits=(0.65, 1.25, 0.5, 5.5),
     )
     for (idx_istp, istp) in enumerate(val_istp_key)
+        text!(ax_key, 0.7, pos_y[idx_istp]; text=string(istp),
+            align=(:left, :center), fontsize=8)
         style = dualmot_curve_style((; loadcfg=:DDM, istp))
-        scatter!(ax_key, [1.0], [pos_y[idx_istp]];
-            merge(marker_style(style; markersize=17), (; marker=:hexagon))...)
+        scatter!(ax_key, [1.07], [pos_y[idx_istp]];
+            merge(marker_style(style; markersize=6), (; marker=:hexagon))...)
     end
     ax_key
 end
 
 function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denominator::Symbol;
     ylabel, title::AbstractString, filename::AbstractString)
-    fig = Figure(size=(900, 420))
+    fig = Figure(size=(320, 179), fontsize=8, figure_padding=1)
     ax = Axis(fig[1, 1];
         xticks=(eachindex(val_pair), val_pair),
         xlabel="Isotope pair",
         ylabel,
         title,
-        dualmot_axis_kwargs()...,
+        dualmot_axis_kwargs(; text_size=8)...,
     )
     draw_pair_spans!(ax)
     for (idx_pair, pair) in enumerate(val_pair),
@@ -215,10 +217,13 @@ function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denomi
         end
         x = idx_pair
         style = dualmot_curve_style((; loadcfg=numerator, istp))
-        scatter!(ax, [x], [ratio];
-            merge(marker_style(style; markersize=17), (; marker=:hexagon))...)
-        isfinite(std_ratio) && errorbars!(ax, [x], [ratio], [std_ratio];
-            color=style.color, whiskerwidth=0, linewidth=1.2)
+        marker_options = merge(marker_style(style; markersize=6), (; marker=:hexagon))
+        if isfinite(std_ratio)
+            marker_errorbars!(ax, [x], [ratio], [std_ratio];
+                marker_options..., errorlinewidth=0.75)
+        else
+            scatter!(ax, [x], [ratio]; marker_options...)
+        end
     end
     ylims!(ax, 0, nothing)
     draw_ratio_style_key!(fig)
@@ -230,14 +235,14 @@ end
 
 function draw_pair_numbers(points_by_pair::AbstractDict, loadcfgs::Tuple;
     ylabel, title::AbstractString, filename::AbstractString)
-    fig = Figure(size=(980, 420))
+    fig = Figure(size=(320, 164), fontsize=8, figure_padding=1)
     ax = Axis(fig[1, 1];
         xticks=(eachindex(val_pair), val_pair),
         xlabel="Isotope pair",
         ylabel,
         title,
         yscale=log10,
-        dualmot_axis_kwargs(; log_y=true)...,
+        dualmot_axis_kwargs(; log_y=true, text_size=8)...,
     )
     draw_pair_spans!(ax)
     for (idx_pair, pair) in enumerate(val_pair)
@@ -249,10 +254,13 @@ function draw_pair_numbers(points_by_pair::AbstractDict, loadcfgs::Tuple;
                 throw(ArgumentError("$pair $key: number must be finite and positive"))
             x = idx_pair
             style = dualmot_curve_style((; loadcfg, istp))
-            scatter!(ax, [x], [point.num]; marker_style(style; markersize=17)...)
-            isfinite(point.std) && point.num - point.std > 0 &&
-                errorbars!(ax, [x], [point.num], [point.std];
-                    color=style.color, whiskerwidth=0, linewidth=1.2)
+            marker_options = marker_style(style; markersize=6)
+            if isfinite(point.std) && point.num - point.std > 0
+                marker_errorbars!(ax, [x], [point.num], [point.std];
+                    marker_options..., errorlinewidth=0.75)
+            else
+                scatter!(ax, [x], [point.num]; marker_options...)
+            end
         end
     end
     ylims!(ax, 0.5e6, nothing)

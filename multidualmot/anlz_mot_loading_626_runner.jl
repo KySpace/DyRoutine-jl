@@ -23,7 +23,8 @@ plot_cmpr_loadcfg = (
     γ_active,
     scale_num=1e7,
     formats=("svg", "png"),
-    size=(500, 360),
+    size=(160, 150),
+    fontsize=8,
 )
 
 for idx_runinfo_iter in ids_runinfo

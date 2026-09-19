@@ -38,9 +38,11 @@ reps_min, reps_max = extrema(all_n_reps)
 reps_used = reps_min == reps_max ? string(reps_min) : "$(reps_min)–$(reps_max)"
 title_plot = "$tag_head · reps = $reps_used"
 
-fig_nums = Figure(size=plot_cmpr_loadcfg.size)
+fig_nums = Figure(size=plot_cmpr_loadcfg.size, fontsize=plot_cmpr_loadcfg.fontsize,
+    figure_padding=1)
 ax_nums = Axis(fig_nums[1, 1]; xlabel=plot_cmpr_loadcfg.xlabel,
     ylabel="$(plot_cmpr_loadcfg.ylabel_num) (×10⁷)", title=title_plot,
+    aspect=AxisAspect(4 / 3),
     dualmot_axis_kwargs()...)
 curves_nums_plot = [begin
     curve = curves_num[(loadcfg, istp)]
@@ -55,21 +57,38 @@ for curve_plot in curves_nums_plot
 end
 for curve_plot in curves_nums_plot
     mask_error = curve_plot.mask_error
-    errorbars!(ax_nums, val_t_load_plot[mask_error], curve_plot.nums_plot[mask_error],
-        curve_plot.curve.stds[mask_error] ./ plot_cmpr_loadcfg.scale_num;
-        curve_plot.style.errorbar_options...)
-    scatter!(ax_nums, val_t_load_plot, curve_plot.nums_plot;
-        curve_plot.style.marker_options...,
-        marker=curve_plot.style.marker,
-        label="$(curve_plot.istp) $(curve_plot.loadcfg)")
+    mask_marker = isfinite.(curve_plot.nums_plot)
+    label = "$(curve_plot.istp) $(curve_plot.loadcfg)"
+    if any(mask_error)
+        marker_errorbars!(ax_nums,
+            val_t_load_plot[mask_error], curve_plot.nums_plot[mask_error],
+            curve_plot.curve.stds[mask_error] ./ plot_cmpr_loadcfg.scale_num;
+            curve_plot.style.marker_options...,
+            curve_plot.style.errorbar_options...,
+            marker=curve_plot.style.marker,
+            label)
+        mask_marker_only = mask_marker .& .!mask_error
+        any(mask_marker_only) && scatter!(ax_nums,
+            val_t_load_plot[mask_marker_only], curve_plot.nums_plot[mask_marker_only];
+            curve_plot.style.marker_options...,
+            marker=curve_plot.style.marker,
+            label=nothing)
+    else
+        scatter!(ax_nums, val_t_load_plot[mask_marker], curve_plot.nums_plot[mask_marker];
+            curve_plot.style.marker_options...,
+            marker=curve_plot.style.marker,
+            label)
+    end
 end
 set_time_minor_ticks!(ax_nums)
 axislegend(ax_nums; position=:rb, DUALMOT_LEGEND_OPTIONS...)
 
 curves_ratio = Dict{Symbol, NamedTuple}()
-fig_ratio = Figure(size=plot_cmpr_loadcfg.size)
+fig_ratio = Figure(size=plot_cmpr_loadcfg.size, fontsize=plot_cmpr_loadcfg.fontsize,
+    figure_padding=1)
 ax_ratio = Axis(fig_ratio[1, 1]; xlabel=plot_cmpr_loadcfg.xlabel,
     ylabel="DCS / SCS number", title=title_plot,
+    aspect=AxisAspect(4 / 3),
     dualmot_axis_kwargs()...)
 curves_ratio_plot = NamedTuple[]
 for istp in val_istp
@@ -94,12 +113,28 @@ for curve_plot in curves_ratio_plot
 end
 for curve_plot in curves_ratio_plot
     mask_error = curve_plot.mask_error
-    errorbars!(ax_ratio, val_t_load_plot[mask_error], curve_plot.ratios[mask_error],
-        curve_plot.stds[mask_error]; curve_plot.style.errorbar_options...)
-    scatter!(ax_ratio, val_t_load_plot, curve_plot.ratios;
-        curve_plot.style.marker_options...,
-        marker=curve_plot.style.marker,
-        label=string(curve_plot.istp))
+    mask_marker = isfinite.(curve_plot.ratios)
+    label = string(curve_plot.istp)
+    if any(mask_error)
+        marker_errorbars!(ax_ratio,
+            val_t_load_plot[mask_error], curve_plot.ratios[mask_error],
+            curve_plot.stds[mask_error];
+            curve_plot.style.marker_options...,
+            curve_plot.style.errorbar_options...,
+            marker=curve_plot.style.marker,
+            label)
+        mask_marker_only = mask_marker .& .!mask_error
+        any(mask_marker_only) && scatter!(ax_ratio,
+            val_t_load_plot[mask_marker_only], curve_plot.ratios[mask_marker_only];
+            curve_plot.style.marker_options...,
+            marker=curve_plot.style.marker,
+            label=nothing)
+    else
+        scatter!(ax_ratio, val_t_load_plot[mask_marker], curve_plot.ratios[mask_marker];
+            curve_plot.style.marker_options...,
+            marker=curve_plot.style.marker,
+            label)
+    end
 end
 set_time_minor_ticks!(ax_ratio)
 axislegend(ax_ratio; position=:rb, DUALMOT_LEGEND_OPTIONS...)

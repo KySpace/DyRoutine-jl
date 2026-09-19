@@ -93,7 +93,8 @@ allunique(names_output) || throw(ArgumentError("$tag_head: plot filenames collid
 figs_num_evol = Dict{Tuple{Any, Symbol}, Figure}()
 for (idx_panel, panel) in enumerate(val_panel), scale in plot_num_evol.scales
     scale_num = scale == :lin ? plot_num_evol.scale_num_linear : 1.0
-    fig = Figure(size=plot_num_evol.size)
+    fig = Figure(size=plot_num_evol.size, fontsize=plot_num_evol.fontsize,
+        figure_padding=1)
     indices_panel = Any[Colon() for _ in name_stat]
     isnothing(key_panel) || (indices_panel[idx_axis_stat[key_panel]] = idx_panel)
     reps_panel = vec(@view n_rep_stat[indices_panel...])
@@ -103,6 +104,7 @@ for (idx_panel, panel) in enumerate(val_panel), scale in plot_num_evol.scales
         ylabel=scale == :lin ? "$(plot_num_evol.ylabel) (×10⁷)" : plot_num_evol.ylabel,
         title=plot_num_evol.title(tag_head, panel, reps_used),
         yscale=scale == :log ? log10 : identity,
+        aspect=AxisAspect(4 / 3),
         dualmot_axis_kwargs(; log_y=scale == :log)...)
 
     curves_plot = map(conditions_curve) do condition
@@ -148,16 +150,34 @@ for (idx_panel, panel) in enumerate(val_panel), scale in plot_num_evol.scales
     end
     for curve in curves_plot
         mask_error = curve.mask_error
-        scatter!(ax, curve.val_x_curve, curve.nums_plot;
-            curve.style.marker_options...,
-            marker=curve.style.marker,
-            xautolimits=curve.xautolimits,
-            yautolimits=curve.yautolimits,
-            label=plot_num_evol.curve_label(curve.condition))
-        errorbars!(ax, curve.val_x_curve[mask_error], curve.nums[mask_error] ./ scale_num,
-            curve.stds[mask_error] ./ scale_num;
-            curve.style.errorbar_options...,
-            xautolimits=curve.xautolimits, yautolimits=curve.yautolimits)
+        mask_marker = isfinite.(curve.nums_plot)
+        label = plot_num_evol.curve_label(curve.condition)
+        if any(mask_error)
+            marker_errorbars!(ax,
+                curve.val_x_curve[mask_error], curve.nums_plot[mask_error],
+                curve.stds[mask_error] ./ scale_num;
+                curve.style.marker_options...,
+                curve.style.errorbar_options...,
+                marker=curve.style.marker,
+                xautolimits=curve.xautolimits,
+                yautolimits=curve.yautolimits,
+                label)
+            mask_marker_only = mask_marker .& .!mask_error
+            any(mask_marker_only) && scatter!(ax,
+                curve.val_x_curve[mask_marker_only], curve.nums_plot[mask_marker_only];
+                curve.style.marker_options...,
+                marker=curve.style.marker,
+                xautolimits=curve.xautolimits,
+                yautolimits=curve.yautolimits,
+                label=nothing)
+        else
+            scatter!(ax, curve.val_x_curve[mask_marker], curve.nums_plot[mask_marker];
+                curve.style.marker_options...,
+                marker=curve.style.marker,
+                xautolimits=curve.xautolimits,
+                yautolimits=curve.yautolimits,
+                label)
+        end
     end
     key_x in (:t_load, :t_hold) && set_time_minor_ticks!(ax)
     axislegend(ax; position=plot_num_evol.legend_position, DUALMOT_LEGEND_OPTIONS...)
