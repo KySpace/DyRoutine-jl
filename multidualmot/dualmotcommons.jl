@@ -370,6 +370,7 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
     legend_position::Symbol=:rt,
     loadcfg_plot::Tuple=(:DDM, :DIS),
     ylabel::AbstractString="CMOT number",
+    limits_linear=nothing,
 )
     isfinite(scale_x) && scale_x > 0 ||
         throw(ArgumentError("scale_x must be finite and positive, got $scale_x"))
@@ -392,6 +393,7 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
         xautolimits,
         yautolimits,
         ylabel,
+        limits_linear,
         title=(tag, bias, reps_used) ->
             "$tag · reps = $reps_used\nβ_MOT = $bias",
         filename=(scale, bias) ->

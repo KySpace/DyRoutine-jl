@@ -46,6 +46,9 @@ for idx_runinfo_iter in ids_runinfo
     global runinfo = runinfos[idx_runinfo]
     global tag_head = "$(runinfo.folder) $(runinfo.tag)"
     global path_output = joinpath(path_root, runinfo.folder)
+    global plot_num_evol = merge(plot_num_evol, (;
+        limits_linear=isdefined(@__MODULE__, :limits_loading_linear) ?
+            get(limits_loading_linear, runinfo.folder, nothing) : nothing))
     println("Processing: $tag_head")
     include(joinpath(@__DIR__, "anlz_num_evol.jl"))
     include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))

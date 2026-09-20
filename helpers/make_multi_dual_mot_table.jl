@@ -116,7 +116,7 @@ function collect_entries(parent_dirs::AbstractVector{<:AbstractString},
     entries
 end
 
-function cell_layout(cell_entries::AbstractVector{SvgEntry})
+function cell_layout(cell_entries::AbstractVector{SvgEntry}, parent_name::AbstractString)
     isempty(cell_entries) && return (
         styles=String[], subvariants=String[], widths=Float64[], heights=Float64[],
         width=0.0, height=0.0,
@@ -124,6 +124,12 @@ function cell_layout(cell_entries::AbstractVector{SvgEntry})
 
     styles = sort!(unique(entry.style_tag for entry in cell_entries); by=lowercase)
     subvariants = sort!(unique(entry.subvariant_tag for entry in cell_entries); by=lowercase)
+    if parent_name in ("MOT loading 421", "MOT loading 626",
+                       "MOT lifetime", "CMOT lifetime")
+        order_balance = ("t-balanced", "n-balanced")
+        sort!(subvariants;
+            by=tag -> (something(findfirst(==(tag), order_balance), 3), lowercase(tag)))
+    end
     widths = [maximum((entry.width for entry in cell_entries if entry.style_tag == tag);
                       init=0.0) for tag in styles]
     heights = [maximum((entry.height for entry in cell_entries if entry.subvariant_tag == tag);
@@ -282,6 +288,7 @@ function make_multi_dual_mot_table(root::AbstractString, output_path::AbstractSt
     layouts = Dict(
         (parent_name, pair_name) => cell_layout(
             get(entries, (parent_name, pair_name), SvgEntry[]),
+            parent_name,
         )
         for parent_name in parent_names for pair_name in pair_names
     )

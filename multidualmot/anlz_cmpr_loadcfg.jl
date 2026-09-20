@@ -36,7 +36,7 @@ Set(keys(curves_num)) == expected_curves ||
 all_n_reps = vcat((curve.n_reps for curve in values(curves_num))...)
 reps_min, reps_max = extrema(all_n_reps)
 reps_used = reps_min == reps_max ? string(reps_min) : "$(reps_min)–$(reps_max)"
-title_plot = "$tag_head · reps = $reps_used"
+title_plot = "$tag_head · reps = $reps_used\nβ_MOT = 0.0"
 
 fig_nums = isnothing(plot_cmpr_loadcfg_target) ?
     Figure(size=plot_cmpr_loadcfg.size, fontsize=plot_cmpr_loadcfg.fontsize,
@@ -47,18 +47,22 @@ frame_options_nums = isnothing(plot_cmpr_loadcfg_target) ?
     (; width=plot_cmpr_loadcfg.frame_size[1],
         height=plot_cmpr_loadcfg.frame_size[2]) :
     (; aspect=AxisAspect(4 / 3))
+axis_options_nums = dualmot_axis_kwargs(;
+    compact_spacing=!isnothing(plot_cmpr_loadcfg_target))
+!isnothing(plot_cmpr_loadcfg_target) &&
+    (axis_options_nums = merge(axis_options_nums, plot_cmpr_loadcfg_target.axis_options))
 ax_nums = Axis(slot_nums; xlabel=plot_cmpr_loadcfg.xlabel,
-    ylabel="$(plot_cmpr_loadcfg.ylabel_num) (×10⁷)",
+    ylabel="$(plot_cmpr_loadcfg.ylabel_num) (10⁷)",
     title=isnothing(plot_cmpr_loadcfg_target) ? title_plot : "",
     frame_options_nums...,
-    dualmot_axis_kwargs(; compact_spacing=!isnothing(plot_cmpr_loadcfg_target))...)
+    axis_options_nums...)
 curves_nums_plot = [begin
     curve = curves_num[(loadcfg, istp)]
     style = dualmot_curve_style((; loadcfg, istp))
     nums_plot = curve.nums ./ plot_cmpr_loadcfg.scale_num
     mask_error = isfinite.(curve.nums) .& isfinite.(curve.stds)
     (; loadcfg, istp, curve, style, nums_plot, mask_error)
-end for loadcfg in (:DCS, :SCS) for istp in val_istp]
+end for loadcfg in (:SCS, :DCS) for istp in val_istp]
 for curve_plot in curves_nums_plot
     lines!(ax_nums, val_t_load_plot, curve_plot.nums_plot;
         curve_plot.style.line_options...)
@@ -88,7 +92,22 @@ for curve_plot in curves_nums_plot
             label)
     end
 end
-set_time_minor_ticks!(ax_nums)
+if isnothing(plot_cmpr_loadcfg_target)
+    set_time_minor_ticks!(ax_nums)
+    !isnothing(limits_linear_cmpr) && begin
+        xlims!(ax_nums, limits_linear_cmpr.x...)
+        ylims!(ax_nums, limits_linear_cmpr.y...)
+    end
+else
+    for loadcfg in (:DIS, :DDM), istp in val_istp
+        style = dualmot_curve_style((; loadcfg, istp))
+        scatter!(ax_nums, Float64[], Float64[];
+            style.marker_options..., marker=style.marker,
+            label="$(istp) $loadcfg")
+    end
+    xlims!(ax_nums, plot_cmpr_loadcfg_target.limits.x...)
+    ylims!(ax_nums, plot_cmpr_loadcfg_target.limits.y...)
+end
 axislegend(ax_nums; position=:rb, DUALMOT_LEGEND_OPTIONS...)
 
 curves_ratio = Dict{Symbol, NamedTuple}()

@@ -11,6 +11,14 @@ num_max_num = 2e8
 fig_result = Figure(size=(325, 300), fontsize=8, figure_padding=1)
 colgap!(fig_result.layout, 0)
 rowgap!(fig_result.layout, 0)
+axis_options_ticks = (xticksize=10 / 3, yticksize=10 / 3,
+    xminorticksize=2, yminorticksize=2)
+axis_options_numbers = merge(axis_options_ticks,
+    (yticks=0:5:10, yminorticks=IntervalsBetween(5)))
+axis_options_loading = merge(axis_options_numbers,
+    (xticks=0:5:20, xminorticks=IntervalsBetween(2),
+        xminorticksvisible=true))
+limits_loading = (x=(-0.5, 18.0), y=(0.0, 11.5))
 
 # 421 loading, zero-bias panel.
 path_root = joinpath(path_data, "MOT loading 421")
@@ -28,7 +36,8 @@ plot_num_evol = dualmot_num_evol_plot_spec("MOT";
     legend_position=:rb,
     loadcfg_plot=(:DDM, :DIS, :DCS))
 plot_num_evol_target = (fig=fig_result, slot=fig_result[1, 1],
-    panel=0.0, scale=:lin)
+    panel=0.0, scale=:lin, axis_options=axis_options_loading,
+    limits=limits_loading, show_legend=false)
 include(joinpath(@__DIR__, "anlz_num_evol.jl"))
 include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 
@@ -49,7 +58,8 @@ plot_cmpr_loadcfg = (
     frame_size=(227, 151),
     fontsize=8,
 )
-plot_cmpr_loadcfg_target = (fig=fig_result, slot=fig_result[1, 2])
+plot_cmpr_loadcfg_target = (fig=fig_result, slot=fig_result[1, 2],
+    axis_options=axis_options_loading, limits=limits_loading)
 include(joinpath(@__DIR__, "anlz_cmpr_loadcfg.jl"))
 
 # CMOT lifetime, zero-bias panel.
@@ -66,7 +76,10 @@ plot_num_evol = dualmot_lifetime_plot_spec("CMOT";
     xlabel="CMOT holding time (s)",
     ylabel="CMOT number")
 plot_num_evol_target = (fig=fig_result, slot=fig_result[2, 1],
-    panel=0.0, scale=:lin)
+    panel=0.0, scale=:lin,
+    axis_options=merge(axis_options_numbers,
+        (xminorticks=IntervalsBetween(2), xminorticksvisible=true)),
+    limits=(x=nothing, y=(0.0, 11.5)), show_legend=false)
 include(joinpath(@__DIR__, "anlz_num_evol.jl"))
 include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 
@@ -87,7 +100,8 @@ plot_num_evol = merge(dualmot_num_evol_plot_spec("ODT";
     loadcfg_plot=(:DDM, :DIS)),
     (key_panel=nothing,))
 plot_num_evol_target = (fig=fig_result, slot=fig_result[2, 2],
-    panel=nothing, scale=:lin)
+    panel=nothing, scale=:lin, axis_options=axis_options_ticks,
+    limits=nothing, show_legend=false)
 include(joinpath(@__DIR__, "anlz_num_evol.jl"))
 include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 

@@ -79,9 +79,9 @@ end
 conditions_curve = vec([NamedTuple{keys_curve}(reverse(Tuple(values)))
     for values in Iterators.product(reverse(vals_curve)...)])
 if :loadcfg in keys_curve
-    # Stable ordering preserves isotope order while keeping DIS/SCS visible at coincident points.
+    order_loadcfg = (:SCS, :DCS, :DIS, :DDM)
     sort!(conditions_curve;
-        by=condition -> getproperty(condition, :loadcfg) in (:DIS, :SCS) ? 1 : 0,
+        by=condition -> findfirst(==(getproperty(condition, :loadcfg)), order_loadcfg),
         alg=Base.Sort.MergeSort)
 end
 idx_axis_stat = Dict(key => idx for (idx, key) in enumerate(name_stat))

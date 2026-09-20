@@ -26,14 +26,17 @@ for (idx_panel, panel, scale) in jobs_num_evol
     reps_panel = vec(@view n_rep_stat[indices_panel...])
     reps_min, reps_max = extrema(reps_panel)
     reps_used = reps_min == reps_max ? string(reps_min) : "$(reps_min)–$(reps_max)"
+    axis_options = dualmot_axis_kwargs(; log_y=scale == :log,
+        compact_spacing=!isnothing(plot_num_evol_target))
+    !isnothing(plot_num_evol_target) &&
+        (axis_options = merge(axis_options, plot_num_evol_target.axis_options))
     ax = Axis(slot; xlabel=plot_num_evol.xlabel(panel),
-        ylabel=scale == :lin ? "$(plot_num_evol.ylabel) (×10⁷)" : plot_num_evol.ylabel,
+        ylabel=scale == :lin ? "$(plot_num_evol.ylabel) (10⁷)" : plot_num_evol.ylabel,
         title=isnothing(plot_num_evol_target) ?
             plot_num_evol.title(tag_head, panel, reps_used) : "",
         yscale=scale == :log ? log10 : identity,
         frame_options...,
-        dualmot_axis_kwargs(; log_y=scale == :log,
-            compact_spacing=!isnothing(plot_num_evol_target))...)
+        axis_options...)
 
     curves_plot = map(conditions_curve) do condition
         indices = Any[Colon() for _ in name_stat]
@@ -107,8 +110,23 @@ for (idx_panel, panel, scale) in jobs_num_evol
                 label)
         end
     end
-    key_x in (:t_load, :t_hold) && set_time_minor_ticks!(ax)
-    axislegend(ax; position=plot_num_evol.legend_position, DUALMOT_LEGEND_OPTIONS...)
+    if isnothing(plot_num_evol_target)
+        key_x in (:t_load, :t_hold) && set_time_minor_ticks!(ax)
+        if scale == :lin && !isnothing(plot_num_evol.limits_linear) && iszero(panel)
+            xlims!(ax, plot_num_evol.limits_linear.x...)
+            ylims!(ax, plot_num_evol.limits_linear.y...)
+        end
+        axislegend(ax; position=plot_num_evol.legend_position, DUALMOT_LEGEND_OPTIONS...)
+    else
+        if !isnothing(plot_num_evol_target.limits)
+            xlimits = plot_num_evol_target.limits.x
+            ylimits = plot_num_evol_target.limits.y
+            isnothing(xlimits) || xlims!(ax, xlimits...)
+            isnothing(ylimits) || ylims!(ax, ylimits...)
+        end
+        plot_num_evol_target.show_legend &&
+            axislegend(ax; position=plot_num_evol.legend_position, DUALMOT_LEGEND_OPTIONS...)
+    end
     if isnothing(plot_num_evol_target)
         name_output = plot_num_evol.filename(scale, panel)
         for format in plot_num_evol.formats

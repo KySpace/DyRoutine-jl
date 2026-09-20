@@ -282,12 +282,12 @@ fig_ratio_dcs_scs = draw_pair_ratio(points_626, :DCS, :SCS;
     title="MOT loading 626 · final acquired point",
     filename="[MOT.loading.pairs].[DCS-SCS].[ratio]",
 )
-fig_nums_ddm_dis = draw_pair_numbers(points_421, (:DDM, :DIS);
+fig_nums_ddm_dis = draw_pair_numbers(points_421, (:DIS, :DDM);
     ylabel=rich("N", subscript("DDM"), ", N", subscript("DIS")),
     title="MOT loading 421 · final acquired point · β_MOT = 0",
     filename="[MOT.loading.pairs].[DDM-DIS].[nums]",
 )
-fig_nums_dcs_scs = draw_pair_numbers(points_626, (:DCS, :SCS);
+fig_nums_dcs_scs = draw_pair_numbers(points_626, (:SCS, :DCS);
     ylabel=rich("N", subscript("DCS"), ", N", subscript("SCS")),
     title="MOT loading 626 · final acquired point",
     filename="[MOT.loading.pairs].[DCS-SCS].[nums]",

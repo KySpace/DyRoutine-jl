@@ -34,6 +34,8 @@ for idx_runinfo_iter in ids_runinfo
     global runinfo = runinfos[idx_runinfo]
     global tag_head = "$(runinfo.folder) $(runinfo.tag)"
     global path_output = joinpath(path_root, runinfo.folder)
+    global limits_linear_cmpr = isdefined(@__MODULE__, :limits_loading_linear) ?
+        get(limits_loading_linear, runinfo.folder, nothing) : nothing
     println("Processing: $tag_head")
     include(joinpath(@__DIR__, "anlz_cmpr_loadcfg.jl"))
 end

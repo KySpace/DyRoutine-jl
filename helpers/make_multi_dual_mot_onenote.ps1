@@ -180,6 +180,11 @@ function Add-ImageTable {
 
     $styles = @($entryArray.StyleTag | Sort-Object -Unique)
     $subvariants = @($entryArray.SubvariantTag | Sort-Object -Unique)
+    if ($CellLabel -match '^(MOT loading|MOT lifetime|CMOT lifetime)') {
+        $balanceOrder = @('t-balanced', 'n-balanced')
+        $subvariants = @($balanceOrder | Where-Object { $_ -in $subvariants }) +
+            @($subvariants | Where-Object { $_ -notin $balanceOrder })
+    }
     $entryLookup = @{}
     foreach ($entry in $entryArray) {
         $key = "$($entry.StyleTag)`n$($entry.SubvariantTag)"
