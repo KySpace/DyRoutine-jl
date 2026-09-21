@@ -28,6 +28,28 @@ function gen_clrmap_posneg_nonlin(hue_pos, hue_neg; thres_alpha=0.6, alpha_base=
     ]
 end
 
+function to_miscibility_clr(dens1, dens2, hue1, hue2;
+    max=16,
+    to_norm_each=false,
+    thres_alpha=0.1,
+    alpha_base=0.1,
+)
+    size(dens1) == size(dens2) ||
+        throw(ArgumentError("dens1 and dens2 must have the same size"))
+    norm = to_norm_each ? (d -> d ./ maximum(d)) : (d -> clamp.(d, 0, max) / max)
+    alpha = t -> abs(t) > thres_alpha ? 1.0 :
+        (abs(t) / thres_alpha * (1 - alpha_base) + alpha_base)
+    dens_norm_1, dens_norm_2 = (dens1, dens2) |> ds -> map(norm, ds)
+    shader = (a, b) -> Oklch(
+        1 - (a + b) / 2,
+        abs(a - b) * 0.24,
+        a > b ? hue1 : hue2,
+    ) |> c -> RGBAf(c, alpha(a + b))
+    [shader(dens_norm_1[x, y], dens_norm_2[x, y])
+        for x in axes(dens1, 1), y in axes(dens1, 2)]
+end
+
+
 function clear_axes!(axs)
     for obj in axs
         obj isa Axis && empty!(obj)
