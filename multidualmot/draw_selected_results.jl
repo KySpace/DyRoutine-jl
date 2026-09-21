@@ -18,7 +18,8 @@ axis_options_numbers = merge(axis_options_ticks,
 axis_options_loading = merge(axis_options_numbers,
     (xticks=0:5:20, xminorticks=IntervalsBetween(2),
         xminorticksvisible=true))
-limits_loading = (x=(-0.5, 18.0), y=(0.0, 11.5))
+limits_loading = (x=nothing, y=(0.0, 11.5))
+mask_loading_time = values -> values .!= 40.0
 
 # 421 loading, zero-bias panel.
 path_root = joinpath(path_data, "MOT loading 421")
@@ -34,10 +35,11 @@ plot_num_evol = dualmot_num_evol_plot_spec("MOT";
     file_head="MOT.loading.421",
     transform_x=(values, condition, panel, idx_istp) -> values .* γ_active,
     legend_position=:rb,
-    loadcfg_plot=(:DDM, :DIS, :DCS))
+    loadcfg_plot=(:DDM, :DIS, :DCS),
+    ylabel="CMOT N")
 plot_num_evol_target = (fig=fig_result, slot=fig_result[1, 1],
     panel=0.0, scale=:lin, axis_options=axis_options_loading,
-    limits=limits_loading, show_legend=false)
+    limits=limits_loading, show_legend=false, mask_x=mask_loading_time)
 include(joinpath(@__DIR__, "anlz_num_evol.jl"))
 include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 
@@ -50,7 +52,7 @@ tag_head = "$(runinfo.folder) $(runinfo.tag)"
 plot_cmpr_loadcfg = (
     file_head="MOT.loading.626",
     xlabel="Effective loading time (s)",
-    ylabel_num="CMOT number",
+    ylabel_num="CMOT N",
     γ_active,
     scale_num=1e7,
     formats=("svg", "png"),
@@ -59,7 +61,8 @@ plot_cmpr_loadcfg = (
     fontsize=8,
 )
 plot_cmpr_loadcfg_target = (fig=fig_result, slot=fig_result[1, 2],
-    axis_options=axis_options_loading, limits=limits_loading)
+    axis_options=axis_options_loading, limits=limits_loading,
+    mask_x=mask_loading_time)
 include(joinpath(@__DIR__, "anlz_cmpr_loadcfg.jl"))
 
 # CMOT lifetime, zero-bias panel.
@@ -74,12 +77,13 @@ plot_num_evol = dualmot_lifetime_plot_spec("CMOT";
     key_x=:t_hold,
     scale_x=1000,
     xlabel="CMOT holding time (s)",
-    ylabel="CMOT number")
+    ylabel="CMOT N")
 plot_num_evol_target = (fig=fig_result, slot=fig_result[2, 1],
     panel=0.0, scale=:lin,
     axis_options=merge(axis_options_numbers,
         (xminorticks=IntervalsBetween(2), xminorticksvisible=true)),
-    limits=(x=nothing, y=(0.0, 11.5)), show_legend=false)
+    limits=(x=nothing, y=(0.0, 11.5)), show_legend=false,
+    mask_x=values -> trues(length(values)))
 include(joinpath(@__DIR__, "anlz_num_evol.jl"))
 include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 
@@ -95,13 +99,14 @@ bounds_sigmay_num = (1e-4, 5e-4)
 plot_num_evol = merge(dualmot_num_evol_plot_spec("ODT";
     key_x=:ib,
     xlabel="B field current in z (A)",
-    ylabel="ODT number",
+    ylabel="ODT N",
     file_head="ODT.BField",
     loadcfg_plot=(:DDM, :DIS)),
     (key_panel=nothing,))
 plot_num_evol_target = (fig=fig_result, slot=fig_result[2, 2],
     panel=nothing, scale=:lin, axis_options=axis_options_ticks,
-    limits=nothing, show_legend=false)
+    limits=nothing, show_legend=false,
+    mask_x=values -> trues(length(values)))
 include(joinpath(@__DIR__, "anlz_num_evol.jl"))
 include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 
