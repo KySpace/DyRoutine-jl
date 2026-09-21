@@ -301,3 +301,5 @@ fig_nums_dcs_scs = draw_pair_numbers(points_626, (:SCS, :DCS);
     title="MOT loading 626 · 30 sec loading · β_MOT = 0",
     filename="[MOT.loading.pairs].[DCS-SCS].[nums]",
 )
+
+include(joinpath(@__DIR__, "anlz_lifetime_pair_comparison.jl"))

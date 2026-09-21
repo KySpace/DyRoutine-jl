@@ -3,6 +3,8 @@ using MAT
 using Statistics: mean, std
 using CairoMakie
 using Colors: Oklch, RGB
+using Dates
+using JLD2
 
 isdefined(@__MODULE__, :marker_errorbars!) ||
     include(joinpath(@__DIR__, "..", "snippets", "marker_errorbars.jl"))
@@ -554,4 +556,44 @@ function label_num_decay(result)
         p[1], e[1], p[2], e[2], suffix)
     @sprintf("N₀ = %.2e ± %.1e\nτ = %.3g ± %.2g s%s",
         p[1], e[1], p[2], e[2], suffix)
+end
+
+function save_num_decay_results(path_root::AbstractString, dataset::AbstractString,
+    fit_mode::Symbol, records::AbstractVector)
+    isempty(records) && throw(ArgumentError("cannot save an empty $dataset decay-fit result"))
+    path_results = joinpath(path_root, "Fit results")
+    mkpath(path_results)
+    created_at = Dates.now()
+    stamp = Dates.format(created_at, dateformat"yyyymmdd-HHMMSS") * "-" *
+        lpad(string(Dates.millisecond(created_at)), 3, '0')
+    path = joinpath(path_results, "[$dataset.decay.fit].[$stamp].jld2")
+    JLD2.jldsave(path;
+        schema_version=1,
+        dataset,
+        fit_mode,
+        created_at=string(created_at),
+        records=collect(records),
+    )
+    println("Saved $dataset decay fits to $path")
+    path
+end
+
+function load_latest_num_decay_results(path_root::AbstractString, dataset::AbstractString)
+    path_results = joinpath(path_root, "Fit results")
+    isdir(path_results) ||
+        throw(ArgumentError("$dataset decay-fit folder does not exist: $path_results"))
+    prefix = "[$dataset.decay.fit]."
+    paths = filter(readdir(path_results; join=true)) do path
+        isfile(path) && startswith(basename(path), prefix) && endswith(path, ".jld2")
+    end
+    isempty(paths) && throw(ArgumentError("no $dataset decay-fit JLD2 files in $path_results"))
+    path = paths[argmax(mtime.(paths))]
+    payload = JLD2.load(path)
+    get(payload, "schema_version", nothing) == 1 ||
+        throw(ArgumentError("unsupported decay-fit schema in $path"))
+    get(payload, "dataset", nothing) == dataset ||
+        throw(ArgumentError("expected $dataset decay fits in $path"))
+    records = get(payload, "records", nothing)
+    records isa AbstractVector || throw(ArgumentError("missing decay-fit records in $path"))
+    (; path, fit_mode=Symbol(payload["fit_mode"]), records)
 end

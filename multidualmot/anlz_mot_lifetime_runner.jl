@@ -26,6 +26,7 @@ plot_num_evol = dualmot_lifetime_plot_spec("MOT";
     ylabel="CMOT number",
 )
 plot_num_evol_target = nothing
+fit_records_num_decay = NamedTuple[]
 
 for idx_runinfo_iter in ids_runinfo
     global idx_runinfo = idx_runinfo_iter
@@ -38,3 +39,5 @@ for idx_runinfo_iter in ids_runinfo
     include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
     include(joinpath(@__DIR__, "anlz_num_evol_decay.jl"))
 end
+path_fit_results = save_num_decay_results(
+    path_root, "MOT", fit_num_decay_config.mode, fit_records_num_decay)

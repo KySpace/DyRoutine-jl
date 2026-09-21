@@ -31,6 +31,29 @@ for (idx_panel, panel) in enumerate(val_panel)
             nothing
         end
         fits_num_decay[(panel, condition)] = result
+        if !isnothing(result)
+            p, e = result.params, result.errors
+            tau = result.mode == :kappa ? Inf : p[2]
+            std_tau = result.mode == :kappa ? NaN : e[2]
+            kappa = result.mode == :tau ? 0.0 : p[result.mode == :full ? 3 : 2]
+            std_kappa = result.mode == :tau ? NaN : e[result.mode == :full ? 3 : 2]
+            push!(fit_records_num_decay, (
+                pair=runinfo.folder,
+                tag=runinfo.tag,
+                panel=Float64(panel),
+                loadcfg=condition.loadcfg,
+                istp=condition.istp,
+                mode=result.mode,
+                n0=p[1],
+                std_n0=e[1],
+                tau,
+                std_tau,
+                kappa,
+                std_kappa,
+                at_bound=result.at_bound,
+                n_points=count(result.mask),
+            ))
+        end
         text_fit = if isnothing(result)
             "$label\nFit unavailable"
         else
