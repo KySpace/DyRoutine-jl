@@ -7,11 +7,9 @@ key_x_num = :t_hold
 bounds_sigmax_num = (4e-4, Inf)
 bounds_sigmay_num = (4e-4, Inf)
 num_max_num = 2e8
-# Model takes time in seconds and parameters [N₀, τ, κ].
 fit_num_decay_config = (
-    model=model_num_decay,
+    mode=:kappa,
     bounds_n0=(0.5, 2.0),
-    bounds_tau=(0.1, 50.0),
     bounds_kappa=(eps(Float64), Inf),
 )
 

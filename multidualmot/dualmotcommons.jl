@@ -40,6 +40,8 @@ const LIGHTNESS_FACE, CHROMA_FACE = 0.85, 0.06
 const LIGHTNESS_DIS_LINE, CHROMA_DIS_LINE = 0.65, 0.08
 const MARKER_LOADCFG = Dict(
     :DDM => :rect, :DIS => :utriangle, :DCS => :circle, :SCS => :diamond)
+const DUALMOT_LOG_MAJOR_TICKS = LogTicks(-20:20)
+const DUALMOT_LOG_MINOR_TICKS = IntervalsBetween(10)
 #        stroke      face
 # 160    #006566     #a0dbda
 # 161    #634581     #d7c4ee
@@ -378,8 +380,8 @@ function dualmot_axis_kwargs(; log_y::Bool=false, text_size::Real=8,
         xticklabelpad=1, yticklabelpad=2,
     )))
     log_y ? merge(common, (
-        yticks=LogTicks(-20:20),
-        yminorticks=IntervalsBetween(10),
+        yticks=DUALMOT_LOG_MAJOR_TICKS,
+        yminorticks=DUALMOT_LOG_MINOR_TICKS,
         yminorticksvisible=true,
     )) : merge(common, (
         yminorticks=IntervalsBetween(5),
@@ -467,30 +469,63 @@ function model_num_decay(t::AbstractVector, p::AbstractVector)
     @. n0 * exp(-t / tau) / (1 + kappa * n0 * tau * (-expm1(-t / tau)))
 end
 
+"""Two-body-only loss (τ → ∞), with p = [N₀ (atoms), κ (atom⁻¹ s⁻¹)]."""
+function model_num_decay_kappa(t::AbstractVector, p::AbstractVector)
+    n0, kappa = p
+    @. n0 / (1 + kappa * n0 * t)
+end
+
+"""One-body-only loss (κ = 0), with p = [N₀ (atoms), τ (s)]."""
+function model_num_decay_tau(t::AbstractVector, p::AbstractVector)
+    n0, tau = p
+    @. n0 * exp(-t / tau)
+end
+
 """Bounded, unweighted least squares; uncertainties are local residual-based 1σ errors."""
 function fit_num_decay(t::AbstractVector{<:Real}, nums::AbstractVector{<:Real};
-    model=model_num_decay, bounds_n0::Tuple{<:Real,<:Real}=(0.5, 2.0),
+    mode::Symbol=:full, bounds_n0::Tuple{<:Real,<:Real}=(0.5, 2.0),
     bounds_tau::Tuple{<:Real,<:Real}=(0.1, 50.0),
     bounds_kappa::Tuple{<:Real,<:Real}=(eps(Float64), Inf),
 )
     length(t) == length(nums) || throw(DimensionMismatch("time and number lengths differ"))
-    for (name, bounds) in (("N₀ multiplier", bounds_n0), ("τ", bounds_tau), ("κ", bounds_kappa))
-        0 < bounds[1] < bounds[2] || throw(ArgumentError("$name bounds must satisfy 0 < lower < upper, got $bounds"))
-    end
+    mode in (:full, :kappa, :tau) ||
+        throw(ArgumentError("decay fit mode must be :full, :kappa, or :tau, got $mode"))
+    0 < bounds_n0[1] < bounds_n0[2] ||
+        throw(ArgumentError("N₀ multiplier bounds must satisfy 0 < lower < upper, got $bounds_n0"))
+    mode in (:full, :tau) && !(0 < bounds_tau[1] < bounds_tau[2]) &&
+        throw(ArgumentError("τ bounds must satisfy 0 < lower < upper, got $bounds_tau"))
+    mode in (:full, :kappa) && !(0 <= bounds_kappa[1] < bounds_kappa[2]) &&
+        throw(ArgumentError("κ bounds must satisfy 0 ≤ lower < upper, got $bounds_kappa"))
     mask = isfinite.(t) .& isfinite.(nums) .& (nums .>= 0)
     ts, ns = Float64.(t[mask]), Float64.(nums[mask])
     length(unique(ts)) > 3 || throw(ArgumentError("decay fitting needs at least four distinct valid times"))
     minimum(ts) >= 0 || throw(ArgumentError("holding times must be nonnegative"))
     n_initial = ns[argmin(ts)]
     n_initial > 0 || throw(ArgumentError("initial number must be positive, got $n_initial"))
-    # Scale numbers and parameters to avoid ill-conditioned finite differences for tiny κ.
-    scale = [n_initial, 1.0, inv(n_initial)]
-    lower = [bounds_n0[1], bounds_tau[1], bounds_kappa[1] * n_initial]
-    upper = [bounds_n0[2], bounds_tau[2], bounds_kappa[2] * n_initial]
+    # Scale numbers and κ to avoid ill-conditioned finite differences.
+    model, scale, lower, upper, starts = if mode == :full
+        (model_num_decay,
+            [n_initial, 1.0, inv(n_initial)],
+            [bounds_n0[1], bounds_tau[1], bounds_kappa[1] * n_initial],
+            [bounds_n0[2], bounds_tau[2], bounds_kappa[2] * n_initial],
+            ([1.0, tau, loss] for tau in (0.3, 3.0, 30.0) for loss in (0.01, 1.0)))
+    elseif mode == :kappa
+        (model_num_decay_kappa,
+            [n_initial, inv(n_initial)],
+            [bounds_n0[1], bounds_kappa[1] * n_initial],
+            [bounds_n0[2], bounds_kappa[2] * n_initial],
+            ([1.0, loss] for loss in (0.001, 0.01, 0.1, 1.0, 10.0)))
+    else
+        (model_num_decay_tau,
+            [n_initial, 1.0],
+            [bounds_n0[1], bounds_tau[1]],
+            [bounds_n0[2], bounds_tau[2]],
+            ([1.0, tau] for tau in (0.3, 3.0, 30.0)))
+    end
     model_scaled = (x, p) -> model(x, p .* scale) ./ n_initial
     fits = []
-    for tau in (0.3, 3.0, 30.0), loss in (0.01, 1.0)
-        p0 = clamp.([1.0, tau, loss], lower, upper)
+    for start in starts
+        p0 = clamp.(start, lower, upper)
         fit = curve_fit(model_scaled, ts, ns ./ n_initial, p0; lower, upper, maxIter=1000)
         fit.converged && push!(fits, fit)
     end
@@ -501,15 +536,22 @@ function fit_num_decay(t::AbstractVector{<:Real}, nums::AbstractVector{<:Real};
         stderror(fit) .* scale
     catch err
         @warn "Decay parameter covariance unavailable" exception=err
-        fill(NaN, 3)
+        fill(NaN, length(params))
     end
     at_bound = any(isapprox.(fit.param, lower; atol=1e-7, rtol=1e-4) .|
         isapprox.(fit.param, upper; atol=1e-7, rtol=1e-4))
-    (; params, errors, at_bound, fit, mask)
+    (; mode, model, params, errors, at_bound, fit, mask)
 end
 
 function label_num_decay(result)
     p, e = result.params, result.errors
-    @sprintf("N₀ = %.2e ± %.1e\nτ = %.3g ± %.2g s\nκ = %.2e ± %.1e atom⁻¹ s⁻¹%s",
-        p[1], e[1], p[2], e[2], p[3], e[3], result.at_bound ? " *" : "")
+    suffix = result.at_bound ? " *" : ""
+    result.mode == :full && return @sprintf(
+        "N₀ = %.2e ± %.1e\nτ = %.3g ± %.2g s\nκ = %.2e ± %.1e atom⁻¹ s⁻¹%s",
+        p[1], e[1], p[2], e[2], p[3], e[3], suffix)
+    result.mode == :kappa && return @sprintf(
+        "N₀ = %.2e ± %.1e\nκ = %.2e ± %.1e atom⁻¹ s⁻¹%s",
+        p[1], e[1], p[2], e[2], suffix)
+    @sprintf("N₀ = %.2e ± %.1e\nτ = %.3g ± %.2g s%s",
+        p[1], e[1], p[2], e[2], suffix)
 end

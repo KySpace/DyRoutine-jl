@@ -43,7 +43,7 @@ for (idx_panel, panel) in enumerate(val_panel)
     for curve in curves_decay
         isnothing(curve.result) && continue
         ts = collect(range(minimum(val_x_plot), maximum(val_x_plot); length=400))
-        lines!(ax, ts, fit_num_decay_config.model(ts, curve.result.params);
+        lines!(ax, ts, curve.result.model(ts, curve.result.params);
             curve.style.line_options...,
             xautolimits=false, yautolimits=false)
     end
