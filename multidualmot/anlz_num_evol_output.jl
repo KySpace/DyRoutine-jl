@@ -47,7 +47,11 @@ for (idx_panel, panel, scale) in jobs_num_evol
         end
         nums = vec(@view num_stat[indices...])
         stds = vec(@view std_num_stat[indices...])
-        mask = scale == :log ? nums .> 0 : trues(length(nums))
+        mask_target = isnothing(plot_num_evol_target) ? trues(length(nums)) :
+            plot_num_evol_target.mask_x(val_x_plot)
+        length(mask_target) == length(nums) ||
+            throw(DimensionMismatch("$tag_head: target x mask length $(length(mask_target)) must equal $(length(nums))"))
+        mask = (scale == :log ? nums .> 0 : trues(length(nums))) .& mask_target
         !all(mask) && @warn "$tag_head: omitting nonpositive log points" panel condition count=count(!, mask)
         nums_plot = ifelse.(mask, nums ./ scale_num, NaN)
         style = plot_num_evol.curve_style(condition)
@@ -119,8 +123,8 @@ for (idx_panel, panel, scale) in jobs_num_evol
         axislegend(ax; position=plot_num_evol.legend_position, DUALMOT_LEGEND_OPTIONS...)
     else
         if !isnothing(plot_num_evol_target.limits)
-            xlimits = plot_num_evol_target.limits.x
-            ylimits = plot_num_evol_target.limits.y
+            local xlimits = plot_num_evol_target.limits.x
+            local ylimits = plot_num_evol_target.limits.y
             isnothing(xlimits) || xlims!(ax, xlimits...)
             isnothing(ylimits) || ylims!(ax, ylimits...)
         end
@@ -130,7 +134,8 @@ for (idx_panel, panel, scale) in jobs_num_evol
     if isnothing(plot_num_evol_target)
         name_output = plot_num_evol.filename(scale, panel)
         for format in plot_num_evol.formats
-            save(joinpath(path_output, "$name_output.$format"), fig)
+            save_options = format == "png" ? (; px_per_unit=4) : (;)
+            save(joinpath(path_output, "$name_output.$format"), fig; save_options...)
         end
     end
     figs_num_evol[(panel, scale)] = fig

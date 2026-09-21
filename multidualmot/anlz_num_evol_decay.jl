@@ -78,7 +78,8 @@ for (idx_panel, panel) in enumerate(val_panel)
     axislegend(ax; position=plot_num_evol.legend_position, DUALMOT_LEGEND_OPTIONS...)
     name_output = replace(plot_num_evol.filename(:log, panel), ".[log]." => ".[fit.log].")
     for format in plot_num_evol.formats
-        save(joinpath(path_output, "$name_output.$format"), fig)
+        save_options = format == "png" ? (; px_per_unit=4) : (;)
+        save(joinpath(path_output, "$name_output.$format"), fig; save_options...)
     end
     figs_num_decay[panel] = fig
 end

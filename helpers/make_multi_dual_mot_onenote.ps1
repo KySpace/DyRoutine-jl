@@ -153,6 +153,7 @@ function Get-PngEntries {
                     TestTag = $Matches[1]
                     StyleTag = $Matches[2]
                     SubvariantTag = $Matches[3]
+                    Alt = "$($Matches[1]) / $($Matches[2]) / $($Matches[3])"
                     Width = $size.Width
                     Height = $size.Height
                     Base64 = [Convert]::ToBase64String($bytes)
@@ -161,6 +162,57 @@ function Get-PngEntries {
         }
     }
     return $entriesByCell
+}
+
+function Get-ComparisonEntries {
+    param([Parameter(Mandatory)] [string]$Root)
+
+    $folder = Join-Path $Root 'MOT loading pair comparison'
+    $specs = @(
+        @{ Key = '626-numbers'; File = '[MOT.loading.pairs].[DCS-SCS].[nums].png' },
+        @{ Key = '421-numbers'; File = '[MOT.loading.pairs].[DDM-DIS].[nums].png' },
+        @{ Key = '626-ratio'; File = '[MOT.loading.pairs].[DCS-SCS].[ratio].png' },
+        @{ Key = '421-ratio'; File = '[MOT.loading.pairs].[DDM-DIS].[ratio].png' }
+    )
+    $entries = @{}
+    foreach ($spec in $specs) {
+        $path = Join-Path $folder $spec.File
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Missing isotope-pair comparison PNG: $path"
+        }
+        $bytes = [System.IO.File]::ReadAllBytes($path)
+        $size = Get-PngDimensions -Bytes $bytes -Path $path
+        $entries[$spec.Key] = [pscustomobject]@{
+            Alt = "MOT loading pair comparison / $($spec.Key)"
+            Width = $size.Width
+            Height = $size.Height
+            Base64 = [Convert]::ToBase64String($bytes)
+        }
+    }
+    return $entries
+}
+
+function Add-OneNoteImage {
+    param(
+        [Parameter(Mandatory)] [System.Xml.XmlDocument]$Document,
+        [Parameter(Mandatory)] [System.Xml.XmlNode]$Parent,
+        [Parameter(Mandatory)] [psobject]$Entry,
+        [Parameter(Mandatory)] [double]$DisplayWidth
+    )
+
+    $oe = Add-OneNoteElement -Document $Document -Parent $Parent -Name 'OE'
+    $image = Add-OneNoteElement -Document $Document -Parent $oe -Name 'Image' -Attributes @{
+        format = 'png'
+        alt = $Entry.Alt
+    }
+    $displayHeight = $DisplayWidth * $Entry.Height / $Entry.Width
+    [void](Add-OneNoteElement -Document $Document -Parent $image -Name 'Size' -Attributes @{
+        width = $DisplayWidth.ToString('0.###', [Globalization.CultureInfo]::InvariantCulture)
+        height = $displayHeight.ToString('0.###', [Globalization.CultureInfo]::InvariantCulture)
+        isSetByUser = 'true'
+    })
+    $data = Add-OneNoteElement -Document $Document -Parent $image -Name 'Data'
+    $data.InnerText = $Entry.Base64
 }
 
 function Add-ImageTable {
@@ -223,23 +275,42 @@ function Add-ImageTable {
             }
 
             $entry = $entryLookup[$key]
-            $oe = Add-OneNoteElement -Document $Document -Parent $imageChildren -Name 'OE'
-            $image = Add-OneNoteElement -Document $Document -Parent $oe -Name 'Image' -Attributes @{
-                format = 'png'
-                alt = "$($entry.TestTag) / $($entry.StyleTag) / $($entry.SubvariantTag)"
-            }
-            $displayHeight = $DisplayWidth * $entry.Height / $entry.Width
-            [void](Add-OneNoteElement -Document $Document -Parent $image -Name 'Size' -Attributes @{
-                width = $DisplayWidth.ToString('0.###', [Globalization.CultureInfo]::InvariantCulture)
-                height = $displayHeight.ToString('0.###', [Globalization.CultureInfo]::InvariantCulture)
-                isSetByUser = 'true'
-            })
-            $data = Add-OneNoteElement -Document $Document -Parent $image -Name 'Data'
-            $data.InnerText = $entry.Base64
+            Add-OneNoteImage -Document $Document -Parent $imageChildren `
+                -Entry $entry -DisplayWidth $DisplayWidth
             $imageCount++
         }
     }
     return $imageCount
+}
+
+function Add-ComparisonTable {
+    param(
+        [Parameter(Mandatory)] [System.Xml.XmlDocument]$Document,
+        [Parameter(Mandatory)] [System.Xml.XmlNode]$OutlineChildren,
+        [Parameter(Mandatory)] [hashtable]$Entries,
+        [Parameter(Mandatory)] [double]$DisplayWidth
+    )
+
+    [void](Add-OneNoteText -Document $Document -Parent $OutlineChildren `
+        -Text 'Isotope-pair comparisons' `
+        -Style 'font-family:Calibri;font-size:14.0pt;font-weight:bold')
+    $tableOe = Add-OneNoteElement -Document $Document -Parent $OutlineChildren -Name 'OE'
+    $table = Add-OneNoteElement -Document $Document -Parent $tableOe -Name 'Table' -Attributes @{
+        bordersVisible = 'true'
+        hasHeaderRow = 'false'
+    }
+    foreach ($rowKeys in @(
+        @('626-numbers', '421-numbers'),
+        @('626-ratio', '421-ratio')
+    )) {
+        $row = Add-OneNoteElement -Document $Document -Parent $table -Name 'Row'
+        foreach ($key in $rowKeys) {
+            $cellChildren = Add-OneNoteCell -Document $Document -Row $row
+            Add-OneNoteImage -Document $Document -Parent $cellChildren `
+                -Entry $Entries[$key] -DisplayWidth $DisplayWidth
+        }
+    }
+    return $Entries.Count
 }
 
 function New-OneNotePageXml {
@@ -247,6 +318,7 @@ function New-OneNotePageXml {
         [Parameter(Mandatory)] [string]$PageId,
         [Parameter(Mandatory)] [string]$Title,
         [Parameter(Mandatory)] [hashtable]$EntriesByCell,
+        [Parameter(Mandatory)] [hashtable]$ComparisonEntries,
         [Parameter(Mandatory)] [double]$DisplayWidth
     )
 
@@ -295,6 +367,10 @@ function New-OneNotePageXml {
         }
     }
 
+    $imageCount += Add-ComparisonTable -Document $document `
+        -OutlineChildren $outlineChildren -Entries $ComparisonEntries `
+        -DisplayWidth $DisplayWidth
+
     return [pscustomobject]@{ Document = $document; ImageCount = $imageCount }
 }
 
@@ -311,7 +387,8 @@ if (-not (Test-Path -LiteralPath $outputDirectory -PathType Container)) {
 }
 
 $entriesByCell = Get-PngEntries -Root $DataRoot
-$sourceImageCount = @($entriesByCell.Values | ForEach-Object { $_ }).Count
+$comparisonEntries = Get-ComparisonEntries -Root $DataRoot
+$sourceImageCount = @($entriesByCell.Values | ForEach-Object { $_ }).Count + $comparisonEntries.Count
 if ($sourceImageCount -eq 0) {
     throw "No matching PNG files were found under the configured parent/pair folders in $DataRoot"
 }
@@ -341,7 +418,8 @@ try {
         throw "OneNote CreateNewPage failed for section '$sectionId': $($_.Exception.Message) (HRESULT 0x$('{0:X8}' -f $_.Exception.HResult))"
     }
     $page = New-OneNotePageXml -PageId $pageId -Title $PageTitle `
-        -EntriesByCell $entriesByCell -DisplayWidth $ImageDisplayWidth
+        -EntriesByCell $entriesByCell -ComparisonEntries $comparisonEntries `
+        -DisplayWidth $ImageDisplayWidth
     if ($page.ImageCount -ne $sourceImageCount) {
         throw "Built $($page.ImageCount) image nodes from $sourceImageCount source images"
     }
@@ -368,7 +446,14 @@ try {
     if ($verifiedImageCount -ne $sourceImageCount) {
         throw "OneNote returned $verifiedImageCount images after $sourceImageCount were submitted"
     }
-    if ($verifiedTableCount -lt 2) {
+    $verifiedComparisonCount = $verifiedDocument.SelectNodes(
+        '//one:Image[starts-with(@alt, "MOT loading pair comparison / ")]',
+        $namespaceManager
+    ).Count
+    if ($verifiedComparisonCount -ne 4) {
+        throw "OneNote returned $verifiedComparisonCount isotope-pair comparison images after 4 were submitted"
+    }
+    if ($verifiedTableCount -lt 3) {
         throw "OneNote returned only $verifiedTableCount table node(s)"
     }
 

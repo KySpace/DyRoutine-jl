@@ -11,6 +11,10 @@ all(stats -> stats.vars.t_load == val_t_load, stats_data) ||
 isfinite(plot_cmpr_loadcfg.γ_active) && plot_cmpr_loadcfg.γ_active > 0 ||
     throw(ArgumentError("γ_active must be finite and positive, got $(plot_cmpr_loadcfg.γ_active)"))
 val_t_load_plot = val_t_load .* plot_cmpr_loadcfg.γ_active
+mask_t_load_target = isnothing(plot_cmpr_loadcfg_target) ? trues(length(val_t_load)) :
+    plot_cmpr_loadcfg_target.mask_x(val_t_load)
+length(mask_t_load_target) == length(val_t_load) ||
+    throw(DimensionMismatch("$tag_head: target loading-time mask length $(length(mask_t_load_target)) must equal $(length(val_t_load))"))
 
 curves_num = Dict{Tuple{Symbol, Symbol}, NamedTuple}()
 for stats in stats_data
@@ -59,8 +63,9 @@ ax_nums = Axis(slot_nums; xlabel=plot_cmpr_loadcfg.xlabel,
 curves_nums_plot = [begin
     curve = curves_num[(loadcfg, istp)]
     style = dualmot_curve_style((; loadcfg, istp))
-    nums_plot = curve.nums ./ plot_cmpr_loadcfg.scale_num
-    mask_error = isfinite.(curve.nums) .& isfinite.(curve.stds)
+    nums_plot = ifelse.(mask_t_load_target,
+        curve.nums ./ plot_cmpr_loadcfg.scale_num, NaN)
+    mask_error = mask_t_load_target .& isfinite.(curve.nums) .& isfinite.(curve.stds)
     (; loadcfg, istp, curve, style, nums_plot, mask_error)
 end for loadcfg in (:SCS, :DCS) for istp in val_istp]
 for curve_plot in curves_nums_plot
@@ -105,8 +110,10 @@ else
             style.marker_options..., marker=style.marker,
             label="$(istp) $loadcfg")
     end
-    xlims!(ax_nums, plot_cmpr_loadcfg_target.limits.x...)
-    ylims!(ax_nums, plot_cmpr_loadcfg_target.limits.y...)
+    xlimits = plot_cmpr_loadcfg_target.limits.x
+    ylimits = plot_cmpr_loadcfg_target.limits.y
+    isnothing(xlimits) || xlims!(ax_nums, xlimits...)
+    isnothing(ylimits) || ylims!(ax_nums, ylimits...)
 end
 axislegend(ax_nums; position=:rb, DUALMOT_LEGEND_OPTIONS...)
 
@@ -119,6 +126,8 @@ ax_ratio = Axis(fig_ratio[1, 1]; xlabel=plot_cmpr_loadcfg.xlabel,
     width=plot_cmpr_loadcfg.frame_size[1],
     height=plot_cmpr_loadcfg.frame_size[2],
     dualmot_axis_kwargs()...)
+hlines!(ax_ratio, [0.9, 1.1]; color=RGBAf(0, 0, 0, 0.45),
+    linestyle=:dash, linewidth=0.5)
 curves_ratio_plot = NamedTuple[]
 for istp in val_istp
     curve_dcs = curves_num[(:DCS, istp)]
@@ -169,7 +178,8 @@ set_time_minor_ticks!(ax_ratio)
 axislegend(ax_ratio; position=:rb, DUALMOT_LEGEND_OPTIONS...)
 
 for format in plot_cmpr_loadcfg.formats
-    save(joinpath(path_output, "[$(plot_cmpr_loadcfg.file_head)].[$(runinfo.tag)].[nums].$format"), fig_nums)
-    save(joinpath(path_output, "[$(plot_cmpr_loadcfg.file_head)].[$(runinfo.tag)].[ratio].$format"), fig_ratio)
+    save_options = format == "png" ? (; px_per_unit=4) : (;)
+    save(joinpath(path_output, "[$(plot_cmpr_loadcfg.file_head)].[$(runinfo.tag)].[nums].$format"), fig_nums; save_options...)
+    save(joinpath(path_output, "[$(plot_cmpr_loadcfg.file_head)].[$(runinfo.tag)].[ratio].$format"), fig_ratio; save_options...)
 end
 end
