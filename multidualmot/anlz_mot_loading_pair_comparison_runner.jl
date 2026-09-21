@@ -57,8 +57,9 @@ function collect_loading_curves(runinfo::NamedTuple;
 end
 
 function final_loading_points(loading_curves::NamedTuple,
-    loadcfgs::Tuple, val_istp::AbstractVector{Symbol}, label::AbstractString)
+    loadcfgs::Tuple, val_istp::AbstractVector{Symbol}, label::AbstractString;
     idx_final = lastindex(loading_curves.val_t_load)
+    )
     points = Dict{Tuple{Symbol, Symbol}, NamedTuple}()
     for loadcfg in loadcfgs, istp in val_istp
         key = (loadcfg, istp)
@@ -86,6 +87,7 @@ runinfos_626 = Dict(pair => read_num_evol_runinfos(path_root_626, pair;
 
 points_421 = Dict{String, Dict{Tuple{Symbol, Symbol}, NamedTuple}}()
 points_626 = Dict{String, Dict{Tuple{Symbol, Symbol}, NamedTuple}}()
+t_load_query = 30.0 # 30 seconds loading time
 for pair in val_pair
     candidates_421 = filter(runinfos_421[pair]) do runinfo
         length(runinfo.data) == 1 && 0.0 in only(runinfo.data).vars.β_MOT
@@ -101,9 +103,9 @@ for pair in val_pair
     curves_626 = collect_loading_curves(runinfo_626;
         bounds_sigmax_num, bounds_sigmay_num, num_max_num)
     points_421[pair] = final_loading_points(
-        curves_421, (:DDM, :DIS), val_istp, "$pair MOT loading 421")
+        curves_421, (:DDM, :DIS), val_istp, "$pair MOT loading 421"; idx_final=only(indexin(t_load_query, curves_421.val_t_load)))
     points_626[pair] = final_loading_points(
-        curves_626, (:DCS, :SCS), val_istp, "$pair MOT loading 626")
+        curves_626, (:DCS, :SCS), val_istp, "$pair MOT loading 626"; idx_final=only(indexin(t_load_query, curves_626.val_t_load)))
 end
 
 marker_style(style::NamedTuple; markersize::Real=style.markersize) = (
@@ -115,11 +117,8 @@ marker_style(style::NamedTuple; markersize::Real=style.markersize) = (
 )
 
 function draw_pair_spans!(ax::Axis)
-    color_span = RGB(Oklch(0.966, 0, 0))
-    pairs_gray = Set(("160-162", "162-164", "161-163"))
-    for (idx_pair, pair) in enumerate(val_pair)
-        pair in pairs_gray || continue
-        vspan!(ax, idx_pair - 0.5, idx_pair + 0.5; color=color_span) |>
+    for idx_pair in eachindex(val_pair)
+        vspan!(ax, idx_pair - 0.5, idx_pair + 0.5; color=:white) |>
             span -> translate!(span, 0, 0, -100)
     end
     nothing
@@ -197,11 +196,15 @@ function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denomi
     ax = Axis(fig[1, 1];
         xticks=(eachindex(val_pair), val_pair),
         xlabel="Isotope pair",
+        yticks=(0:0.2:1.2),
+        yminorticks=IntervalsBetween(2),
         ylabel,
         title,
         dualmot_axis_kwargs(; text_size=8)...,
     )
     draw_pair_spans!(ax)
+    hlines!(ax, [0.9, 1.1]; color=RGBAf(0, 0, 0, 0.45),
+        linestyle=:dash, linewidth=0.5)
     for (idx_pair, pair) in enumerate(val_pair),
         istp in Symbol.(split(pair, "-"))
         point_num = points_by_pair[pair][(numerator, istp)]
@@ -225,16 +228,18 @@ function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denomi
             scatter!(ax, [x], [ratio]; marker_options...)
         end
     end
-    ylims!(ax, 0, nothing)
+    ylims!(ax, 0, 1.25)
+    ax.yminorticks = IntervalsBetween(2)
     draw_ratio_style_key!(fig)
     for format in formats_output
-        save(joinpath(path_output, "$filename.$format"), fig)
+        save_options = format == "png" ? (; px_per_unit=4) : (;)
+        save(joinpath(path_output, "$filename.$format"), fig; save_options...)
     end
     fig
 end
 
 function draw_pair_numbers(points_by_pair::AbstractDict, loadcfgs::Tuple;
-    ylabel, title::AbstractString, filename::AbstractString)
+    ylabel, title::AbstractString, filename::AbstractString, limits_y::Tuple)
     fig = Figure(size=(320, 164), fontsize=8, figure_padding=1)
     ax = Axis(fig[1, 1];
         xticks=(eachindex(val_pair), val_pair),
@@ -263,32 +268,36 @@ function draw_pair_numbers(points_by_pair::AbstractDict, loadcfgs::Tuple;
             end
         end
     end
-    ylims!(ax, 0.5e6, nothing)
+    ylims!(ax, limits_y...)
     draw_number_style_key!(fig, loadcfgs)
     for format in formats_output
-        save(joinpath(path_output, "$filename.$format"), fig)
+        save_options = format == "png" ? (; px_per_unit=4) : (;)
+        save(joinpath(path_output, "$filename.$format"), fig; save_options...)
     end
     fig
 end
 
 mkpath(path_output)
+limits_y_numbers = (0.5e6, 1.5e8)
 fig_ratio_ddm_dis = draw_pair_ratio(points_421, :DDM, :DIS;
     ylabel=rich("N", subscript("DDM"), " / N", subscript("DIS")),
-    title="MOT loading 421 · final acquired point · β_MOT = 0",
+    title="MOT loading 421 · 30 sec loading · β_MOT = 0",
     filename="[MOT.loading.pairs].[DDM-DIS].[ratio]",
 )
 fig_ratio_dcs_scs = draw_pair_ratio(points_626, :DCS, :SCS;
     ylabel=rich("N", subscript("DCS"), " / N", subscript("SCS")),
-    title="MOT loading 626 · final acquired point",
+    title="MOT loading 626 · 30 sec loading · β_MOT = 0",
     filename="[MOT.loading.pairs].[DCS-SCS].[ratio]",
 )
 fig_nums_ddm_dis = draw_pair_numbers(points_421, (:DIS, :DDM);
+    limits_y=limits_y_numbers,
     ylabel=rich("N", subscript("DDM"), ", N", subscript("DIS")),
-    title="MOT loading 421 · final acquired point · β_MOT = 0",
+    title="MOT loading 421 · 30 sec loading · β_MOT = 0",
     filename="[MOT.loading.pairs].[DDM-DIS].[nums]",
 )
 fig_nums_dcs_scs = draw_pair_numbers(points_626, (:SCS, :DCS);
+    limits_y=limits_y_numbers,
     ylabel=rich("N", subscript("DCS"), ", N", subscript("SCS")),
-    title="MOT loading 626 · final acquired point",
+    title="MOT loading 626 · 30 sec loading · β_MOT = 0",
     filename="[MOT.loading.pairs].[DCS-SCS].[nums]",
 )
