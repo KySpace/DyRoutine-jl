@@ -245,6 +245,56 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
         mask_valid, n_masked_total)
 end
 
+function combine_num_evol_blocks(blocks::AbstractVector{<:NamedTuple};
+    label::AbstractString,
+)
+    isempty(blocks) && throw(ArgumentError("$label: at least one data block is required"))
+    name = keys(first(blocks).vars)
+    :rep in name || throw(ArgumentError("$label: data blocks must include a rep axis"))
+
+    for (idx_block, block) in enumerate(blocks)
+        keys(block.vars) == name ||
+            throw(ArgumentError("$label data[$idx_block]: variable axes $(keys(block.vars)) must match $name"))
+        expected_size = Tuple(length(getproperty(block.vars, key)) for key in name)
+        size(block.num_fmt) == expected_size ||
+            throw(DimensionMismatch("$label data[$idx_block]: num_fmt size $(size(block.num_fmt)) must match variable dimensions $expected_size"))
+        for key in name
+            values_axis = getproperty(block.vars, key)
+            allunique(values_axis) ||
+                throw(ArgumentError("$label data[$idx_block]: duplicate values in $key: $(collect(values_axis))"))
+        end
+    end
+
+    n_rep = sum(block.n_rep for block in blocks)
+    values_combined = map(name) do key
+        key == :rep && return 1:n_rep
+        unique(vcat((collect(getproperty(block.vars, key)) for block in blocks)...))
+    end
+    vars = NamedTuple{name}(values_combined)
+    size_combined = Tuple(length.(values_combined))
+    num_fmt = Array{Union{Missing, Float64}}(undef, size_combined)
+    fill!(num_fmt, missing)
+
+    pos_rep = 0
+    for (idx_block, block) in enumerate(blocks)
+        indices = map(name) do key
+            if key == :rep
+                (pos_rep + 1):(pos_rep + block.n_rep)
+            else
+                values_axis = getproperty(block.vars, key)
+                values_axis_combined = getproperty(vars, key)
+                positions = indexin(values_axis, values_axis_combined)
+                all(!isnothing, positions) ||
+                    error("$label data[$idx_block]: failed to align $key values")
+                Int.(positions)
+            end
+        end
+        @views num_fmt[indices...] .= block.num_fmt
+        pos_rep += block.n_rep
+    end
+    (; vars, num_fmt, n_rep)
+end
+
 function read_cres_fields(paths::AbstractVector{<:AbstractString}, fields::Tuple{Vararg{String}})
     isempty(fields) && throw(ArgumentError("at least one cres field is required"))
     names = Tuple(Symbol.(fields))

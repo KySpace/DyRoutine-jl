@@ -1,48 +1,19 @@
-# Included by a dataset-specific runner. Configured variable order is slowest to fastest.
-length(runinfo.data) == 1 ||
-    throw(ArgumentError("$tag_head: anlz_num_evol.jl requires exactly one rectangular data entry"))
-runinfo_data = only(runinfo.data)
-shot_data = read_cres_fields(runinfo_data.files, ("atomnum", "sigmax", "sigmay"))
-num_data, sigmax_data, sigmay_data = shot_data
-all(isfinite, num_data) || throw(ArgumentError("$tag_head: atomnum must contain only finite values"))
-len_data = length(num_data)
-n_variation = prod(length(getproperty(runinfo_data.vars, key)) for key in keys(runinfo_data.vars) if key != :rep)
-len_data > 0 && rem(len_data, n_variation) == 0 ||
-    throw(DimensionMismatch("$tag_head: $len_data atom numbers must be a positive integer multiple of $n_variation variations"))
-n_rep = div(len_data, n_variation)
-val_rep = 1:n_rep
-vars = merge(runinfo_data.vars, (; rep=val_rep))
-name, val_vars = keys(vars), values(vars)
-
-name_acq = runinfo_data.var_order
-n_dims_acq = map(key -> length(getproperty(vars, key)), name_acq)
-for (name_bound, bounds) in
-    (("sigmax", bounds_sigmax_num), ("sigmay", bounds_sigmay_num))
-    lower, upper = bounds
-    isfinite(lower) && !isnan(upper) && lower <= upper ||
-        throw(ArgumentError("$name_bound bounds must satisfy finite lower <= upper, got $bounds"))
+# Included by a dataset-specific runner. Each data source is rectangular; sources
+# are aligned by their configured variable values and appended along rep.
+blocks_num_evol = map(enumerate(runinfo.data)) do (idx_data, runinfo_data)
+    calc_num_evol_block(runinfo_data;
+        label="$tag_head data[$idx_data]",
+        bounds_sigmax_num,
+        bounds_sigmay_num,
+        num_max_num,
+    )
 end
-mask_sigmax = isfinite.(sigmax_data) .&
-    (sigmax_data .>= bounds_sigmax_num[1]) .& (sigmax_data .<= bounds_sigmax_num[2])
-mask_sigmay = isfinite.(sigmay_data) .&
-    (sigmay_data .>= bounds_sigmay_num[1]) .& (sigmay_data .<= bounds_sigmay_num[2])
-mask_size = mask_sigmax .& mask_sigmay
-mask_num_low = num_data .>= 0
-mask_num_high = num_data .<= num_max_num
-mask_num = mask_num_low .& mask_num_high
-mask_valid = mask_size .& mask_num
-num_data_masked = Vector{Union{Missing, Float64}}(num_data)
-num_data_masked[.!mask_valid] .= missing
-n_masked_size = count(!, mask_size)
-n_masked_sigmax = count(!, mask_sigmax)
-n_masked_sigmay = count(!, mask_sigmay)
-n_masked_num_low = count(!, mask_num_low)
-n_masked_num_high = count(!, mask_num_high)
-n_masked_total = count(!, mask_valid)
-
-num_acq = reshape(num_data_masked, reverse(n_dims_acq)) |>
-    data -> permutedims(data, reverse(1:length(n_dims_acq)))
-num_fmt = permutedims(num_acq, indexin(collect(name), collect(name_acq)))
+combined_num_evol = combine_num_evol_blocks(blocks_num_evol; label=tag_head)
+vars = combined_num_evol.vars
+name, val_vars = keys(vars), values(vars)
+n_rep = combined_num_evol.n_rep
+val_rep = vars.rep
+num_fmt = combined_num_evol.num_fmt
 
 idx_rep_axis = findfirst(==(:rep), name)
 num_stat = dropdims(mapslices(num_fmt; dims=idx_rep_axis) do values
@@ -56,10 +27,8 @@ end; dims=idx_rep_axis)
 n_rep_stat = dropdims(sum(.!ismissing.(num_fmt); dims=idx_rep_axis); dims=idx_rep_axis)
 name_stat = Tuple(key for key in name if key != :rep)
 n_rep == 1 && @warn "$tag_head: one repetition; sample standard deviations are undefined (NaN)"
-println("$tag_head: $len_data samples / $n_variation variations = $n_rep repetitions; " *
-    "$n_masked_total rejected ($n_masked_size by size: $n_masked_sigmax sigmax, " *
-    "$n_masked_sigmay sigmay; $n_masked_num_low below zero, " *
-    "$n_masked_num_high above $num_max_num)")
+length(blocks_num_evol) > 1 && println("$tag_head: combined $(length(blocks_num_evol)) data blocks " *
+    "into $(size(num_fmt)) with $n_rep total repetition slots")
 
 key_x = plot_num_evol.key_x
 key_panel = plot_num_evol.key_panel
