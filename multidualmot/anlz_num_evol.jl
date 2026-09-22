@@ -1,11 +1,12 @@
-# Included by a dataset-specific runner. Each data source is rectangular; sources
-# are aligned by their configured variable values and appended along rep.
+# Included by a dataset-specific runner. Sources are aligned by their configured
+# variable values and appended along rep; opted-in scans may pad a truncated tail.
 blocks_num_evol = map(enumerate(runinfo.data)) do (idx_data, runinfo_data)
     calc_num_evol_block(runinfo_data;
         label="$tag_head data[$idx_data]",
         bounds_sigmax_num,
         bounds_sigmay_num,
         num_max_num,
+        allow_partial_rep=plot_num_evol.allow_partial_rep,
     )
 end
 combined_num_evol = combine_num_evol_blocks(blocks_num_evol; label=tag_head)

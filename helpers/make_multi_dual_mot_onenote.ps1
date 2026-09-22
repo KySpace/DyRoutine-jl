@@ -42,6 +42,7 @@ $script:OneNoteNamespace = 'http://schemas.microsoft.com/office/onenote/2013/one
 $script:ParentNames = @(
     'MOT loading 421',
     'MOT loading 626',
+    'MOT loading balance',
     'MOT lifetime',
     'CMOT lifetime',
     'ODT BField'

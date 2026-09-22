@@ -14,6 +14,7 @@ const INKSCAPE_CANDIDATES = [
 const COLUMN_PARENT_NAMES = [
     "MOT loading 421",
     "MOT loading 626",
+    "MOT loading balance",
     "MOT lifetime",
     "CMOT lifetime",
     "ODT BField",

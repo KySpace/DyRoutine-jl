@@ -29,6 +29,12 @@ const DUALMOT_LOADCFG_VAR_SPECS = (
     istp=(config="istp", convert=values -> Symbol.(string.(values))),
 )
 
+const DUALMOT_BALANCE_VAR_SPECS = (
+    β_MOT=(config="tbiasmot", convert=values -> Float64.(values)),
+    loadcfg=(config="loadcfg", convert=values -> Symbol.(string.(values))),
+    istp=(config="istp", convert=values -> Symbol.(string.(values))),
+)
+
 const DUALMOT_ODT_BFIELD_VAR_SPECS = (
     ib=(config="ib", convert=values -> Float64.(values)),
     loadcfg=(config="loadcfg", convert=values -> Symbol.(string.(values))),
@@ -115,6 +121,19 @@ function validate_odt_bfield_vars(vars::NamedTuple, folder::AbstractString)
         throw(ArgumentError("$folder: loadcfg values must be DDM, DIS, or DCS"))
     all(in(vars.loadcfg), (:DDM, :DIS)) ||
         throw(ArgumentError("$folder: loadcfg must include DDM and DIS"))
+    nothing
+end
+
+function validate_balance_vars(vars::NamedTuple, folder::AbstractString)
+    pair = Symbol.(split(folder, "-"))
+    length(pair) == 2 || throw(ArgumentError("$folder: expected an isotope-pair folder"))
+    vars.istp == pair ||
+        throw(ArgumentError("$folder: isotope order must be $(collect(pair))"))
+    allunique(vars.β_MOT) || throw(ArgumentError("$folder: duplicate β_MOT values"))
+    all(isfinite, vars.β_MOT) || throw(ArgumentError("$folder: β_MOT values must be finite"))
+    allunique(vars.loadcfg) || throw(ArgumentError("$folder: duplicate loadcfg values"))
+    !isempty(vars.loadcfg) && all(in((:DDM, :DIS)), vars.loadcfg) ||
+        throw(ArgumentError("$folder: loadcfg values must be DDM or DIS"))
     nothing
 end
 
@@ -223,6 +242,7 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
     bounds_sigmax_num::Tuple{<:Real,<:Real},
     bounds_sigmay_num::Tuple{<:Real,<:Real},
     num_max_num::Real,
+    allow_partial_rep::Bool=false,
 )
     for (name_bound, bounds) in
         (("sigmax", bounds_sigmax_num), ("sigmay", bounds_sigmay_num))
@@ -239,9 +259,15 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
     len_data = length(num_data)
     n_variation = prod(length(getproperty(runinfo_data.vars, key))
         for key in keys(runinfo_data.vars) if key != :rep)
-    len_data > 0 && rem(len_data, n_variation) == 0 ||
+    len_data > 0 || throw(DimensionMismatch("$label: atom-number data must not be empty"))
+    n_partial = rem(len_data, n_variation)
+    iszero(n_partial) || allow_partial_rep ||
         throw(DimensionMismatch("$label: $len_data atom numbers must be a positive integer multiple of $n_variation variations"))
-    n_rep = div(len_data, n_variation)
+    n_rep = cld(len_data, n_variation)
+    n_padding = n_rep * n_variation - len_data
+    if n_padding > 0
+        @warn "$label: padding incomplete final repetition with missing values" samples=len_data variations_per_rep=n_variation missing_slots=n_padding
+    end
     vars = merge(runinfo_data.vars, (; rep=1:n_rep))
     name = keys(vars)
 
@@ -257,6 +283,7 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
     mask_valid = mask_size .& mask_num_low .& mask_num_high
     num_data_masked = Vector{Union{Missing, Float64}}(num_data)
     num_data_masked[.!mask_valid] .= missing
+    append!(num_data_masked, fill(missing, n_padding))
 
     num_acq = reshape(num_data_masked, reverse(n_dims_acq)) |>
         data -> permutedims(data, reverse(1:length(n_dims_acq)))
@@ -458,6 +485,7 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
     scale_x::Real=1.0,
     transform_x=(values, condition, panel, idx_istp) -> values,
     axis_options=(;),
+    allow_partial_rep::Bool=false,
     xautolimits=(condition, panel) -> true,
     yautolimits=(condition, panel) -> true,
     legend_position::Symbol=:rt,
@@ -484,6 +512,7 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
         xlabel=xlabel_panel,
         transform_x,
         axis_options,
+        allow_partial_rep,
         xautolimits,
         yautolimits,
         ylabel,
