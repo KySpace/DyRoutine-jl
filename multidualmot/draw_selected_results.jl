@@ -98,7 +98,11 @@ bounds_sigmax_num = (2e-4, 10e-4)
 bounds_sigmay_num = (1e-4, 5e-4)
 plot_num_evol = merge(dualmot_num_evol_plot_spec("ODT";
     key_x=:ib,
-    xlabel="B field current in z (A)",
+    xlabel=_ -> odt_bfield_xlabel(:z),
+    transform_x=(values, condition, panel, idx_istp) ->
+        odt_bfield_values(values, :z),
+    axis_options=odt_bfield_axis_options(
+        reduce(vcat, [data.vars.ib for data in runinfo.data]), :z),
     ylabel="ODT N",
     file_head="ODT.BField",
     loadcfg_plot=(:DDM, :DIS)),

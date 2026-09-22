@@ -23,17 +23,29 @@ function decay_parameter_points(latest::NamedTuple, expected_mode::Symbol,
     points
 end
 
+function inverse_decay_points(points_by_pair::AbstractDict)
+    Dict(pair => Dict(key => begin
+        isfinite(point.value) && point.value > 0 ||
+            throw(ArgumentError("$pair $key: κ must be finite and positive"))
+        (value=inv(point.value),
+            std=isfinite(point.std) ? point.std / point.value^2 : NaN,
+            panel=point.panel)
+    end for (key, point) in points) for (pair, points) in points_by_pair)
+end
+
 function draw_pair_decay_values(points_by_pair::AbstractDict, parameter::Symbol;
-    ylabel, title::AbstractString, filename::AbstractString, scale_y::Real=1.0)
+    ylabel, title::AbstractString, filename::AbstractString, scale_y::Real=1.0, limits_y::Tuple)
     fig = Figure(size=(320, 164), fontsize=8, figure_padding=1)
     ax = Axis(fig[1, 1];
         xticks=(eachindex(val_pair), val_pair),
         xlabel="Isotope pair",
         ylabel,
         title,
-        dualmot_axis_kwargs(; text_size=8)...,
+        yscale=log10,
+        dualmot_axis_kwargs(; log_y=true, text_size=8)...,
     )
     draw_pair_spans!(ax)
+    lower = Inf
     upper = 0.0
     for (idx_pair, pair) in enumerate(val_pair), loadcfg in (:DIS, :DDM),
         istp in Symbol.(split(pair, "-"))
@@ -45,15 +57,25 @@ function draw_pair_decay_values(points_by_pair::AbstractDict, parameter::Symbol;
         style = dualmot_curve_style((; loadcfg, istp))
         marker_options = marker_style(style; markersize=6)
         if isfinite(std) && std >= 0
+            value - std > 0 || throw(ArgumentError(
+                "$pair $loadcfg $istp: log-scale $parameter error bar crosses zero"))
             marker_errorbars!(ax, [idx_pair], [value], [std];
                 marker_options..., errorlinewidth=0.75)
+            lower = min(lower, value - std)
             upper = max(upper, value + std)
         else
             scatter!(ax, [idx_pair], [value]; marker_options...)
+            lower = min(lower, value)
             upper = max(upper, value)
         end
     end
-    ylims!(ax, 0, 1.08 * upper)
+    lower_limit, upper_limit = lower / 1.15, 1.15 * upper
+    has_decade_tick = any(lower_limit <= 10.0^exponent <= upper_limit for exponent in -20:20)
+    if !has_decade_tick
+        lower_limit = 10.0^floor(log10(lower)) / 1.02
+        upper_limit = 10.0^ceil(log10(upper)) * 1.02
+    end
+    ylims!(ax, limits_y...)
     draw_number_style_key!(fig, (:DIS, :DDM))
     for format in formats_output
         save_options = format == "png" ? (; px_per_unit=4) : (;)
@@ -69,6 +91,9 @@ function draw_pair_decay_ratio(points_by_pair::AbstractDict,
     ax = Axis(fig[1, 1];
         xticks=(eachindex(val_pair), val_pair),
         xlabel="Isotope pair",
+        yticks=0:0.2:1.2,
+        yminorticks=IntervalsBetween(2),
+        yminorticksvisible=true,
         ylabel,
         title,
         dualmot_axis_kwargs(; text_size=8)...,
@@ -102,6 +127,7 @@ function draw_pair_decay_ratio(points_by_pair::AbstractDict,
         end
     end
     ylims!(ax, 0, max(1.25, 1.08 * upper))
+    ax.yminorticks = IntervalsBetween(2)
     draw_ratio_style_key!(fig)
     for format in formats_output
         save_options = format == "png" ? (; px_per_unit=4) : (;)
@@ -119,15 +145,16 @@ println("Using MOT decay fits: $(latest_mot_decay.path)")
 
 points_cmot_kappa = decay_parameter_points(latest_cmot_decay, :kappa, :kappa)
 points_mot_tau = decay_parameter_points(latest_mot_decay, :tau, :tau)
+points_cmot_inverse_kappa = inverse_decay_points(points_cmot_kappa)
 
-fig_cmot_kappa = draw_pair_decay_values(points_cmot_kappa, :kappa;
-    scale_y=1e-7,
-    ylabel=rich("κ (10", superscript("−7"), " atom", superscript("−1"), " s", superscript("−1"), ")"),
+fig_cmot_kappa = draw_pair_decay_values(points_cmot_inverse_kappa, :inverse_kappa;
+    ylabel=rich("1 / κ (atom s)"),
     title="CMOT decay · κ-only fit",
     filename="[CMOT.decay.pairs].[kappa].[values]",
+    limits_y = (0.5e6, 1.0e7),
 )
-fig_cmot_kappa_ratio = draw_pair_decay_ratio(points_cmot_kappa, :DIS, :DDM;
-    ylabel=rich("κ", subscript("DIS"), " / κ", subscript("DDM")),
+fig_cmot_kappa_ratio = draw_pair_decay_ratio(points_cmot_inverse_kappa, :DDM, :DIS;
+    ylabel=rich("(1 / κ)", subscript("DDM"), " / (1 / κ)", subscript("DIS")),
     title="CMOT decay · κ-only fit",
     filename="[CMOT.decay.pairs].[DIS-DDM].[ratio]",
 )
@@ -135,6 +162,7 @@ fig_mot_tau = draw_pair_decay_values(points_mot_tau, :tau;
     ylabel="τ (s)",
     title="MOT decay · τ-only fit",
     filename="[MOT.decay.pairs].[tau].[values]",
+    limits_y = (0.9e0, 5.5e1),
 )
 fig_mot_tau_ratio = draw_pair_decay_ratio(points_mot_tau, :DDM, :DIS;
     ylabel=rich("τ", subscript("DDM"), " / τ", subscript("DIS")),

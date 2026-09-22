@@ -28,6 +28,7 @@ for (idx_panel, panel, scale) in jobs_num_evol
     reps_used = reps_min == reps_max ? string(reps_min) : "$(reps_min)–$(reps_max)"
     axis_options = dualmot_axis_kwargs(; log_y=scale == :log,
         compact_spacing=!isnothing(plot_num_evol_target))
+    axis_options = merge(axis_options, plot_num_evol.axis_options)
     !isnothing(plot_num_evol_target) &&
         (axis_options = merge(axis_options, plot_num_evol_target.axis_options))
     ax = Axis(slot; xlabel=plot_num_evol.xlabel(panel),

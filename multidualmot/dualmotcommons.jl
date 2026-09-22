@@ -35,6 +35,37 @@ const DUALMOT_ODT_BFIELD_VAR_SPECS = (
     istp=(config="istp", convert=values -> Symbol.(string.(values))),
 )
 
+const ODT_BFIELD_CALIBRATION = Dict(
+    :x => (Q=1.48, B0=0.28),
+    :z => (Q=1.72, B0=-0.35),
+)
+
+function odt_bfield_values(current::AbstractVector{<:Real}, direction::Symbol)
+    calibration = get(ODT_BFIELD_CALIBRATION, direction, nothing)
+    isnothing(calibration) &&
+        throw(ArgumentError("ODT B-field direction must be :x or :z, got $direction"))
+    calibration.Q .* current .- calibration.B0
+end
+
+function odt_bfield_xlabel(direction::Symbol)
+    haskey(ODT_BFIELD_CALIBRATION, direction) ||
+        throw(ArgumentError("ODT B-field direction must be :x or :z, got $direction"))
+    rich(rich("B", font=:italic),
+        subscript(rich(string(direction), font=:italic)), " (A)")
+end
+
+function odt_bfield_axis_options(current::AbstractVector{<:Real}, direction::Symbol)
+    values = odt_bfield_values(current, direction)
+    step_major = 0.05
+    idx_min = floor(Int, minimum(values) / step_major)
+    idx_max = ceil(Int, maximum(values) / step_major)
+    (
+        xticks=collect(idx_min:idx_max) .* step_major,
+        xminorticks=IntervalsBetween(5),
+        xminorticksvisible=true,
+    )
+end
+
 const HUE_ISTP = Dict(Symbol(string(i)) => h for (i, h) in
     ((160, 195), (161, 306), (162, 21), (163, 90), (164, 259)))
 const LIGHTNESS_STROKE, CHROMA_STROKE = 0.45, 0.10
@@ -44,6 +75,13 @@ const MARKER_LOADCFG = Dict(
     :DDM => :rect, :DIS => :utriangle, :DCS => :circle, :SCS => :diamond)
 const DUALMOT_LOG_MAJOR_TICKS = LogTicks(-20:20)
 const DUALMOT_LOG_MINOR_TICKS = IntervalsBetween(10)
+const DUALMOT_FONT = "Helvetica World"
+set_theme!(fonts=(;
+    regular=DUALMOT_FONT,
+    bold=DUALMOT_FONT,
+    italic=DUALMOT_FONT,
+    bold_italic=DUALMOT_FONT,
+))
 #        stroke      face
 # 160    #006566     #a0dbda
 # 161    #634581     #d7c4ee
@@ -419,6 +457,7 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
     file_head::AbstractString,
     scale_x::Real=1.0,
     transform_x=(values, condition, panel, idx_istp) -> values,
+    axis_options=(;),
     xautolimits=(condition, panel) -> true,
     yautolimits=(condition, panel) -> true,
     legend_position::Symbol=:rt,
@@ -444,6 +483,7 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
         scale_num_linear=1e7,
         xlabel=xlabel_panel,
         transform_x,
+        axis_options,
         xautolimits,
         yautolimits,
         ylabel,
@@ -545,17 +585,38 @@ function fit_num_decay(t::AbstractVector{<:Real}, nums::AbstractVector{<:Real};
     (; mode, model, params, errors, at_bound, fit, mask)
 end
 
+function format_fit_scientific(value::Real, error::Real)
+    isfinite(value) && !iszero(value) || return "($(value) ± $(error))"
+    exponent = floor(Int, log10(abs(value)))
+    scale = 10.0^exponent
+    if abs(round(value / scale; digits=2)) >= 10
+        exponent += 1
+        scale *= 10
+    end
+    value_text = @sprintf("%.2f", value / scale)
+    error_scaled = abs(error) / scale
+    error_text = if !isfinite(error_scaled)
+        string(error_scaled)
+    elseif round(error_scaled; digits=2) == 0
+        "0"
+    else
+        @sprintf("%.2f", error_scaled)
+    end
+    "($value_text ± $error_text)e$exponent"
+end
+
 function label_num_decay(result)
     p, e = result.params, result.errors
     suffix = result.at_bound ? " *" : ""
+    label_n0 = format_fit_scientific(p[1], e[1])
     result.mode == :full && return @sprintf(
-        "N₀ = %.2e ± %.1e\nτ = %.3g ± %.2g s\nκ = %.2e ± %.1e atom⁻¹ s⁻¹%s",
-        p[1], e[1], p[2], e[2], p[3], e[3], suffix)
+        "N₀ = %s\nτ = (%.3g ± %.2g) s\nκ = %s atom⁻¹ s⁻¹%s",
+        label_n0, p[2], e[2], format_fit_scientific(p[3], e[3]), suffix)
     result.mode == :kappa && return @sprintf(
-        "N₀ = %.2e ± %.1e\nκ = %.2e ± %.1e atom⁻¹ s⁻¹%s",
-        p[1], e[1], p[2], e[2], suffix)
-    @sprintf("N₀ = %.2e ± %.1e\nτ = %.3g ± %.2g s%s",
-        p[1], e[1], p[2], e[2], suffix)
+        "N₀ = %s\nκ = %s atom⁻¹ s⁻¹%s",
+        label_n0, format_fit_scientific(p[2], e[2]), suffix)
+    @sprintf("N₀ = %s\nτ = (%.3g ± %.2g) s%s",
+        label_n0, p[2], e[2], suffix)
 end
 
 function save_num_decay_results(path_root::AbstractString, dataset::AbstractString,

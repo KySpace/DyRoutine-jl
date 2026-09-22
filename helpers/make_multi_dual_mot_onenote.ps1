@@ -167,12 +167,16 @@ function Get-PngEntries {
 function Get-ComparisonEntries {
     param([Parameter(Mandatory)] [string]$Root)
 
-    $folder = Join-Path $Root 'MOT loading pair comparison'
+    $folder = Join-Path $Root 'Isotope pair comparison'
     $specs = @(
-        @{ Key = '626-numbers'; File = '[MOT.loading.pairs].[DCS-SCS].[nums].png' },
-        @{ Key = '421-numbers'; File = '[MOT.loading.pairs].[DDM-DIS].[nums].png' },
-        @{ Key = '626-ratio'; File = '[MOT.loading.pairs].[DCS-SCS].[ratio].png' },
-        @{ Key = '421-ratio'; File = '[MOT.loading.pairs].[DDM-DIS].[ratio].png' }
+        @{ Key = '626-numbers'; Group = 'loading'; File = '[MOT.loading.pairs].[DCS-SCS].[nums].png' },
+        @{ Key = '421-numbers'; Group = 'loading'; File = '[MOT.loading.pairs].[DDM-DIS].[nums].png' },
+        @{ Key = '626-ratio'; Group = 'loading'; File = '[MOT.loading.pairs].[DCS-SCS].[ratio].png' },
+        @{ Key = '421-ratio'; Group = 'loading'; File = '[MOT.loading.pairs].[DDM-DIS].[ratio].png' },
+        @{ Key = 'cmot-values'; Group = 'lifetime'; File = '[CMOT.decay.pairs].[kappa].[values].png' },
+        @{ Key = 'mot-values'; Group = 'lifetime'; File = '[MOT.decay.pairs].[tau].[values].png' },
+        @{ Key = 'cmot-ratio'; Group = 'lifetime'; File = '[CMOT.decay.pairs].[DIS-DDM].[ratio].png' },
+        @{ Key = 'mot-ratio'; Group = 'lifetime'; File = '[MOT.decay.pairs].[DDM-DIS].[ratio].png' }
     )
     $entries = @{}
     foreach ($spec in $specs) {
@@ -183,7 +187,7 @@ function Get-ComparisonEntries {
         $bytes = [System.IO.File]::ReadAllBytes($path)
         $size = Get-PngDimensions -Bytes $bytes -Path $path
         $entries[$spec.Key] = [pscustomobject]@{
-            Alt = "MOT loading pair comparison / $($spec.Key)"
+            Alt = "Isotope pair comparison / $($spec.Group) / $($spec.Key)"
             Width = $size.Width
             Height = $size.Height
             Base64 = [Convert]::ToBase64String($bytes)
@@ -292,22 +296,40 @@ function Add-ComparisonTable {
     )
 
     [void](Add-OneNoteText -Document $Document -Parent $OutlineChildren `
-        -Text 'Isotope-pair comparisons' `
+        -Text 'Isotope pair comparisons' `
         -Style 'font-family:Calibri;font-size:14.0pt;font-weight:bold')
-    $tableOe = Add-OneNoteElement -Document $Document -Parent $OutlineChildren -Name 'OE'
-    $table = Add-OneNoteElement -Document $Document -Parent $tableOe -Name 'Table' -Attributes @{
-        bordersVisible = 'true'
-        hasHeaderRow = 'false'
-    }
-    foreach ($rowKeys in @(
-        @('626-numbers', '421-numbers'),
-        @('626-ratio', '421-ratio')
-    )) {
-        $row = Add-OneNoteElement -Document $Document -Parent $table -Name 'Row'
-        foreach ($key in $rowKeys) {
-            $cellChildren = Add-OneNoteCell -Document $Document -Row $row
-            Add-OneNoteImage -Document $Document -Parent $cellChildren `
-                -Entry $Entries[$key] -DisplayWidth $DisplayWidth
+    $groups = @(
+        @{
+            Caption = 'Loading numbers and ratios (626, 421)'
+            Rows = @(
+                @('626-numbers', '421-numbers'),
+                @('626-ratio', '421-ratio')
+            )
+        },
+        @{
+            Caption = 'Lifetime parameters and ratios (1/κ, τ)'
+            Rows = @(
+                @('cmot-values', 'mot-values'),
+                @('cmot-ratio', 'mot-ratio')
+            )
+        }
+    )
+    foreach ($group in $groups) {
+        [void](Add-OneNoteText -Document $Document -Parent $OutlineChildren `
+            -Text $group.Caption `
+            -Style 'font-family:Calibri;font-size:10.0pt;font-weight:bold')
+        $tableOe = Add-OneNoteElement -Document $Document -Parent $OutlineChildren -Name 'OE'
+        $table = Add-OneNoteElement -Document $Document -Parent $tableOe -Name 'Table' -Attributes @{
+            bordersVisible = 'true'
+            hasHeaderRow = 'false'
+        }
+        foreach ($rowKeys in $group.Rows) {
+            $row = Add-OneNoteElement -Document $Document -Parent $table -Name 'Row'
+            foreach ($key in $rowKeys) {
+                $cellChildren = Add-OneNoteCell -Document $Document -Row $row
+                Add-OneNoteImage -Document $Document -Parent $cellChildren `
+                    -Entry $Entries[$key] -DisplayWidth $DisplayWidth
+            }
         }
     }
     return $Entries.Count
@@ -447,11 +469,11 @@ try {
         throw "OneNote returned $verifiedImageCount images after $sourceImageCount were submitted"
     }
     $verifiedComparisonCount = $verifiedDocument.SelectNodes(
-        '//one:Image[starts-with(@alt, "MOT loading pair comparison / ")]',
+        '//one:Image[starts-with(@alt, "Isotope pair comparison / ")]',
         $namespaceManager
     ).Count
-    if ($verifiedComparisonCount -ne 4) {
-        throw "OneNote returned $verifiedComparisonCount isotope-pair comparison images after 4 were submitted"
+    if ($verifiedComparisonCount -ne 8) {
+        throw "OneNote returned $verifiedComparisonCount isotope-pair comparison images after 8 were submitted"
     }
     if ($verifiedTableCount -lt 3) {
         throw "OneNote returned only $verifiedTableCount table node(s)"

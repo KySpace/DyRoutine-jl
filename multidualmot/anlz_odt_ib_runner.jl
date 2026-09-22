@@ -32,12 +32,15 @@ for idx_runinfo_iter in ids_runinfo
     direction = Symbol(runinfo.tag)
     direction in (:x, :z) ||
         throw(ArgumentError("$(runinfo.folder): ODT BField tag must be x or z, got $(runinfo.tag)"))
-    label_direction = direction == :x ? "IBxcomp" : "IBzcomp"
+    current_values = reduce(vcat, [data.vars.ib for data in runinfo.data])
     global tag_head = "$(runinfo.folder) $(runinfo.tag)"
     global path_output = joinpath(path_root, runinfo.folder)
     global plot_num_evol = merge(plot_num_evol_base, (
         key_panel=nothing,
-        xlabel=_ -> "$label_direction (A)",
+        xlabel=_ -> odt_bfield_xlabel(direction),
+        transform_x=(values, condition, panel, idx_istp) ->
+            odt_bfield_values(values, direction),
+        axis_options=odt_bfield_axis_options(current_values, direction),
         title=(tag, _, reps_used) -> "$tag · reps = $reps_used",
         filename=(scale, _) -> "[ODT.BField].[$scale].[$direction]",
     ))

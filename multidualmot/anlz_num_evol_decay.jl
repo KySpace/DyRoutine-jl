@@ -2,6 +2,7 @@
 fits_num_decay = Dict()
 figs_num_decay = Dict()
 for (idx_panel, panel) in enumerate(val_panel)
+    local reps_min, reps_max, reps_used
     fig = Figure(size=plot_num_evol.fit_size, fontsize=plot_num_evol.fit_fontsize)
     indices_panel = Any[Colon() for _ in name_stat]
     indices_panel[idx_axis_stat[key_panel]] = idx_panel

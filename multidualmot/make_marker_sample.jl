@@ -5,7 +5,7 @@ path_result = joinpath(path_data, "Result")
 
 val_istp = (Symbol("162"), Symbol("164"))
 loadcfgs = (:SCS, :DCS, :DIS, :DDM)
-font_labels = "Noto Sans Math"
+font_labels = DUALMOT_FONT
 fontsize_labels = 22 / 3 # 5.5 pt with CairoMakie's default pt_per_unit = 0.75
 
 # CairoMakie exports 92 units as 69 points (24.3 mm) in PDF.
