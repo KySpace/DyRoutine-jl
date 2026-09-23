@@ -3,17 +3,27 @@ fits_num_decay = Dict()
 figs_num_decay = Dict()
 for (idx_panel, panel) in enumerate(val_panel)
     local reps_min, reps_max, reps_used
-    fig = Figure(size=plot_num_evol.fit_size, fontsize=plot_num_evol.fit_fontsize)
+    fig = Figure(size=plot_num_evol.fit_size, fontsize=plot_num_evol.fit_fontsize,
+        figure_padding=1)
     indices_panel = Any[Colon() for _ in name_stat]
     indices_panel[idx_axis_stat[key_panel]] = idx_panel
     reps_min, reps_max = extrema(@view n_rep_stat[indices_panel...])
     reps_used = reps_min == reps_max ? string(reps_min) : "$(reps_min)–$(reps_max)"
-    ax = Axis(fig[1, 1]; xlabel=plot_num_evol.xlabel(panel), ylabel=plot_num_evol.ylabel,
+    axis_size = (; width=plot_num_evol.frame_size[1],
+        height=plot_num_evol.frame_size[2])
+    ax_log = Axis(fig[1, 1]; ylabel=plot_num_evol.ylabel,
         title=plot_num_evol.title(tag_head, panel, reps_used),
-        yscale=log10,
-        width=plot_num_evol.frame_size[1], height=plot_num_evol.frame_size[2],
+        yscale=log10, xticklabelsvisible=false,
+        axis_size...,
         dualmot_axis_kwargs(; log_y=true, text_size=plot_num_evol.fit_fontsize)...)
-    labels_fit = fig[1, 2] = GridLayout()
+    ax_linear = Axis(fig[2, 1]; xlabel=plot_num_evol.xlabel(panel),
+        ylabel=plot_num_evol.ylabel,
+        axis_size...,
+        dualmot_axis_kwargs(; text_size=plot_num_evol.fit_fontsize)...)
+    linkxaxes!(ax_log, ax_linear)
+    rowgap!(fig.layout, 4)
+    colgap!(fig.layout, 8)
+    labels_fit = fig[1:2, 2] = GridLayout()
     curves_decay = map(enumerate(conditions_curve)) do (idx_condition, condition)
         indices = copy(indices_panel)
         for key in keys_curve
@@ -23,8 +33,8 @@ for (idx_panel, panel) in enumerate(val_panel)
         stds = vec(@view std_num_stat[indices...])
         style = plot_num_evol.curve_style(condition)
         label = plot_num_evol.curve_label(condition)
-        mask = isfinite.(nums) .& (nums .> 0)
-        mask_error = mask .& isfinite.(stds) .& (nums .- stds .> 0)
+        mask_linear = isfinite.(nums)
+        mask_log = mask_linear .& (nums .> 0)
         result = try
             fit_num_decay(val_x_plot, nums; fit_num_decay_config...)
         catch err
@@ -61,46 +71,83 @@ for (idx_panel, panel) in enumerate(val_panel)
             println("$tag_head / $panel / $label: ", replace(label_num_decay(result), '\n' => "; "))
             "$label\n$(label_num_decay(result))"
         end
-        (; idx_condition, condition, nums, stds, style, label, mask, mask_error,
-            result, text_fit)
+        mask_selected = isnothing(result) ? trues(length(nums)) : result.mask_selected
+        (; idx_condition, condition, nums, stds, style, label, mask_linear,
+            mask_log, mask_selected, result, text_fit)
     end
-    for curve in curves_decay
+
+    # Fitted curves stay underneath every marker and extend over all displayed times.
+    for ax in (ax_log, ax_linear), curve in curves_decay
         isnothing(curve.result) && continue
         ts = collect(range(minimum(val_x_plot), maximum(val_x_plot); length=400))
         lines!(ax, ts, curve.result.model(ts, curve.result.params);
             curve.style.line_options...,
             xautolimits=false, yautolimits=false)
     end
-    for curve in curves_decay
-        mask_error = curve.mask_error
-        if any(mask_error)
+
+    for (ax, is_log) in ((ax_log, true), (ax_linear, false)), curve in curves_decay
+        mask_display = is_log ? curve.mask_log : curve.mask_linear
+        mask_error = mask_display .& isfinite.(curve.stds)
+        is_log && (mask_error .&= curve.nums .- curve.stds .> 0)
+        mask_filled = mask_display .& curve.mask_selected
+        mask_hollow = mask_display .& .!curve.mask_selected
+        mask_filled_error = mask_filled .& mask_error
+        mask_filled_only = mask_filled .& .!mask_error
+        mask_hollow_error = mask_hollow .& mask_error
+        mask_hollow_only = mask_hollow .& .!mask_error
+        label_plot = ax === ax_log ? curve.label : nothing
+        if any(mask_filled_error)
             marker_errorbars!(ax,
-                val_x_plot[mask_error], curve.nums[mask_error], curve.stds[mask_error];
+                val_x_plot[mask_filled_error], curve.nums[mask_filled_error],
+                curve.stds[mask_filled_error];
                 curve.style.marker_options...,
                 curve.style.errorbar_options...,
                 marker=curve.style.marker,
-                label=curve.label)
-            mask_marker_only = curve.mask .& .!mask_error
-            any(mask_marker_only) && scatter!(ax,
-                val_x_plot[mask_marker_only], curve.nums[mask_marker_only];
-                curve.style.marker_options...,
-                marker=curve.style.marker,
-                label=nothing)
-        else
-            scatter!(ax, val_x_plot[curve.mask], curve.nums[curve.mask];
-                curve.style.marker_options...,
-                marker=curve.style.marker,
-                label=curve.label)
+                label=label_plot)
+            label_plot = nothing
         end
-        Label(labels_fit[curve.idx_condition, 1], curve.text_fit; color=curve.style.color,
-            fontsize=8, halign=:left, justification=:left)
+        if any(mask_filled_only)
+            scatter!(ax, val_x_plot[mask_filled_only], curve.nums[mask_filled_only];
+                curve.style.marker_options...,
+                marker=curve.style.marker,
+                label=label_plot)
+            label_plot = nothing
+        end
+        hollow_options = merge(curve.style.marker_options, (; color=:transparent))
+        if any(mask_hollow_error)
+            marker_errorbars!(ax,
+                val_x_plot[mask_hollow_error], curve.nums[mask_hollow_error],
+                curve.stds[mask_hollow_error];
+                hollow_options...,
+                curve.style.errorbar_options...,
+                marker=curve.style.marker,
+                label=label_plot)
+            label_plot = nothing
+        end
+        any(mask_hollow_only) && scatter!(ax,
+            val_x_plot[mask_hollow_only], curve.nums[mask_hollow_only];
+            hollow_options...,
+            marker=curve.style.marker,
+            label=label_plot)
+    end
+
+    for curve in curves_decay
+        Label(labels_fit[curve.idx_condition, 1], curve.text_fit;
+            color=curve.style.color, fontsize=8,
+            halign=:left, justification=:left)
     end
     Label(labels_fit[length(conditions_curve) + 1, 1],
         "± approximate 1σ fit errors\n* parameter at bound; errors are local";
         fontsize=7, halign=:left, justification=:left)
-    key_x in (:t_load, :t_hold) && set_time_minor_ticks!(ax)
-    axislegend(ax; position=plot_num_evol.legend_position, DUALMOT_LEGEND_OPTIONS...)
-    name_output = replace(plot_num_evol.filename(:log, panel), ".[log]." => ".[fit.log].")
+    key_x in (:t_load, :t_hold) && begin
+        set_time_minor_ticks!(ax_log)
+        set_time_minor_ticks!(ax_linear)
+    end
+    axislegend(ax_log; position=plot_num_evol.legend_position,
+        DUALMOT_LEGEND_OPTIONS...)
+    resize_to_layout!(fig)
+    name_output = replace(plot_num_evol.filename(:log, panel),
+        ".[log]." => ".[fit.log].")
     for format in plot_num_evol.formats
         save_options = format == "png" ? (; px_per_unit=4) : (;)
         save(joinpath(path_output, "$name_output.$format"), fig; save_options...)

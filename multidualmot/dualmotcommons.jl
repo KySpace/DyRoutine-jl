@@ -171,7 +171,11 @@ function read_num_evol_data(path_folder::AbstractString, config::AbstractDict;
     vars = merge((rep=:auto,), NamedTuple{names_var}(values_var))
     validate_vars(vars, folder)
 
-    config_to_name = Dict(spec.config => name for (name, spec) in pairs(var_specs))
+    config_to_name = Dict{String,Symbol}()
+    for (name, spec) in pairs(var_specs)
+        config_to_name[spec.config] = name
+        config_to_name[string(name)] = name
+    end
     raw_order = get(config, "vars", nothing)
     raw_order isa AbstractVector || throw(ArgumentError("$label: vars must be a vector"))
     var_order = map(raw_order) do raw_name
@@ -202,7 +206,55 @@ function read_num_evol_data(path_folder::AbstractString, config::AbstractDict;
         (String(matched[1]), parse(Int, matched[2]))
     end
     allunique(date_runid) || throw(ArgumentError("$label: duplicate date/run IDs"))
-    (; date_runid, vars, var_order, files, sources)
+    selector = parse_num_evol_selector(get(config, "selector", nothing);
+        var_specs, label)
+    (; date_runid, vars, var_order, files, sources, selector)
+end
+
+function parse_num_evol_selector(raw_selector, ; var_specs::NamedTuple, label::AbstractString)
+    isnothing(raw_selector) && return NamedTuple()
+    raw_selector isa AbstractVector ||
+        throw(ArgumentError("$label: selector must be a sequence of variable mappings"))
+    config_to_name = Dict{String,Symbol}()
+    for (name, spec) in pairs(var_specs)
+        config_to_name[spec.config] = name
+        config_to_name[string(name)] = name
+    end
+    selected = Pair{Symbol,NamedTuple}[]
+    for (idx_selector, item) in enumerate(raw_selector)
+        item isa AbstractDict && !isempty(item) ||
+            throw(ArgumentError("$label selector[$idx_selector]: expected a variable mapping"))
+        raw_key = first(keys(item))
+        raw_predicates = item[raw_key]
+        if isnothing(raw_predicates) && length(item) == 2
+            # YAML also accepts the compact sibling form used in existing configs:
+            # - rep:\n  value: "a -> ..."
+            remaining = filter(pair -> first(pair) != raw_key, collect(item))
+            raw_predicates = Dict(remaining)
+        end
+        key = get(config_to_name, string(raw_key)) do
+            raw_key == "rep" ? :rep : throw(ArgumentError("$label selector[$idx_selector]: unknown variable $raw_key"))
+        end
+        raw_predicates isa AbstractDict && length(raw_predicates) == 1 ||
+            throw(ArgumentError("$label selector[$idx_selector]: expected exactly one of value or index"))
+        raw_kind, raw_expression = first(raw_predicates)
+        kind = Symbol(raw_kind)
+        kind in (:value, :index) ||
+            throw(ArgumentError("$label selector[$idx_selector]: selector key must be value or index"))
+        raw_expression isa AbstractString ||
+            throw(ArgumentError("$label selector[$idx_selector]: $kind predicate must be a Julia expression string"))
+        predicate = try
+            Core.eval(@__MODULE__, Meta.parse(raw_expression))
+        catch error
+            throw(ArgumentError("$label selector[$idx_selector]: cannot parse $kind predicate: $(sprint(showerror, error))"))
+        end
+        predicate isa Function ||
+            throw(ArgumentError("$label selector[$idx_selector]: $kind predicate must evaluate to a function"))
+        push!(selected, key => NamedTuple{(kind,)}((predicate,)))
+    end
+    length(unique(first.(selected))) == length(selected) ||
+        throw(ArgumentError("$label: selector may mention each variable only once"))
+    NamedTuple{Tuple(first.(selected))}(last.(selected))
 end
 
 function read_num_evol_runinfos(path_root::AbstractString, folder::AbstractString;
@@ -255,7 +307,8 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
 
     shot_data = read_cres_fields(runinfo_data.files, ("atomnum", "sigmax", "sigmay"))
     num_data, sigmax_data, sigmay_data = shot_data
-    all(isfinite, num_data) || throw(ArgumentError("$label: atomnum must contain only finite values"))
+    all(value -> ismissing(value) || isfinite(value), num_data) ||
+        throw(ArgumentError("$label: atomnum must contain only finite values or baddata entries"))
     len_data = length(num_data)
     n_variation = prod(length(getproperty(runinfo_data.vars, key))
         for key in keys(runinfo_data.vars) if key != :rep)
@@ -278,8 +331,8 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
     mask_sigmay = isfinite.(sigmay_data) .&
         (sigmay_data .>= bounds_sigmay_num[1]) .& (sigmay_data .<= bounds_sigmay_num[2])
     mask_size = mask_sigmax .& mask_sigmay
-    mask_num_low = num_data .>= 0
-    mask_num_high = num_data .<= num_max_num
+    mask_num_low = .!ismissing.(num_data) .& (coalesce.(num_data, -Inf) .>= 0)
+    mask_num_high = .!ismissing.(num_data) .& (coalesce.(num_data, Inf) .<= num_max_num)
     mask_valid = mask_size .& mask_num_low .& mask_num_high
     num_data_masked = Vector{Union{Missing, Float64}}(num_data)
     num_data_masked[.!mask_valid] .= missing
@@ -288,6 +341,20 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
     num_acq = reshape(num_data_masked, reverse(n_dims_acq)) |>
         data -> permutedims(data, reverse(1:length(n_dims_acq)))
     num_fmt = permutedims(num_acq, indexin(collect(name), collect(name_acq)))
+    for key in keys(runinfo_data.selector)
+        axis_values = getproperty(vars, key)
+        predicate_spec = getproperty(runinfo_data.selector, key)
+        kind = first(keys(predicate_spec))
+        predicate = getproperty(predicate_spec, kind)
+        selector_values = kind == :value ? axis_values : eachindex(axis_values)
+        selected = predicate.(selector_values)
+        selected isa AbstractVector{Bool} && length(selected) == length(axis_values) ||
+            throw(ArgumentError("$label selector for $key.$kind must return one Boolean per axis value"))
+        idx_axis = findfirst(==(key), name)
+        for idx in eachindex(selected)
+            selected[idx] || (selectdim(num_fmt, idx_axis, idx) .= missing)
+        end
+    end
     idx_rep_axis = findfirst(==(:rep), name)
     num_stat = dropdims(mapslices(num_fmt; dims=idx_rep_axis) do values
         valid = collect(skipmissing(vec(values)))
@@ -369,7 +436,8 @@ function read_cres_fields(paths::AbstractVector{<:AbstractString}, fields::Tuple
     names = Tuple(Symbol.(fields))
     values_by_file = map(paths) do path
         matopen(path) do file
-            cres = read(file, "liferes")["cres"]
+            liferes = read(file, "liferes")
+            cres = liferes["cres"]
             entries = if cres isa MAT.MatlabStructArray
                 [cres[idx] for idx in 1:length(cres[first(fields)])]
             elseif cres isa AbstractDict
@@ -377,7 +445,7 @@ function read_cres_fields(paths::AbstractVector{<:AbstractString}, fields::Tuple
             else
                 vec(cres)
             end
-            map(fields) do field
+            field_values = map(fields) do field
                 map(entries) do entry
                     value = entry[field]
                     value = value isa AbstractArray ? only(value) : value
@@ -386,6 +454,19 @@ function read_cres_fields(paths::AbstractVector{<:AbstractString}, fields::Tuple
                     Float64(value)
                 end
             end |> Tuple
+            baddata = get(liferes, "baddata", Int[])
+            bad_indices = baddata isa AbstractArray ? vec(baddata) : [baddata]
+            # MATLAB liferes files use scalar zero to mean that no bad shots were recorded.
+            bad_indices = length(bad_indices) == 1 && iszero(only(bad_indices)) ? eltype(bad_indices)[] : bad_indices
+            all(index -> index isa Real && isinteger(index) && 1 <= index <= length(entries), bad_indices) ||
+                throw(ArgumentError("$path: baddata must contain linear indices in 1:$(length(entries))"))
+            if "atomnum" in fields
+                idx_num = findfirst(==("atomnum"), fields)
+                nums = Union{Missing,Float64}[field_values[idx_num]...]
+                nums[Int.(bad_indices)] .= missing
+                field_values = ntuple(idx -> idx == idx_num ? nums : field_values[idx], length(fields))
+            end
+            field_values
         end
     end
     values = map(eachindex(fields)) do idx
@@ -566,6 +647,7 @@ function fit_num_decay(t::AbstractVector{<:Real}, nums::AbstractVector{<:Real};
     mode::Symbol=:full, bounds_n0::Tuple{<:Real,<:Real}=(0.5, 2.0),
     bounds_tau::Tuple{<:Real,<:Real}=(0.1, 50.0),
     bounds_kappa::Tuple{<:Real,<:Real}=(eps(Float64), Inf),
+    selector::Function=values -> trues(length(values)),
 )
     length(t) == length(nums) || throw(DimensionMismatch("time and number lengths differ"))
     mode in (:full, :kappa, :tau) ||
@@ -576,7 +658,14 @@ function fit_num_decay(t::AbstractVector{<:Real}, nums::AbstractVector{<:Real};
         throw(ArgumentError("τ bounds must satisfy 0 < lower < upper, got $bounds_tau"))
     mode in (:full, :kappa) && !(0 <= bounds_kappa[1] < bounds_kappa[2]) &&
         throw(ArgumentError("κ bounds must satisfy 0 ≤ lower < upper, got $bounds_kappa"))
-    mask = isfinite.(t) .& isfinite.(nums) .& (nums .>= 0)
+    mask_selected = selector(t)
+    mask_selected isa AbstractVector{Bool} || throw(ArgumentError(
+        "decay fit selector must return an AbstractVector{Bool}, got $(typeof(mask_selected))",
+    ))
+    length(mask_selected) == length(t) || throw(DimensionMismatch(
+        "decay fit selector returned $(length(mask_selected)) values for $(length(t)) times",
+    ))
+    mask = isfinite.(t) .& isfinite.(nums) .& (nums .>= 0) .& mask_selected
     ts, ns = Float64.(t[mask]), Float64.(nums[mask])
     length(unique(ts)) > 3 || throw(ArgumentError("decay fitting needs at least four distinct valid times"))
     minimum(ts) >= 0 || throw(ArgumentError("holding times must be nonnegative"))
@@ -620,7 +709,8 @@ function fit_num_decay(t::AbstractVector{<:Real}, nums::AbstractVector{<:Real};
     end
     at_bound = any(isapprox.(fit.param, lower; atol=1e-7, rtol=1e-4) .|
         isapprox.(fit.param, upper; atol=1e-7, rtol=1e-4))
-    (; mode, model, params, errors, at_bound, fit, mask)
+    (; mode, model, params, errors, at_bound, fit, mask,
+        mask_selected=collect(mask_selected))
 end
 
 function format_fit_scientific(value::Real, error::Real)
