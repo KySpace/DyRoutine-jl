@@ -24,7 +24,8 @@ plot_num_evol = dualmot_lifetime_plot_spec("CMOT";
     key_x=key_x_num,
     scale_x=1000,
     xlabel="CMOT holding time (s)",
-    ylabel="CMOT number",
+    ylabel="CMOT number (pixsum)",
+    field_num="pixsum",
 )
 plot_num_evol_target = nothing
 fit_records_num_decay = NamedTuple[]

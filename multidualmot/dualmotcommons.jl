@@ -333,7 +333,7 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
     mask_sigmay = isfinite.(sigmay_data) .&
         (sigmay_data .>= bounds_sigmay_num[1]) .& (sigmay_data .<= bounds_sigmay_num[2])
     mask_size = mask_sigmax .& mask_sigmay
-    mask_num_low = .!ismissing.(num_data) .& (coalesce.(num_data, -Inf) .>= 0)
+    mask_num_low = .!ismissing.(num_data) .& (coalesce.(num_data, -Inf) .>= - num_max_num / 100)
     mask_num_high = .!ismissing.(num_data) .& (coalesce.(num_data, Inf) .<= num_max_num)
     mask_valid = mask_size .& mask_num_low .& mask_num_high
     num_data_masked = Vector{Union{Missing, Float64}}(num_data)
