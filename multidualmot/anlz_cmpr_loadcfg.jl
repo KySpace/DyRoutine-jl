@@ -40,7 +40,7 @@ Set(keys(curves_num)) == expected_curves ||
 all_n_reps = vcat((curve.n_reps for curve in values(curves_num))...)
 reps_min, reps_max = extrema(all_n_reps)
 reps_used = reps_min == reps_max ? string(reps_min) : "$(reps_min)–$(reps_max)"
-title_plot = "$tag_head · reps = $reps_used\nβ_MOT = 0.0"
+title_plot = dualmot_title(tag_head, reps_used; bias=0.0)
 
 fig_nums = isnothing(plot_cmpr_loadcfg_target) ?
     Figure(size=plot_cmpr_loadcfg.size, fontsize=plot_cmpr_loadcfg.fontsize,

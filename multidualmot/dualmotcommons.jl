@@ -57,7 +57,7 @@ function odt_bfield_xlabel(direction::Symbol)
     haskey(ODT_BFIELD_CALIBRATION, direction) ||
         throw(ArgumentError("ODT B-field direction must be :x or :z, got $direction"))
     rich(rich("B", font=:italic),
-        subscript(rich(string(direction), font=:italic)), " (A)")
+        subscript(rich(string(direction), font=:italic)), " (G)")
 end
 
 function odt_bfield_axis_options(current::AbstractVector{<:Real}, direction::Symbol)
@@ -478,6 +478,14 @@ end
 
 balance_tag(bias::Real) = iszero(bias) ? "t" : "n"
 
+function dualmot_title(tag, reps_used; bias=nothing)
+    title_reps = rich(tag, " · ", rich("n", font=:italic),
+        subscript("reps"), " = ", string(reps_used))
+    isnothing(bias) && return title_reps
+    rich(title_reps, " · ", rich("β", font=:italic), subscript("MOT"),
+        " = ", string(bias))
+end
+
 function dualmot_num_evol_plot_spec(kind::AbstractString;
     key_x::Symbol,
     xlabel::Union{AbstractString,Function},
@@ -485,6 +493,7 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
     scale_x::Real=1.0,
     transform_x=(values, condition, panel, idx_istp) -> values,
     axis_options=(;),
+    draw_background=(ax, panel, scale) -> nothing,
     allow_partial_rep::Bool=false,
     xautolimits=(condition, panel) -> true,
     yautolimits=(condition, panel) -> true,
@@ -512,13 +521,13 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
         xlabel=xlabel_panel,
         transform_x,
         axis_options,
+        draw_background,
         allow_partial_rep,
         xautolimits,
         yautolimits,
         ylabel,
         limits_linear,
-        title=(tag, bias, reps_used) ->
-            "$tag · reps = $reps_used\nβ_MOT = $bias",
+        title=(tag, bias, reps_used) -> dualmot_title(tag, reps_used; bias),
         filename=(scale, bias) ->
             "[$file_head].[$scale].[$(balance_tag(bias))-balanced]",
         curve_label=condition -> "$(condition.istp) $(condition.loadcfg)",

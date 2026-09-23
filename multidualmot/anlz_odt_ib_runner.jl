@@ -41,7 +41,7 @@ for idx_runinfo_iter in ids_runinfo
         transform_x=(values, condition, panel, idx_istp) ->
             odt_bfield_values(values, direction),
         axis_options=odt_bfield_axis_options(current_values, direction),
-        title=(tag, _, reps_used) -> "$tag · reps = $reps_used",
+        title=(tag, _, reps_used) -> dualmot_title(tag, reps_used),
         filename=(scale, _) -> "[ODT.BField].[$scale].[$direction]",
     ))
     println("Processing: $tag_head")

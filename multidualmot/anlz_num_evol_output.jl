@@ -38,6 +38,7 @@ for (idx_panel, panel, scale) in jobs_num_evol
         yscale=scale == :log ? log10 : identity,
         frame_options...,
         axis_options...)
+    plot_num_evol.draw_background(ax, panel, scale)
 
     curves_plot = map(conditions_curve) do condition
         indices = Any[Colon() for _ in name_stat]

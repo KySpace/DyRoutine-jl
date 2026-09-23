@@ -191,7 +191,7 @@ function draw_ratio_style_key!(fig::Figure)
 end
 
 function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denominator::Symbol;
-    ylabel, title::AbstractString, filename::AbstractString)
+    ylabel, title, filename::AbstractString)
     fig = Figure(size=(320, 149), fontsize=8, figure_padding=1)
     ax = Axis(fig[1, 1];
         xticks=(eachindex(val_pair), val_pair),
@@ -239,7 +239,7 @@ function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denomi
 end
 
 function draw_pair_numbers(points_by_pair::AbstractDict, loadcfgs::Tuple;
-    ylabel, title::AbstractString, filename::AbstractString, limits_y::Tuple)
+    ylabel, title, filename::AbstractString, limits_y::Tuple)
     fig = Figure(size=(320, 164), fontsize=8, figure_padding=1)
     ax = Axis(fig[1, 1];
         xticks=(eachindex(val_pair), val_pair),
@@ -281,24 +281,28 @@ mkpath(path_output)
 limits_y_numbers = (0.3e6, 1.6e8)
 fig_ratio_ddm_dis = draw_pair_ratio(points_421, :DDM, :DIS;
     ylabel=rich("N", subscript("DDM"), " / N", subscript("DIS")),
-    title="MOT loading 421 · 30 sec loading · β_MOT = 0",
+    title=rich("MOT loading 421 · 30 sec loading · ",
+        rich("β", font=:italic), subscript("MOT"), " = 0"),
     filename="[MOT.loading.pairs].[DDM-DIS].[ratio]",
 )
 fig_ratio_dcs_scs = draw_pair_ratio(points_626, :DCS, :SCS;
     ylabel=rich("N", subscript("DCS"), " / N", subscript("SCS")),
-    title="MOT loading 626 · 30 sec loading · β_MOT = 0",
+    title=rich("MOT loading 626 · 30 sec loading · ",
+        rich("β", font=:italic), subscript("MOT"), " = 0"),
     filename="[MOT.loading.pairs].[DCS-SCS].[ratio]",
 )
 fig_nums_ddm_dis = draw_pair_numbers(points_421, (:DIS, :DDM);
     limits_y=limits_y_numbers,
     ylabel=rich("N", subscript("DDM"), ", N", subscript("DIS")),
-    title="MOT loading 421 · 30 sec loading · β_MOT = 0",
+    title=rich("MOT loading 421 · 30 sec loading · ",
+        rich("β", font=:italic), subscript("MOT"), " = 0"),
     filename="[MOT.loading.pairs].[DDM-DIS].[nums]",
 )
 fig_nums_dcs_scs = draw_pair_numbers(points_626, (:SCS, :DCS);
     limits_y=limits_y_numbers,
     ylabel=rich("N", subscript("DCS"), ", N", subscript("SCS")),
-    title="MOT loading 626 · 30 sec loading · β_MOT = 0",
+    title=rich("MOT loading 626 · 30 sec loading · ",
+        rich("β", font=:italic), subscript("MOT"), " = 0"),
     filename="[MOT.loading.pairs].[DCS-SCS].[nums]",
 )
 

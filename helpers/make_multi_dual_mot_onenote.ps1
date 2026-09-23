@@ -127,6 +127,129 @@ function Get-PngDimensions {
     return [pscustomobject]@{ Width = [double]$width; Height = [double]$height }
 }
 
+function Get-ConfigSourceRecords {
+    param([Parameter(Mandatory)] [string]$ConfigPath)
+
+    $records = [System.Collections.Generic.List[object]]::new()
+    $tag = ''
+    $biases = @()
+    foreach ($line in Get-Content -LiteralPath $ConfigPath) {
+        if ($line -match '^\s*-\s*tag\s*:\s*"?([^"#]+)"?\s*$') {
+            $tag = $Matches[1].Trim()
+            $biases = @()
+            continue
+        }
+        if ($line -match '^\s*-\s*tbiasmot\s*:\s*\[([^\]]*)\]') {
+            $biases = @($Matches[1] -split ',' | ForEach-Object {
+                $value = 0.0
+                if ([double]::TryParse($_.Trim(),
+                        [Globalization.NumberStyles]::Float,
+                        [Globalization.CultureInfo]::InvariantCulture,
+                        [ref]$value)) {
+                    $value
+                }
+            })
+            continue
+        }
+        if ($line -notmatch '^\s*source\s*:') {
+            continue
+        }
+        foreach ($match in [regex]::Matches($line, 'liferes\s+(\d{4})\s+run(\d+)\.mat')) {
+            $records.Add([pscustomobject]@{
+                Tag = $tag
+                Biases = @($biases)
+                Date = $match.Groups[1].Value
+                Run = [int]$match.Groups[2].Value
+            })
+        }
+    }
+    return $records
+}
+
+function Format-SourceCaption {
+    param([Parameter(Mandatory)] [System.Collections.IEnumerable]$Records)
+
+    $dateOrder = [System.Collections.Generic.List[string]]::new()
+    $runsByDate = @{}
+    foreach ($record in $Records) {
+        if (-not $runsByDate.ContainsKey($record.Date)) {
+            $dateOrder.Add($record.Date)
+            $runsByDate[$record.Date] = [System.Collections.Generic.List[int]]::new()
+        }
+        if ($record.Run -notin $runsByDate[$record.Date]) {
+            $runsByDate[$record.Date].Add($record.Run)
+        }
+    }
+    $groups = foreach ($date in $dateOrder) {
+        $runs = @($runsByDate[$date] | Sort-Object | ForEach-Object { $_.ToString('00') })
+        if ($runs.Count -gt 0) {
+            "$date-run$($runs -join ', ')"
+        }
+    }
+    return $groups -join '; '
+}
+
+function Select-SourceRecords {
+    param(
+        [Parameter(Mandatory)] [System.Collections.IEnumerable]$Records,
+        [Parameter(Mandatory)] [string]$SubvariantTag
+    )
+
+    $recordArray = @($Records)
+    $selected = if ($SubvariantTag -eq 't-balanced') {
+        @($recordArray | Where-Object { 0.0 -in $_.Biases })
+    }
+    elseif ($SubvariantTag -eq 'n-balanced') {
+        @($recordArray | Where-Object {
+            @($_.Biases | Where-Object { [Math]::Abs($_) -ge 1e-12 }).Count -gt 0
+        })
+    }
+    elseif ($SubvariantTag -eq '*') {
+        $recordArray
+    }
+    else {
+        @($recordArray | Where-Object { $_.Tag -eq $SubvariantTag })
+    }
+    $selected = @($selected)
+    return $(if ($selected.Count -eq 0) { $recordArray } else { $selected })
+}
+
+function Get-SourceCaption {
+    param(
+        [Parameter(Mandatory)] [string]$ConfigPath,
+        [Parameter(Mandatory)] [string]$StyleTag,
+        [Parameter(Mandatory)] [string]$SubvariantTag
+    )
+
+    if ($StyleTag -match 'fit' -or $StyleTag -match '(^|\.)log($|\.)') {
+        return ''
+    }
+    $records = @(Get-ConfigSourceRecords -ConfigPath $ConfigPath)
+    $selected = @(Select-SourceRecords -Records $records -SubvariantTag $SubvariantTag)
+    return Format-SourceCaption -Records $selected
+}
+
+function Get-ParentSourceCaption {
+    param(
+        [Parameter(Mandatory)] [string]$Root,
+        [Parameter(Mandatory)] [string]$ParentName,
+        [Parameter(Mandatory)] [string]$SubvariantTag
+    )
+
+    $selected = [System.Collections.Generic.List[object]]::new()
+    foreach ($pairName in $script:PairNames) {
+        $configPath = Join-Path (Join-Path (Join-Path $Root $ParentName) $pairName) 'config.yaml'
+        if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+            continue
+        }
+        $records = @(Get-ConfigSourceRecords -ConfigPath $configPath)
+        foreach ($record in @(Select-SourceRecords -Records $records -SubvariantTag $SubvariantTag)) {
+            $selected.Add($record)
+        }
+    }
+    return Format-SourceCaption -Records $selected
+}
+
 function Get-PngEntries {
     param([Parameter(Mandatory)] [string]$Root)
 
@@ -142,6 +265,7 @@ function Get-PngEntries {
                 continue
             }
 
+            $configPath = Join-Path $pairPath 'config.yaml'
             foreach ($file in Get-ChildItem -LiteralPath $pairPath -File -Filter '*.png' | Sort-Object Name) {
                 if ($file.Name -notmatch $filenamePattern) {
                     Write-Warning "Ignoring PNG with an unexpected name: $($file.FullName)"
@@ -158,6 +282,10 @@ function Get-PngEntries {
                     Width = $size.Width
                     Height = $size.Height
                     Base64 = [Convert]::ToBase64String($bytes)
+                    SourceCaption = if (Test-Path -LiteralPath $configPath -PathType Leaf) {
+                        Get-SourceCaption -ConfigPath $configPath `
+                            -StyleTag $Matches[2] -SubvariantTag $Matches[3]
+                    } else { '' }
                 })
             }
         }
@@ -170,14 +298,14 @@ function Get-ComparisonEntries {
 
     $folder = Join-Path $Root 'Isotope pair comparison'
     $specs = @(
-        @{ Key = '626-numbers'; Group = 'loading'; File = '[MOT.loading.pairs].[DCS-SCS].[nums].png' },
-        @{ Key = '421-numbers'; Group = 'loading'; File = '[MOT.loading.pairs].[DDM-DIS].[nums].png' },
-        @{ Key = '626-ratio'; Group = 'loading'; File = '[MOT.loading.pairs].[DCS-SCS].[ratio].png' },
-        @{ Key = '421-ratio'; Group = 'loading'; File = '[MOT.loading.pairs].[DDM-DIS].[ratio].png' },
-        @{ Key = 'cmot-values'; Group = 'lifetime'; File = '[CMOT.decay.pairs].[kappa].[values].png' },
-        @{ Key = 'mot-values'; Group = 'lifetime'; File = '[MOT.decay.pairs].[tau].[values].png' },
-        @{ Key = 'cmot-ratio'; Group = 'lifetime'; File = '[CMOT.decay.pairs].[DIS-DDM].[ratio].png' },
-        @{ Key = 'mot-ratio'; Group = 'lifetime'; File = '[MOT.decay.pairs].[DDM-DIS].[ratio].png' }
+        @{ Key = '626-numbers'; Group = 'loading'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[nums].png' },
+        @{ Key = '421-numbers'; Group = 'loading'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[nums].png' },
+        @{ Key = '626-ratio'; Group = 'loading'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[ratio].png' },
+        @{ Key = '421-ratio'; Group = 'loading'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[ratio].png' },
+        @{ Key = 'cmot-values'; Group = 'lifetime'; Parent = 'CMOT lifetime'; Variant = '*'; File = '[CMOT.decay.pairs].[kappa].[values].png' },
+        @{ Key = 'mot-values'; Group = 'lifetime'; Parent = 'MOT lifetime'; Variant = '*'; File = '[MOT.decay.pairs].[tau].[values].png' },
+        @{ Key = 'cmot-ratio'; Group = 'lifetime'; Parent = 'CMOT lifetime'; Variant = '*'; File = '[CMOT.decay.pairs].[DIS-DDM].[ratio].png' },
+        @{ Key = 'mot-ratio'; Group = 'lifetime'; Parent = 'MOT lifetime'; Variant = '*'; File = '[MOT.decay.pairs].[DDM-DIS].[ratio].png' }
     )
     $entries = @{}
     foreach ($spec in $specs) {
@@ -192,6 +320,8 @@ function Get-ComparisonEntries {
             Width = $size.Width
             Height = $size.Height
             Base64 = [Convert]::ToBase64String($bytes)
+            SourceCaption = Get-ParentSourceCaption -Root $Root `
+                -ParentName $spec.Parent -SubvariantTag $spec.Variant
         }
     }
     return $entries
@@ -218,6 +348,24 @@ function Add-OneNoteImage {
     })
     $data = Add-OneNoteElement -Document $Document -Parent $image -Name 'Data'
     $data.InnerText = $Entry.Base64
+}
+
+function Add-ImageWithCaption {
+    param(
+        [Parameter(Mandatory)] [System.Xml.XmlDocument]$Document,
+        [Parameter(Mandatory)] [System.Xml.XmlNode]$Parent,
+        [Parameter(Mandatory)] [psobject]$Entry,
+        [Parameter(Mandatory)] [double]$DisplayWidth
+    )
+
+    Add-OneNoteImage -Document $Document -Parent $Parent `
+        -Entry $Entry -DisplayWidth $DisplayWidth
+    if ($Entry.PSObject.Properties.Name -contains 'SourceCaption' -and
+            -not [string]::IsNullOrWhiteSpace($Entry.SourceCaption)) {
+        [void](Add-OneNoteText -Document $Document -Parent $Parent `
+            -Text $Entry.SourceCaption `
+            -Style 'font-family:Calibri;font-size:7.0pt;text-align:center')
+    }
 }
 
 function Add-ImageTable {
@@ -280,7 +428,7 @@ function Add-ImageTable {
             }
 
             $entry = $entryLookup[$key]
-            Add-OneNoteImage -Document $Document -Parent $imageChildren `
+            Add-ImageWithCaption -Document $Document -Parent $imageChildren `
                 -Entry $entry -DisplayWidth $DisplayWidth
             $imageCount++
         }
@@ -288,49 +436,31 @@ function Add-ImageTable {
     return $imageCount
 }
 
-function Add-ComparisonTable {
+function Add-ComparisonRows {
     param(
         [Parameter(Mandatory)] [System.Xml.XmlDocument]$Document,
-        [Parameter(Mandatory)] [System.Xml.XmlNode]$OutlineChildren,
+        [Parameter(Mandatory)] [System.Xml.XmlNode]$Table,
         [Parameter(Mandatory)] [hashtable]$Entries,
         [Parameter(Mandatory)] [double]$DisplayWidth
     )
 
-    [void](Add-OneNoteText -Document $Document -Parent $OutlineChildren `
-        -Text 'Isotope pair comparisons' `
-        -Style 'font-family:Calibri;font-size:14.0pt;font-weight:bold')
-    $groups = @(
-        @{
-            Caption = 'Loading numbers and ratios (626, 421)'
-            Rows = @(
-                @('626-numbers', '421-numbers'),
-                @('626-ratio', '421-ratio')
-            )
-        },
-        @{
-            Caption = 'Lifetime parameters and ratios (1/κ, τ)'
-            Rows = @(
-                @('cmot-values', 'mot-values'),
-                @('cmot-ratio', 'mot-ratio')
-            )
-        }
+    $rows = @(
+        @{ Label = 'Pair values'; Keys = @('421-numbers', '626-numbers', 'cmot-values', 'mot-values') },
+        @{ Label = 'Pair ratios'; Keys = @('421-ratio', '626-ratio', 'cmot-ratio', 'mot-ratio') }
     )
-    foreach ($group in $groups) {
-        [void](Add-OneNoteText -Document $Document -Parent $OutlineChildren `
-            -Text $group.Caption `
-            -Style 'font-family:Calibri;font-size:10.0pt;font-weight:bold')
-        $tableOe = Add-OneNoteElement -Document $Document -Parent $OutlineChildren -Name 'OE'
-        $table = Add-OneNoteElement -Document $Document -Parent $tableOe -Name 'Table' -Attributes @{
-            bordersVisible = 'true'
-            hasHeaderRow = 'false'
+    foreach ($rowSpec in $rows) {
+        $row = Add-OneNoteElement -Document $Document -Parent $Table -Name 'Row'
+        $labelChildren = Add-OneNoteCell -Document $Document -Row $row -ShadingColor '#D9EAF7'
+        [void](Add-OneNoteText -Document $Document -Parent $labelChildren `
+            -Text $rowSpec.Label -Style 'font-family:Calibri;font-size:10.0pt;font-weight:bold')
+        foreach ($key in $rowSpec.Keys) {
+            $cellChildren = Add-OneNoteCell -Document $Document -Row $row
+            Add-ImageWithCaption -Document $Document -Parent $cellChildren `
+                -Entry $Entries[$key] -DisplayWidth $DisplayWidth
         }
-        foreach ($rowKeys in $group.Rows) {
-            $row = Add-OneNoteElement -Document $Document -Parent $table -Name 'Row'
-            foreach ($key in $rowKeys) {
-                $cellChildren = Add-OneNoteCell -Document $Document -Row $row
-                Add-OneNoteImage -Document $Document -Parent $cellChildren `
-                    -Entry $Entries[$key] -DisplayWidth $DisplayWidth
-            }
+        for ($index = $rowSpec.Keys.Count; $index -lt $script:ParentNames.Count; $index++) {
+            $emptyChildren = Add-OneNoteCell -Document $Document -Row $row
+            [void](Add-OneNoteText -Document $Document -Parent $emptyChildren -Text '')
         }
     }
     return $Entries.Count
@@ -390,8 +520,8 @@ function New-OneNotePageXml {
         }
     }
 
-    $imageCount += Add-ComparisonTable -Document $document `
-        -OutlineChildren $outlineChildren -Entries $ComparisonEntries `
+    $imageCount += Add-ComparisonRows -Document $document `
+        -Table $outerTable -Entries $ComparisonEntries `
         -DisplayWidth $DisplayWidth
 
     return [pscustomobject]@{ Document = $document; ImageCount = $imageCount }
