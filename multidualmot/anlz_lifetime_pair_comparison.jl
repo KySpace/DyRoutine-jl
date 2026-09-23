@@ -56,17 +56,18 @@ function draw_pair_decay_values(points_by_pair::AbstractDict, parameter::Symbol;
             throw(ArgumentError("$pair $loadcfg $istp: $parameter must be finite and positive"))
         value = point.value / scale_y
         std = point.std / scale_y
+        x = pair_istp_position(idx_pair, pair, istp)
         style = dualmot_curve_style((; loadcfg, istp))
         marker_options = marker_style(style; markersize=6)
         if isfinite(std) && std >= 0
             value - std > 0 || throw(ArgumentError(
                 "$pair $loadcfg $istp: log-scale $parameter error bar crosses zero"))
-            marker_errorbars!(ax, [idx_pair], [value], [std];
+            marker_errorbars!(ax, [x], [value], [std];
                 marker_options..., errorlinewidth=0.75)
             lower = min(lower, value - std)
             upper = max(upper, value + std)
         else
-            scatter!(ax, [idx_pair], [value]; marker_options...)
+            scatter!(ax, [x], [value]; marker_options...)
             lower = min(lower, value)
             upper = max(upper, value)
         end
@@ -114,6 +115,7 @@ function draw_pair_decay_ratio(points_by_pair::AbstractDict,
             isfinite(point_den.value) && point_den.value > 0 ||
             throw(ArgumentError("$pair $istp: invalid $numerator/$denominator fit ratio"))
         ratio = point_num.value / point_den.value
+        x = pair_istp_position(idx_pair, pair, istp)
         std_ratio = if isfinite(point_num.std) && isfinite(point_den.std)
             sqrt((point_num.std / point_den.value)^2 +
                 (point_num.value * point_den.std / point_den.value^2)^2)
@@ -123,11 +125,11 @@ function draw_pair_decay_ratio(points_by_pair::AbstractDict,
         style = dualmot_curve_style((; loadcfg=numerator, istp))
         marker_options = merge(marker_style(style; markersize=6), (; marker=:hexagon))
         if isfinite(std_ratio)
-            marker_errorbars!(ax, [idx_pair], [ratio], [std_ratio];
+            marker_errorbars!(ax, [x], [ratio], [std_ratio];
                 marker_options..., errorlinewidth=0.75)
             upper = max(upper, ratio + std_ratio)
         else
-            scatter!(ax, [idx_pair], [ratio]; marker_options...)
+            scatter!(ax, [x], [ratio]; marker_options...)
             upper = max(upper, ratio)
         end
     end

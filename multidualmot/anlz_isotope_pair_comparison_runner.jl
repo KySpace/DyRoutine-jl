@@ -6,6 +6,17 @@ path_root_626 = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\MOT loading 626"
 path_output = joinpath(dirname(path_root_421), "Isotope pair comparison")
 val_pair = ["160-162", "162-164", "161-162", "161-164", "162-163",
     "163-164", "161-163"]
+pair_istp_offset = 0.05 # isotope marker displacement as a fraction of the pair interval
+isfinite(pair_istp_offset) && 0 <= pair_istp_offset < 0.5 ||
+    throw(ArgumentError("pair_istp_offset must be finite and in [0, 0.5), got $pair_istp_offset"))
+
+function pair_istp_position(idx_pair::Integer, pair::AbstractString, istp::Symbol)
+    isotopes = Symbol.(split(pair, "-"))
+    length(isotopes) == 2 || throw(ArgumentError("invalid isotope pair: $pair"))
+    direction = istp == isotopes[1] ? -1 : istp == isotopes[2] ? 1 :
+        throw(ArgumentError("$istp is not part of isotope pair $pair"))
+    idx_pair + direction * pair_istp_offset
+end
 bounds_sigmax_num = (4e-4, Inf)
 bounds_sigmay_num = (4e-4, Inf)
 num_max_num = 2e8
@@ -240,7 +251,7 @@ function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denomi
         else
             NaN
         end
-        x = idx_pair
+        x = pair_istp_position(idx_pair, pair, istp)
         style = dualmot_curve_style((; loadcfg=numerator, istp))
         marker_options = merge(marker_style(style; markersize=6), (; marker=:hexagon))
         if isfinite(std_ratio)
@@ -280,7 +291,7 @@ function draw_pair_numbers(points_by_pair::AbstractDict, loadcfgs::Tuple;
             point = points_by_pair[pair][key]
             isfinite(point.num) && point.num > 0 ||
                 throw(ArgumentError("$pair $key: number must be finite and positive"))
-            x = idx_pair
+            x = pair_istp_position(idx_pair, pair, istp)
             style = dualmot_curve_style((; loadcfg, istp))
             marker_options = marker_style(style; markersize=6)
             if isfinite(point.std) && point.num - point.std > 0
