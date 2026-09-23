@@ -331,6 +331,19 @@ MOT lifetime/Fit results/
 
 The isotope-pair lifetime comparisons read the newest JLD2 file in each folder.
 
+### Isotope-pair comparisons
+
+The comparison runner writes separate t-balanced and n-balanced value and ratio
+figures for MOT loading 421, CMOT decay, and MOT decay. It uses 30-second
+loading values for 421 and the fitted `1/κ` and `τ` values for CMOT and MOT.
+Balance biases come from `MOT loading balance/balance.csv`; β_MOT = 0 supplies
+t-balance and the pair-specific balance bias supplies n-balance. For 162–164,
+both comparisons use the same zero-bias data. MOT loading 626 has no balance
+axis, so its 30-second values and ratios are repeated in both comparison rows.
+Unavailable pair/variant data are left blank. The concluding OneNote page has
+four comparison rows: t-balanced values, n-balanced values, t-balanced ratios,
+and n-balanced ratios.
+
 ### ODT B field
 
 Configured currents remain unchanged in the data arrays. Display values are transformed only for plotting:

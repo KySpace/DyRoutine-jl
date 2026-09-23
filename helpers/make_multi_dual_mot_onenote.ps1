@@ -243,6 +243,12 @@ function Get-ParentSourceCaption {
             continue
         }
         $records = @(Get-ConfigSourceRecords -ConfigPath $configPath)
+        if ($SubvariantTag -eq 'n-balanced' -and $pairName -ne '162-164' -and
+                -not @($records | Where-Object {
+                    @($_.Biases | Where-Object { [Math]::Abs($_) -ge 1e-12 }).Count -gt 0
+                }).Count) {
+            continue
+        }
         foreach ($record in @(Select-SourceRecords -Records $records -SubvariantTag $SubvariantTag)) {
             $selected.Add($record)
         }
@@ -298,14 +304,22 @@ function Get-ComparisonEntries {
 
     $folder = Join-Path $Root 'Isotope pair comparison'
     $specs = @(
-        @{ Key = '626-numbers'; Group = 'loading'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[nums].png' },
-        @{ Key = '421-numbers'; Group = 'loading'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[nums].png' },
-        @{ Key = '626-ratio'; Group = 'loading'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[ratio].png' },
-        @{ Key = '421-ratio'; Group = 'loading'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[ratio].png' },
-        @{ Key = 'cmot-values'; Group = 'lifetime'; Parent = 'CMOT lifetime'; Variant = '*'; File = '[CMOT.decay.pairs].[kappa].[values].png' },
-        @{ Key = 'mot-values'; Group = 'lifetime'; Parent = 'MOT lifetime'; Variant = '*'; File = '[MOT.decay.pairs].[tau].[values].png' },
-        @{ Key = 'cmot-ratio'; Group = 'lifetime'; Parent = 'CMOT lifetime'; Variant = '*'; File = '[CMOT.decay.pairs].[DIS-DDM].[ratio].png' },
-        @{ Key = 'mot-ratio'; Group = 'lifetime'; Parent = 'MOT lifetime'; Variant = '*'; File = '[MOT.decay.pairs].[DDM-DIS].[ratio].png' }
+        @{ Key = 't-421-numbers'; Group = 't-balanced'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[nums.t-balanced].png' },
+        @{ Key = 't-626-numbers'; Group = 't-balanced'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[nums.t-balanced].png' },
+        @{ Key = 't-cmot-values'; Group = 't-balanced'; Parent = 'CMOT lifetime'; Variant = 't-balanced'; File = '[CMOT.decay.pairs].[kappa].[values.t-balanced].png' },
+        @{ Key = 't-mot-values'; Group = 't-balanced'; Parent = 'MOT lifetime'; Variant = 't-balanced'; File = '[MOT.decay.pairs].[tau].[values.t-balanced].png' },
+        @{ Key = 'n-421-numbers'; Group = 'n-balanced'; Parent = 'MOT loading 421'; Variant = 'n-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[nums.n-balanced].png' },
+        @{ Key = 'n-626-numbers'; Group = 'n-balanced'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[nums.n-balanced].png' },
+        @{ Key = 'n-cmot-values'; Group = 'n-balanced'; Parent = 'CMOT lifetime'; Variant = 'n-balanced'; File = '[CMOT.decay.pairs].[kappa].[values.n-balanced].png' },
+        @{ Key = 'n-mot-values'; Group = 'n-balanced'; Parent = 'MOT lifetime'; Variant = 'n-balanced'; File = '[MOT.decay.pairs].[tau].[values.n-balanced].png' },
+        @{ Key = 't-421-ratio'; Group = 't-balanced'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[ratio.t-balanced].png' },
+        @{ Key = 't-626-ratio'; Group = 't-balanced'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[ratio.t-balanced].png' },
+        @{ Key = 't-cmot-ratio'; Group = 't-balanced'; Parent = 'CMOT lifetime'; Variant = 't-balanced'; File = '[CMOT.decay.pairs].[DIS-DDM].[ratio.t-balanced].png' },
+        @{ Key = 't-mot-ratio'; Group = 't-balanced'; Parent = 'MOT lifetime'; Variant = 't-balanced'; File = '[MOT.decay.pairs].[DDM-DIS].[ratio.t-balanced].png' },
+        @{ Key = 'n-421-ratio'; Group = 'n-balanced'; Parent = 'MOT loading 421'; Variant = 'n-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[ratio.n-balanced].png' },
+        @{ Key = 'n-626-ratio'; Group = 'n-balanced'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[ratio.n-balanced].png' },
+        @{ Key = 'n-cmot-ratio'; Group = 'n-balanced'; Parent = 'CMOT lifetime'; Variant = 'n-balanced'; File = '[CMOT.decay.pairs].[DIS-DDM].[ratio.n-balanced].png' },
+        @{ Key = 'n-mot-ratio'; Group = 'n-balanced'; Parent = 'MOT lifetime'; Variant = 'n-balanced'; File = '[MOT.decay.pairs].[DDM-DIS].[ratio.n-balanced].png' }
     )
     $entries = @{}
     foreach ($spec in $specs) {
@@ -445,22 +459,25 @@ function Add-ComparisonRows {
     )
 
     $rows = @(
-        @{ Label = 'Pair values'; Keys = @('421-numbers', '626-numbers', 'cmot-values', 'mot-values') },
-        @{ Label = 'Pair ratios'; Keys = @('421-ratio', '626-ratio', 'cmot-ratio', 'mot-ratio') }
+        @{ Label = 't-balanced values'; Cells = @('t-421-numbers', 't-626-numbers', $null, 't-mot-values', 't-cmot-values', $null) },
+        @{ Label = 'n-balanced values'; Cells = @('n-421-numbers', 'n-626-numbers', $null, 'n-mot-values', 'n-cmot-values', $null) },
+        @{ Label = 't-balanced ratios'; Cells = @('t-421-ratio', 't-626-ratio', $null, 't-mot-ratio', 't-cmot-ratio', $null) },
+        @{ Label = 'n-balanced ratios'; Cells = @('n-421-ratio', 'n-626-ratio', $null, 'n-mot-ratio', 'n-cmot-ratio', $null) }
     )
     foreach ($rowSpec in $rows) {
         $row = Add-OneNoteElement -Document $Document -Parent $Table -Name 'Row'
         $labelChildren = Add-OneNoteCell -Document $Document -Row $row -ShadingColor '#D9EAF7'
         [void](Add-OneNoteText -Document $Document -Parent $labelChildren `
             -Text $rowSpec.Label -Style 'font-family:Calibri;font-size:10.0pt;font-weight:bold')
-        foreach ($key in $rowSpec.Keys) {
+        foreach ($key in $rowSpec.Cells) {
             $cellChildren = Add-OneNoteCell -Document $Document -Row $row
-            Add-ImageWithCaption -Document $Document -Parent $cellChildren `
-                -Entry $Entries[$key] -DisplayWidth $DisplayWidth
-        }
-        for ($index = $rowSpec.Keys.Count; $index -lt $script:ParentNames.Count; $index++) {
-            $emptyChildren = Add-OneNoteCell -Document $Document -Row $row
-            [void](Add-OneNoteText -Document $Document -Parent $emptyChildren -Text '')
+            if ($null -eq $key) {
+                [void](Add-OneNoteText -Document $Document -Parent $cellChildren -Text '')
+            }
+            else {
+                Add-ImageWithCaption -Document $Document -Parent $cellChildren `
+                    -Entry $Entries[$key] -DisplayWidth $DisplayWidth
+            }
         }
     }
     return $Entries.Count
@@ -603,8 +620,8 @@ try {
         '//one:Image[starts-with(@alt, "Isotope pair comparison / ")]',
         $namespaceManager
     ).Count
-    if ($verifiedComparisonCount -ne 8) {
-        throw "OneNote returned $verifiedComparisonCount isotope-pair comparison images after 8 were submitted"
+    if ($verifiedComparisonCount -ne 16) {
+        throw "OneNote returned $verifiedComparisonCount isotope-pair comparison images after 16 were submitted"
     }
     if ($verifiedTableCount -lt 3) {
         throw "OneNote returned only $verifiedTableCount table node(s)"

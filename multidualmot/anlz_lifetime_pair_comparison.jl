@@ -1,19 +1,19 @@
 function decay_parameter_points(latest::NamedTuple, expected_mode::Symbol,
-    parameter::Symbol)
+    parameter::Symbol, biases::AbstractDict{String,<:Real})
     latest.fit_mode == expected_mode ||
         throw(ArgumentError("expected $expected_mode fits in $(latest.path), got $(latest.fit_mode)"))
     points = Dict{String, Dict{Tuple{Symbol,Symbol},NamedTuple}}()
     for pair in val_pair
         records_pair = filter(record -> record.pair == pair, latest.records)
-        isempty(records_pair) && throw(ArgumentError("$(latest.path): no records for $pair"))
-        panels = unique(record.panel for record in records_pair)
-        panel = 0.0 in panels ? 0.0 : only(panels)
+        isempty(records_pair) && continue
+        panel = Float64(biases[pair])
+        panel in unique(record.panel for record in records_pair) || continue
         records_panel = filter(record -> record.panel == panel, records_pair)
         val_istp = Symbol.(split(pair, "-"))
         expected = Set((loadcfg, istp) for loadcfg in (:DIS, :DDM) for istp in val_istp)
         actual = Set((record.loadcfg, record.istp) for record in records_panel)
-        length(records_panel) == length(expected) && actual == expected || throw(ArgumentError(
-            "$(latest.path): $pair panel $panel has conditions $actual, expected $expected"))
+        issubset(actual, expected) && length(records_panel) == length(actual) ||
+            throw(ArgumentError("$(latest.path): $pair panel $panel has unexpected or duplicate conditions $actual"))
         points[pair] = Dict((record.loadcfg, record.istp) => (
             value=Float64(getproperty(record, parameter)),
             std=Float64(getproperty(record, Symbol("std_", parameter))),
@@ -49,6 +49,8 @@ function draw_pair_decay_values(points_by_pair::AbstractDict, parameter::Symbol;
     upper = 0.0
     for (idx_pair, pair) in enumerate(val_pair), loadcfg in (:DIS, :DDM),
         istp in Symbol.(split(pair, "-"))
+        haskey(points_by_pair, pair) || continue
+        haskey(points_by_pair[pair], (loadcfg, istp)) || continue
         point = points_by_pair[pair][(loadcfg, istp)]
         isfinite(point.value) && point.value > 0 ||
             throw(ArgumentError("$pair $loadcfg $istp: $parameter must be finite and positive"))
@@ -103,6 +105,9 @@ function draw_pair_decay_ratio(points_by_pair::AbstractDict,
         linestyle=:dash, linewidth=0.5)
     upper = 1.1
     for (idx_pair, pair) in enumerate(val_pair), istp in Symbol.(split(pair, "-"))
+        haskey(points_by_pair, pair) || continue
+        haskey(points_by_pair[pair], (numerator, istp)) || continue
+        haskey(points_by_pair[pair], (denominator, istp)) || continue
         point_num = points_by_pair[pair][(numerator, istp)]
         point_den = points_by_pair[pair][(denominator, istp)]
         isfinite(point_num.value) && point_num.value > 0 &&
@@ -143,29 +148,31 @@ latest_mot_decay = load_latest_num_decay_results(
 println("Using CMOT decay fits: $(latest_cmot_decay.path)")
 println("Using MOT decay fits: $(latest_mot_decay.path)")
 
-points_cmot_kappa = decay_parameter_points(latest_cmot_decay, :kappa, :kappa)
-points_mot_tau = decay_parameter_points(latest_mot_decay, :tau, :tau)
-points_cmot_inverse_kappa = inverse_decay_points(points_cmot_kappa)
-
-fig_cmot_kappa = draw_pair_decay_values(points_cmot_inverse_kappa, :inverse_kappa;
-    ylabel=rich("1 / κ (atom s)"),
-    title="CMOT decay · κ-only fit",
-    filename="[CMOT.decay.pairs].[kappa].[values]",
-    limits_y = (0.5e6, 1.0e7),
-)
-fig_cmot_kappa_ratio = draw_pair_decay_ratio(points_cmot_inverse_kappa, :DDM, :DIS;
-    ylabel=rich("(1 / κ)", subscript("DDM"), " / (1 / κ)", subscript("DIS")),
-    title="CMOT decay · κ-only fit",
-    filename="[CMOT.decay.pairs].[DIS-DDM].[ratio]",
-)
-fig_mot_tau = draw_pair_decay_values(points_mot_tau, :tau;
-    ylabel="τ (s)",
-    title="MOT decay · τ-only fit",
-    filename="[MOT.decay.pairs].[tau].[values]",
-    limits_y = (0.9e0, 5.5e1),
-)
-fig_mot_tau_ratio = draw_pair_decay_ratio(points_mot_tau, :DDM, :DIS;
-    ylabel=rich("τ", subscript("DDM"), " / τ", subscript("DIS")),
-    title="MOT decay · τ-only fit",
-    filename="[MOT.decay.pairs].[DDM-DIS].[ratio]",
-)
+figs_lifetime_pairs = Dict{Symbol,NamedTuple}()
+for (variant, biases) in ((:t_balanced, balance_biases[:t_balanced]),
+    (:n_balanced, balance_biases[:n_balanced]))
+    label = variant == :t_balanced ? "t-balanced" : "n-balanced"
+    points_cmot_kappa = decay_parameter_points(latest_cmot_decay, :kappa, :kappa, biases)
+    points_mot_tau = decay_parameter_points(latest_mot_decay, :tau, :tau, biases)
+    points_cmot_inverse_kappa = inverse_decay_points(points_cmot_kappa)
+    figs_lifetime_pairs[variant] = (
+        cmot_values=draw_pair_decay_values(points_cmot_inverse_kappa, :inverse_kappa;
+            ylabel=rich("1 / κ (atom s)"),
+            title="CMOT decay · κ-only fit · $label",
+            filename="[CMOT.decay.pairs].[kappa].[values.$label]",
+            limits_y=(0.5e6, 1.0e7)),
+        cmot_ratio=draw_pair_decay_ratio(points_cmot_inverse_kappa, :DDM, :DIS;
+            ylabel=rich("(1 / κ)", subscript("DDM"), " / (1 / κ)", subscript("DIS")),
+            title="CMOT decay · κ-only fit · $label",
+            filename="[CMOT.decay.pairs].[DIS-DDM].[ratio.$label]"),
+        mot_values=draw_pair_decay_values(points_mot_tau, :tau;
+            ylabel="τ (s)",
+            title="MOT decay · τ-only fit · $label",
+            filename="[MOT.decay.pairs].[tau].[values.$label]",
+            limits_y=(0.9e0, 5.5e1)),
+        mot_ratio=draw_pair_decay_ratio(points_mot_tau, :DDM, :DIS;
+            ylabel=rich("τ", subscript("DDM"), " / τ", subscript("DIS")),
+            title="MOT decay · τ-only fit · $label",
+            filename="[MOT.decay.pairs].[DDM-DIS].[ratio.$label]"),
+    )
+end

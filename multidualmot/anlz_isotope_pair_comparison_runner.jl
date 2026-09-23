@@ -1,4 +1,5 @@
 include(joinpath(@__DIR__, "dualmotcommons.jl"))
+using CSV
 
 path_root_421 = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\MOT loading 421"
 path_root_626 = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\MOT loading 626"
@@ -85,27 +86,47 @@ runinfos_626 = Dict(pair => read_num_evol_runinfos(path_root_626, pair;
     validate_vars=validate_loadcfg_comparison_vars,
 ) for pair in val_pair)
 
-points_421 = Dict{String, Dict{Tuple{Symbol, Symbol}, NamedTuple}}()
+points_421 = Dict{Symbol, Dict{String, Dict{Tuple{Symbol, Symbol}, NamedTuple}}}(
+    variant => Dict{String, Dict{Tuple{Symbol, Symbol}, NamedTuple}}()
+    for variant in (:t_balanced, :n_balanced))
 points_626 = Dict{String, Dict{Tuple{Symbol, Symbol}, NamedTuple}}()
 t_load_query = 30.0 # 30 seconds loading time
+rows_balance = collect(CSV.File(joinpath(dirname(path_root_421), "MOT loading balance", "balance.csv");
+    header=["Pair", "tbiasmot"], skipto=2, stripwhitespace=true))
+canonical_comparison_pair_name(pair) = join(sort(parse.(Int, split(strip(string(pair)), "-"))), "-")
+balance_by_pair = Dict(canonical_comparison_pair_name(row.Pair) => Float64(row.tbiasmot) for row in rows_balance)
+Set(keys(balance_by_pair)) == Set(val_pair) ||
+    throw(ArgumentError("MOT loading balance/balance.csv must contain exactly the configured isotope pairs"))
+balance_biases = Dict(
+    :t_balanced => Dict(pair => 0.0 for pair in val_pair),
+    :n_balanced => balance_by_pair,
+)
 for pair in val_pair
-    candidates_421 = filter(runinfos_421[pair]) do runinfo
-        length(runinfo.data) == 1 && 0.0 in only(runinfo.data).vars.β_MOT
-    end
-    length(candidates_421) == 1 ||
-        throw(ArgumentError("$pair: expected exactly one 421 processing entry containing β_MOT = 0"))
-    runinfo_421 = only(candidates_421)
     runinfo_626 = only(runinfos_626[pair])
     val_istp = Symbol.(split(pair, "-"))
 
-    curves_421 = collect_loading_curves(runinfo_421;
-        bias=0.0, bounds_sigmax_num, bounds_sigmay_num, num_max_num)
     curves_626 = collect_loading_curves(runinfo_626;
         bounds_sigmax_num, bounds_sigmay_num, num_max_num)
-    points_421[pair] = final_loading_points(
-        curves_421, (:DDM, :DIS), val_istp, "$pair MOT loading 421"; idx_final=only(indexin(t_load_query, curves_421.val_t_load)))
     points_626[pair] = final_loading_points(
         curves_626, (:DCS, :SCS), val_istp, "$pair MOT loading 626"; idx_final=only(indexin(t_load_query, curves_626.val_t_load)))
+    for variant in (:t_balanced, :n_balanced)
+        bias = balance_biases[variant][pair]
+        candidates_421 = filter(runinfos_421[pair]) do runinfo
+            any(data -> :β_MOT in keys(data.vars) && bias in data.vars.β_MOT, runinfo.data)
+        end
+        if isempty(candidates_421) && variant == :n_balanced
+            @warn "$pair: no MOT loading 421 data at n-balanced β_MOT = $bias; leaving this comparison point blank"
+            continue
+        end
+        length(candidates_421) == 1 || throw(ArgumentError(
+            "$pair $(variant): expected one 421 processing entry containing β_MOT = $bias"))
+        runinfo_421 = only(candidates_421)
+        curves_421 = collect_loading_curves(runinfo_421;
+            bias, bounds_sigmax_num, bounds_sigmay_num, num_max_num)
+        points_421[variant][pair] = final_loading_points(
+            curves_421, (:DDM, :DIS), val_istp, "$pair MOT loading 421 $(variant)";
+            idx_final=only(indexin(t_load_query, curves_421.val_t_load)))
+    end
 end
 
 marker_style(style::NamedTuple; markersize::Real=style.markersize) = (
@@ -207,6 +228,7 @@ function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denomi
         linestyle=:dash, linewidth=0.5)
     for (idx_pair, pair) in enumerate(val_pair),
         istp in Symbol.(split(pair, "-"))
+        haskey(points_by_pair, pair) || continue
         point_num = points_by_pair[pair][(numerator, istp)]
         point_den = points_by_pair[pair][(denominator, istp)]
         isfinite(point_num.num) && isfinite(point_den.num) && point_den.num > 0 ||
@@ -251,6 +273,7 @@ function draw_pair_numbers(points_by_pair::AbstractDict, loadcfgs::Tuple;
     )
     draw_pair_spans!(ax)
     for (idx_pair, pair) in enumerate(val_pair)
+        haskey(points_by_pair, pair) || continue
         val_istp = Symbol.(split(pair, "-"))
         for loadcfg in loadcfgs, istp in val_istp
             key = (loadcfg, istp)
@@ -279,31 +302,31 @@ end
 
 mkpath(path_output)
 limits_y_numbers = (0.3e6, 1.6e8)
-fig_ratio_ddm_dis = draw_pair_ratio(points_421, :DDM, :DIS;
-    ylabel=rich("N", subscript("DDM"), " / N", subscript("DIS")),
-    title=rich("MOT loading 421 · 30 sec loading · ",
-        rich("β", font=:italic), subscript("MOT"), " = 0"),
-    filename="[MOT.loading.pairs].[DDM-DIS].[ratio]",
-)
-fig_ratio_dcs_scs = draw_pair_ratio(points_626, :DCS, :SCS;
-    ylabel=rich("N", subscript("DCS"), " / N", subscript("SCS")),
-    title=rich("MOT loading 626 · 30 sec loading · ",
-        rich("β", font=:italic), subscript("MOT"), " = 0"),
-    filename="[MOT.loading.pairs].[DCS-SCS].[ratio]",
-)
-fig_nums_ddm_dis = draw_pair_numbers(points_421, (:DIS, :DDM);
-    limits_y=limits_y_numbers,
-    ylabel=rich("N", subscript("DDM"), ", N", subscript("DIS")),
-    title=rich("MOT loading 421 · 30 sec loading · ",
-        rich("β", font=:italic), subscript("MOT"), " = 0"),
-    filename="[MOT.loading.pairs].[DDM-DIS].[nums]",
-)
-fig_nums_dcs_scs = draw_pair_numbers(points_626, (:SCS, :DCS);
-    limits_y=limits_y_numbers,
-    ylabel=rich("N", subscript("DCS"), ", N", subscript("SCS")),
-    title=rich("MOT loading 626 · 30 sec loading · ",
-        rich("β", font=:italic), subscript("MOT"), " = 0"),
-    filename="[MOT.loading.pairs].[DCS-SCS].[nums]",
-)
+figs_loading_pairs = Dict{Symbol,NamedTuple}()
+for variant in (:t_balanced, :n_balanced)
+    label = variant == :t_balanced ? "t-balanced" : "n-balanced"
+    points = points_421[variant]
+    bias_text = variant == :t_balanced ? "β_MOT = 0" : "pair balance β_MOT"
+    figs_loading_pairs[variant] = (
+        ratio_421=draw_pair_ratio(points, :DDM, :DIS;
+            ylabel=rich("N", subscript("DDM"), " / N", subscript("DIS")),
+            title="MOT loading 421 · 30 sec · $bias_text · $label",
+            filename="[MOT.loading.pairs].[DDM-DIS].[ratio.$label]"),
+        ratio_626=draw_pair_ratio(points_626, :DCS, :SCS;
+            ylabel=rich("N", subscript("DCS"), " / N", subscript("SCS")),
+            title="MOT loading 626 · 30 sec · $label",
+            filename="[MOT.loading.pairs].[DCS-SCS].[ratio.$label]"),
+        numbers_421=draw_pair_numbers(points, (:DIS, :DDM);
+            limits_y=limits_y_numbers,
+            ylabel=rich("N", subscript("DDM"), ", N", subscript("DIS")),
+            title="MOT loading 421 · 30 sec · $bias_text · $label",
+            filename="[MOT.loading.pairs].[DDM-DIS].[nums.$label]"),
+        numbers_626=draw_pair_numbers(points_626, (:SCS, :DCS);
+            limits_y=limits_y_numbers,
+            ylabel=rich("N", subscript("DCS"), ", N", subscript("SCS")),
+            title="MOT loading 626 · 30 sec · $label",
+            filename="[MOT.loading.pairs].[DCS-SCS].[nums.$label]"),
+    )
+end
 
 include(joinpath(@__DIR__, "anlz_lifetime_pair_comparison.jl"))
