@@ -159,7 +159,7 @@ for (variant, biases) in ((:t_balanced, balance_biases[:t_balanced]),
     points_cmot_inverse_kappa = inverse_decay_points(points_cmot_kappa)
     figs_lifetime_pairs[variant] = (
         cmot_values=draw_pair_decay_values(points_cmot_inverse_kappa, :inverse_kappa;
-            ylabel=rich("1 / κ (pixsum s)"),
+            ylabel=rich("1 / κ (atom s)"),
             title="CMOT decay · κ-only fit · $label",
             filename="[CMOT.decay.pairs].[kappa].[values.$label]",
             limits_y=(0.5e6, 1.0e7)),

@@ -630,13 +630,13 @@ dualmot_lifetime_plot_spec(kind::AbstractString; key_x::Symbol,
 using LsqFit: curve_fit, stderror
 using Printf: @sprintf
 
-"""One- and two-body loss, with p = [N₀, τ (s), κ (number-unit⁻¹ s⁻¹)]."""
+"""One- and two-body loss, with p = [N₀ (atoms), τ (s), κ (atom⁻¹ s⁻¹)]."""
 function model_num_decay(t::AbstractVector, p::AbstractVector)
     n0, tau, kappa = p
     @. n0 * exp(-t / tau) / (1 + kappa * n0 * tau * (-expm1(-t / tau)))
 end
 
-"""Two-body-only loss (τ → ∞), with p = [N₀, κ (number-unit⁻¹ s⁻¹)]."""
+"""Two-body-only loss (τ → ∞), with p = [N₀ (atoms), κ (atom⁻¹ s⁻¹)]."""
 function model_num_decay_kappa(t::AbstractVector, p::AbstractVector)
     n0, kappa = p
     @. n0 / (1 + kappa * n0 * t)
