@@ -120,14 +120,15 @@ For each MAT file it reads:
 file["liferes"]["cres"]
 ```
 
-If `liferes["baddata"]` is present, its linear indices are applied to that
-file's `atomnum` samples before files are concatenated. Those samples remain
-in the acquisition stream as `missing`.
+If `liferes["baddata"]` is present, its linear indices are applied to the
+selected number field (atomnum or pixsum) before files are concatenated. Those
+samples remain in the acquisition stream as `missing`.
 
-For number-evolution analysis, it extracts these fields from every `cres` entry:
+For number-evolution analysis, it extracts the selected number field and these
+fit-quality fields from every `cres` entry:
 
 ```text
-atomnum
+atomnum (default; lifetime runners use pixsum)
 sigmax
 sigmay
 ```
@@ -197,15 +198,17 @@ Most runners require a perfectly rectangular sample count. The balance runner ha
 
 ## Rejected shots and missing values
 
-A shot becomes `missing` if any of these conditions fail:
+A shot becomes `missing` if the selected number field is nonfinite or outside
+`0:num_max_num`, or if either fitted size is nonfinite or outside its configured
+bounds:
 
 ```julia
 bounds_sigmax_num[1] ≤ sigmax ≤ bounds_sigmax_num[2]
 bounds_sigmay_num[1] ≤ sigmay ≤ bounds_sigmay_num[2]
-0 ≤ atomnum ≤ num_max_num
+0 ≤ selected number field ≤ num_max_num
 ```
 
-Nonfinite fitted sizes also fail the size masks. Nonfinite `atomnum` currently causes an error before masking.
+Nonfinite fitted sizes fail the size masks.
 
 Rejected shots are not deleted from the flattened acquisition. They are kept as `missing` so all acquisition axes remain aligned.
 
@@ -328,6 +331,11 @@ Fit records are saved as timestamped JLD2 files under:
 CMOT lifetime/Fit results/
 MOT lifetime/Fit results/
 ```
+
+CMOT and MOT lifetime runners use `pixsum` as their number field; other
+number-evolution runners retain `atomnum`. Their decay axes and κ units name
+the selected signal. Pairwise CMOT decay comparisons use `1/κ` from those
+pixsum fits, while MOT comparisons use the fitted `τ` values.
 
 The isotope-pair lifetime comparisons read the newest JLD2 file in each folder.
 

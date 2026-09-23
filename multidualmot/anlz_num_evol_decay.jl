@@ -68,8 +68,10 @@ for (idx_panel, panel) in enumerate(val_panel)
         text_fit = if isnothing(result)
             "$label\nFit unavailable"
         else
-            println("$tag_head / $panel / $label: ", replace(label_num_decay(result), '\n' => "; "))
-            "$label\n$(label_num_decay(result))"
+            number_unit = plot_num_evol.field_num == "pixsum" ? "pixsum" : "atom"
+            fit_label = label_num_decay(result; number_unit)
+            println("$tag_head / $panel / $label: ", replace(fit_label, '\n' => "; "))
+            "$label\n$fit_label"
         end
         mask_selected = isnothing(result) ? trues(length(nums)) : result.mask_selected
         (; idx_condition, condition, nums, stds, style, label, mask_linear,

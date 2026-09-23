@@ -6,6 +6,7 @@ blocks_num_evol = map(enumerate(runinfo.data)) do (idx_data, runinfo_data)
         bounds_sigmax_num,
         bounds_sigmay_num,
         num_max_num,
+        field_num=plot_num_evol.field_num,
         allow_partial_rep=plot_num_evol.allow_partial_rep,
     )
 end

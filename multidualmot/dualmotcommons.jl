@@ -294,6 +294,7 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
     bounds_sigmax_num::Tuple{<:Real,<:Real},
     bounds_sigmay_num::Tuple{<:Real,<:Real},
     num_max_num::Real,
+    field_num::AbstractString="atomnum",
     allow_partial_rep::Bool=false,
 )
     for (name_bound, bounds) in
@@ -305,17 +306,18 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
     isfinite(num_max_num) && num_max_num >= 0 ||
         throw(ArgumentError("$label: num_max_num must be finite and nonnegative"))
 
-    shot_data = read_cres_fields(runinfo_data.files, ("atomnum", "sigmax", "sigmay"))
+    isempty(field_num) && throw(ArgumentError("$label: field_num must be nonempty"))
+    shot_data = read_cres_fields(runinfo_data.files, (field_num, "sigmax", "sigmay"))
     num_data, sigmax_data, sigmay_data = shot_data
     all(value -> ismissing(value) || isfinite(value), num_data) ||
-        throw(ArgumentError("$label: atomnum must contain only finite values or baddata entries"))
+        throw(ArgumentError("$label: $field_num must contain only finite values or baddata entries"))
     len_data = length(num_data)
     n_variation = prod(length(getproperty(runinfo_data.vars, key))
         for key in keys(runinfo_data.vars) if key != :rep)
-    len_data > 0 || throw(DimensionMismatch("$label: atom-number data must not be empty"))
+    len_data > 0 || throw(DimensionMismatch("$label: $field_num data must not be empty"))
     n_partial = rem(len_data, n_variation)
     iszero(n_partial) || allow_partial_rep ||
-        throw(DimensionMismatch("$label: $len_data atom numbers must be a positive integer multiple of $n_variation variations"))
+        throw(DimensionMismatch("$label: $len_data $field_num values must be a positive integer multiple of $n_variation variations"))
     n_rep = cld(len_data, n_variation)
     n_padding = n_rep * n_variation - len_data
     if n_padding > 0
@@ -460,8 +462,9 @@ function read_cres_fields(paths::AbstractVector{<:AbstractString}, fields::Tuple
             bad_indices = length(bad_indices) == 1 && iszero(only(bad_indices)) ? eltype(bad_indices)[] : bad_indices
             all(index -> index isa Real && isinteger(index) && 1 <= index <= length(entries), bad_indices) ||
                 throw(ArgumentError("$path: baddata must contain linear indices in 1:$(length(entries))"))
-            if "atomnum" in fields
-                idx_num = findfirst(==("atomnum"), fields)
+            for field_num in ("atomnum", "pixsum")
+                field_num in fields || continue
+                idx_num = findfirst(==(field_num), fields)
                 nums = Union{Missing,Float64}[field_values[idx_num]...]
                 nums[Int.(bad_indices)] .= missing
                 field_values = ntuple(idx -> idx == idx_num ? nums : field_values[idx], length(fields))
@@ -576,6 +579,7 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
     axis_options=(;),
     draw_background=(ax, panel, scale) -> nothing,
     allow_partial_rep::Bool=false,
+    field_num::AbstractString="atomnum",
     xautolimits=(condition, panel) -> true,
     yautolimits=(condition, panel) -> true,
     legend_position::Symbol=:rt,
@@ -604,6 +608,7 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
         axis_options,
         draw_background,
         allow_partial_rep,
+        field_num=String(field_num),
         xautolimits,
         yautolimits,
         ylabel,
@@ -618,25 +623,26 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
 end
 
 dualmot_lifetime_plot_spec(kind::AbstractString; key_x::Symbol,
-    xlabel::AbstractString, scale_x::Real=1.0, ylabel::AbstractString="CMOT number") =
-    dualmot_num_evol_plot_spec(kind; key_x, xlabel, scale_x, ylabel,
+    xlabel::AbstractString, scale_x::Real=1.0, ylabel::AbstractString="CMOT number",
+    field_num::AbstractString="atomnum") =
+    dualmot_num_evol_plot_spec(kind; key_x, xlabel, scale_x, ylabel, field_num,
         file_head="$kind.lifetime")
 using LsqFit: curve_fit, stderror
 using Printf: @sprintf
 
-"""One- and two-body loss, with p = [N₀ (atoms), τ (s), κ (atom⁻¹ s⁻¹)]."""
+"""One- and two-body loss, with p = [N₀, τ (s), κ (number-unit⁻¹ s⁻¹)]."""
 function model_num_decay(t::AbstractVector, p::AbstractVector)
     n0, tau, kappa = p
     @. n0 * exp(-t / tau) / (1 + kappa * n0 * tau * (-expm1(-t / tau)))
 end
 
-"""Two-body-only loss (τ → ∞), with p = [N₀ (atoms), κ (atom⁻¹ s⁻¹)]."""
+"""Two-body-only loss (τ → ∞), with p = [N₀, κ (number-unit⁻¹ s⁻¹)]."""
 function model_num_decay_kappa(t::AbstractVector, p::AbstractVector)
     n0, kappa = p
     @. n0 / (1 + kappa * n0 * t)
 end
 
-"""One-body-only loss (κ = 0), with p = [N₀ (atoms), τ (s)]."""
+"""One-body-only loss (κ = 0), with p = [N₀, τ (s)]."""
 function model_num_decay_tau(t::AbstractVector, p::AbstractVector)
     n0, tau = p
     @. n0 * exp(-t / tau)
@@ -733,16 +739,16 @@ function format_fit_scientific(value::Real, error::Real)
     "($value_text ± $error_text)e$exponent"
 end
 
-function label_num_decay(result)
+function label_num_decay(result; number_unit::AbstractString="atom")
     p, e = result.params, result.errors
     suffix = result.at_bound ? " *" : ""
     label_n0 = format_fit_scientific(p[1], e[1])
     result.mode == :full && return @sprintf(
-        "N₀ = %s\nτ = (%.3g ± %.2g) s\nκ = %s atom⁻¹ s⁻¹%s",
-        label_n0, p[2], e[2], format_fit_scientific(p[3], e[3]), suffix)
+        "N₀ = %s\nτ = (%.3g ± %.2g) s\nκ = %s %s⁻¹ s⁻¹%s",
+        label_n0, p[2], e[2], format_fit_scientific(p[3], e[3]), number_unit, suffix)
     result.mode == :kappa && return @sprintf(
-        "N₀ = %s\nκ = %s atom⁻¹ s⁻¹%s",
-        label_n0, format_fit_scientific(p[2], e[2]), suffix)
+        "N₀ = %s\nκ = %s %s⁻¹ s⁻¹%s",
+        label_n0, format_fit_scientific(p[2], e[2]), number_unit, suffix)
     @sprintf("N₀ = %s\nτ = (%.3g ± %.2g) s%s",
         label_n0, p[2], e[2], suffix)
 end
