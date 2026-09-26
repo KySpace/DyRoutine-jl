@@ -340,4 +340,3 @@ for variant in (:t_balanced, :n_balanced)
     )
 end
 
-include(joinpath(@__DIR__, "anlz_lifetime_pair_comparison.jl"))

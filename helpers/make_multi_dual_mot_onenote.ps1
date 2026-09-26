@@ -304,6 +304,8 @@ function Get-ComparisonEntries {
 
     $folder = Join-Path $Root 'Isotope pair comparison'
     $specs = @(
+        @{ Key = 'odt-cmot-numbers'; Group = 'ODT/CMOT'; Parent = 'ODT BField'; Variant = '*'; File = '[ODT.CMOT.comparison].[log].[numbers].png' },
+        @{ Key = 'odt-cmot-ratios'; Group = 'ODT/CMOT'; Parent = 'ODT BField'; Variant = '*'; File = '[ODT.CMOT.comparison].[lin].[ratios].png' },
         @{ Key = 't-421-numbers'; Group = 't-balanced'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[nums.t-balanced].png' },
         @{ Key = 't-626-numbers'; Group = 't-balanced'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[nums.t-balanced].png' },
         @{ Key = 't-cmot-values'; Group = 't-balanced'; Parent = 'CMOT lifetime'; Variant = 't-balanced'; File = '[CMOT.decay.pairs].[kappa].[values.t-balanced].png' },
@@ -459,6 +461,8 @@ function Add-ComparisonRows {
     )
 
     $rows = @(
+        @{ Label = 'ODT / CMOT numbers'; Cells = @($null, $null, $null, $null, $null, 'odt-cmot-numbers') },
+        @{ Label = 'ODT / CMOT ratios'; Cells = @($null, $null, $null, $null, $null, 'odt-cmot-ratios') },
         @{ Label = 't-balanced values'; Cells = @('t-421-numbers', 't-626-numbers', $null, 't-mot-values', 't-cmot-values', $null) },
         @{ Label = 'n-balanced values'; Cells = @('n-421-numbers', 'n-626-numbers', $null, 'n-mot-values', 'n-cmot-values', $null) },
         @{ Label = 't-balanced ratios'; Cells = @('t-421-ratio', 't-626-ratio', $null, 't-mot-ratio', 't-cmot-ratio', $null) },
@@ -620,8 +624,8 @@ try {
         '//one:Image[starts-with(@alt, "Isotope pair comparison / ")]',
         $namespaceManager
     ).Count
-    if ($verifiedComparisonCount -ne 16) {
-        throw "OneNote returned $verifiedComparisonCount isotope-pair comparison images after 16 were submitted"
+    if ($verifiedComparisonCount -ne 18) {
+        throw "OneNote returned $verifiedComparisonCount isotope-pair comparison images after 18 were submitted"
     }
     if ($verifiedTableCount -lt 3) {
         throw "OneNote returned only $verifiedTableCount table node(s)"

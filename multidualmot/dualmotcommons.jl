@@ -42,8 +42,8 @@ const DUALMOT_ODT_BFIELD_VAR_SPECS = (
 )
 
 const ODT_BFIELD_CALIBRATION = Dict(
-    :x => (Q=1.48, B0=0.28),
-    :z => (Q=1.72, B0=-0.35),
+    :x => (Q=1.48094, B0=0.276317),
+    :z => (Q=1.71727, B0=-0.351795),
 )
 
 function odt_bfield_values(current::AbstractVector{<:Real}, direction::Symbol)
