@@ -16,7 +16,7 @@ runinfos_grouped = [read_num_evol_runinfos(path_root, pair;
 ) for pair in val_pair]
 runinfos = vcat(runinfos_grouped...)
 ids_runinfo = eachindex(runinfos)
-plot_num_evol = dualmot_num_evol_plot_spec("MOT";
+plot_num_evol_base = dualmot_num_evol_plot_spec("MOT";
     key_x=key_x_num,
     scale_x=1,
     xlabel=bias -> iszero(bias) ?
@@ -46,9 +46,22 @@ for idx_runinfo_iter in ids_runinfo
     global runinfo = runinfos[idx_runinfo]
     global tag_head = "$(runinfo.folder) $(runinfo.tag)"
     global path_output = joinpath(path_root, runinfo.folder)
-    global plot_num_evol = merge(plot_num_evol, (;
-        limits_linear=isdefined(@__MODULE__, :limits_loading_linear) ?
-            get(limits_loading_linear, runinfo.folder, nothing) : nothing))
+    local count_folder_tags = count(info -> info.folder == runinfo.folder, runinfos)
+    local idx_folder_tag = count(info -> info.folder == runinfo.folder,
+        @view runinfos[firstindex(runinfos):idx_runinfo])
+    local style_tag = count_folder_tags == 1 || idx_folder_tag == 1 ?
+        nothing : filename_token(runinfo.tag)
+    local filename_run = (scale, bias) -> begin
+        style = isnothing(style_tag) ? string(scale) : "$(scale).$(style_tag)"
+        "[MOT.loading.421].[$style].[$(balance_tag(bias))-balanced]"
+    end
+    local folder_run = runinfo.folder
+    local limits_linear_run = isdefined(@__MODULE__, :limits_loading_linear) ?
+        bias -> get(limits_loading_linear,
+            (folder_run, Symbol(balance_tag(bias))), nothing) : nothing
+    global plot_num_evol = merge(plot_num_evol_base, (;
+        filename=filename_run,
+        limits_linear=limits_linear_run))
     println("Processing: $tag_head")
     include(joinpath(@__DIR__, "anlz_num_evol.jl"))
     include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))

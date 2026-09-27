@@ -12,9 +12,7 @@ runinfos_grouped = [read_num_evol_runinfos(path_root, pair;
     var_specs=var_specs_num,
     validate_vars=validate_loadcfg_comparison_vars,
 ) for pair in val_pair]
-all(length(runinfos) == 1 for runinfos in runinfos_grouped) ||
-    throw(ArgumentError("MOT loading 626 requires exactly one processing tag per pair folder"))
-runinfos = only.(runinfos_grouped)
+runinfos = vcat(runinfos_grouped...)
 ids_runinfo = eachindex(runinfos)
 plot_cmpr_loadcfg = (
     file_head="MOT.loading.626",
@@ -35,7 +33,7 @@ for idx_runinfo_iter in ids_runinfo
     global tag_head = "$(runinfo.folder) $(runinfo.tag)"
     global path_output = joinpath(path_root, runinfo.folder)
     global limits_linear_cmpr = isdefined(@__MODULE__, :limits_loading_linear) ?
-        get(limits_loading_linear, runinfo.folder, nothing) : nothing
+        get(limits_loading_linear, (runinfo.folder, :t), nothing) : nothing
     println("Processing: $tag_head")
     include(joinpath(@__DIR__, "anlz_cmpr_loadcfg.jl"))
 end

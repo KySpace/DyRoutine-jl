@@ -289,6 +289,22 @@ function read_num_evol_runinfos(path_root::AbstractString, folder::AbstractStrin
     runinfos
 end
 
+function latest_num_evol_runinfo(runinfos::AbstractVector{<:NamedTuple};
+    label::AbstractString="processing entries",
+)
+    isempty(runinfos) && throw(ArgumentError("$label: no candidates"))
+    source_key(runinfo) = maximum(data_key for data in runinfo.data
+        for data_key in data.date_runid)
+    keys_source = source_key.(runinfos)
+    idx_latest = findmax(keys_source)[2]
+    count(==(keys_source[idx_latest]), keys_source) == 1 ||
+        throw(ArgumentError("$label: latest source date/run is not unique"))
+    runinfos[idx_latest]
+end
+
+filename_token(value::AbstractString) = replace(strip(value),
+    r"[\[\]<>:\"/\\|?*\s]+" => "-")
+
 function calc_num_evol_block(runinfo_data::NamedTuple;
     label::AbstractString,
     bounds_sigmax_num::Tuple{<:Real,<:Real},
@@ -406,7 +422,9 @@ function combine_num_evol_blocks(blocks::AbstractVector{<:NamedTuple};
     n_rep = sum(block.n_rep for block in blocks)
     values_combined = map(name) do key
         key == :rep && return 1:n_rep
-        unique(vcat((collect(getproperty(block.vars, key)) for block in blocks)...))
+        values = unique(vcat((collect(getproperty(block.vars, key)) for block in blocks)...))
+        key in (:t_load, :t_hold, :ib) && sort!(values)
+        values
     end
     vars = NamedTuple{name}(values_combined)
     size_combined = Tuple(length.(values_combined))

@@ -26,8 +26,9 @@ path_root = joinpath(path_data, "MOT loading 421")
 runinfos = read_num_evol_runinfos(path_root, pair;
     var_specs=DUALMOT_LOADING_VAR_SPECS,
     validate_vars=validate_dualmot_vars)
-runinfo = only(filter(info -> length(info.data) == 1 &&
-    0.0 in only(info.data).vars.β_MOT, runinfos))
+runinfo = latest_num_evol_runinfo(filter(info ->
+    any(data -> 0.0 in data.vars.β_MOT, info.data), runinfos);
+    label="$pair selected MOT loading 421")
 tag_head = "$(runinfo.folder) $(runinfo.tag)"
 plot_num_evol = dualmot_num_evol_plot_spec("MOT";
     key_x=:t_load,
@@ -45,9 +46,10 @@ include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 
 # 626 loading, number curves only.
 path_root = joinpath(path_data, "MOT loading 626")
-runinfo = only(read_num_evol_runinfos(path_root, pair;
+runinfo = latest_num_evol_runinfo(read_num_evol_runinfos(path_root, pair;
     var_specs=DUALMOT_LOADCFG_VAR_SPECS,
-    validate_vars=validate_loadcfg_comparison_vars))
+    validate_vars=validate_loadcfg_comparison_vars);
+    label="$pair selected MOT loading 626")
 tag_head = "$(runinfo.folder) $(runinfo.tag)"
 plot_cmpr_loadcfg = (
     file_head="MOT.loading.626",

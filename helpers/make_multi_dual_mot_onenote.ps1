@@ -311,7 +311,6 @@ function Get-ComparisonEntries {
         @{ Key = 't-cmot-values'; Group = 't-balanced'; Parent = 'CMOT lifetime'; Variant = 't-balanced'; File = '[CMOT.decay.pairs].[kappa].[values.t-balanced].png' },
         @{ Key = 't-mot-values'; Group = 't-balanced'; Parent = 'MOT lifetime'; Variant = 't-balanced'; File = '[MOT.decay.pairs].[tau].[values.t-balanced].png' },
         @{ Key = 'n-421-numbers'; Group = 'n-balanced'; Parent = 'MOT loading 421'; Variant = 'n-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[nums.n-balanced].png' },
-        @{ Key = 'n-626-numbers'; Group = 'n-balanced'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[nums.n-balanced].png' },
         @{ Key = 'n-cmot-values'; Group = 'n-balanced'; Parent = 'CMOT lifetime'; Variant = 'n-balanced'; File = '[CMOT.decay.pairs].[kappa].[values.n-balanced].png' },
         @{ Key = 'n-mot-values'; Group = 'n-balanced'; Parent = 'MOT lifetime'; Variant = 'n-balanced'; File = '[MOT.decay.pairs].[tau].[values.n-balanced].png' },
         @{ Key = 't-421-ratio'; Group = 't-balanced'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[ratio.t-balanced].png' },
@@ -319,7 +318,6 @@ function Get-ComparisonEntries {
         @{ Key = 't-cmot-ratio'; Group = 't-balanced'; Parent = 'CMOT lifetime'; Variant = 't-balanced'; File = '[CMOT.decay.pairs].[DIS-DDM].[ratio.t-balanced].png' },
         @{ Key = 't-mot-ratio'; Group = 't-balanced'; Parent = 'MOT lifetime'; Variant = 't-balanced'; File = '[MOT.decay.pairs].[DDM-DIS].[ratio.t-balanced].png' },
         @{ Key = 'n-421-ratio'; Group = 'n-balanced'; Parent = 'MOT loading 421'; Variant = 'n-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[ratio.n-balanced].png' },
-        @{ Key = 'n-626-ratio'; Group = 'n-balanced'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[ratio.n-balanced].png' },
         @{ Key = 'n-cmot-ratio'; Group = 'n-balanced'; Parent = 'CMOT lifetime'; Variant = 'n-balanced'; File = '[CMOT.decay.pairs].[DIS-DDM].[ratio.n-balanced].png' },
         @{ Key = 'n-mot-ratio'; Group = 'n-balanced'; Parent = 'MOT lifetime'; Variant = 'n-balanced'; File = '[MOT.decay.pairs].[DDM-DIS].[ratio.n-balanced].png' }
     )
@@ -461,12 +459,10 @@ function Add-ComparisonRows {
     )
 
     $rows = @(
-        @{ Label = 'ODT / CMOT numbers'; Cells = @($null, $null, $null, $null, $null, 'odt-cmot-numbers') },
-        @{ Label = 'ODT / CMOT ratios'; Cells = @($null, $null, $null, $null, $null, 'odt-cmot-ratios') },
-        @{ Label = 't-balanced values'; Cells = @('t-421-numbers', 't-626-numbers', $null, 't-mot-values', 't-cmot-values', $null) },
-        @{ Label = 'n-balanced values'; Cells = @('n-421-numbers', 'n-626-numbers', $null, 'n-mot-values', 'n-cmot-values', $null) },
-        @{ Label = 't-balanced ratios'; Cells = @('t-421-ratio', 't-626-ratio', $null, 't-mot-ratio', 't-cmot-ratio', $null) },
-        @{ Label = 'n-balanced ratios'; Cells = @('n-421-ratio', 'n-626-ratio', $null, 'n-mot-ratio', 'n-cmot-ratio', $null) }
+        @{ Label = 't-balanced values'; Cells = @('t-421-numbers', 't-626-numbers', $null, 't-mot-values', 't-cmot-values', 'odt-cmot-numbers') },
+        @{ Label = 'n-balanced values'; Cells = @('n-421-numbers', $null, $null, 'n-mot-values', 'n-cmot-values', $null) },
+        @{ Label = 't-balanced ratios'; Cells = @('t-421-ratio', 't-626-ratio', $null, 't-mot-ratio', 't-cmot-ratio', 'odt-cmot-ratios') },
+        @{ Label = 'n-balanced ratios'; Cells = @('n-421-ratio', $null, $null, 'n-mot-ratio', 'n-cmot-ratio', $null) }
     )
     foreach ($rowSpec in $rows) {
         $row = Add-OneNoteElement -Document $Document -Parent $Table -Name 'Row'
@@ -624,8 +620,8 @@ try {
         '//one:Image[starts-with(@alt, "Isotope pair comparison / ")]',
         $namespaceManager
     ).Count
-    if ($verifiedComparisonCount -ne 18) {
-        throw "OneNote returned $verifiedComparisonCount isotope-pair comparison images after 18 were submitted"
+    if ($verifiedComparisonCount -ne $comparisonEntries.Count) {
+        throw "OneNote returned $verifiedComparisonCount isotope-pair comparison images after $($comparisonEntries.Count) were submitted"
     }
     if ($verifiedTableCount -lt 3) {
         throw "OneNote returned only $verifiedTableCount table node(s)"

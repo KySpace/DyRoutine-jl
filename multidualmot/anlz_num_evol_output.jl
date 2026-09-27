@@ -118,9 +118,11 @@ for (idx_panel, panel, scale) in jobs_num_evol
     end
     if isnothing(plot_num_evol_target)
         key_x in (:t_load, :t_hold) && set_time_minor_ticks!(ax)
-        if scale == :lin && !isnothing(plot_num_evol.limits_linear) && iszero(panel)
-            xlims!(ax, plot_num_evol.limits_linear.x...)
-            ylims!(ax, plot_num_evol.limits_linear.y...)
+        local limits_linear = plot_num_evol.limits_linear isa Function ?
+            plot_num_evol.limits_linear(panel) : plot_num_evol.limits_linear
+        if scale == :lin && !isnothing(limits_linear)
+            xlims!(ax, limits_linear.x...)
+            ylims!(ax, limits_linear.y...)
         end
         axislegend(ax; position=plot_num_evol.legend_position, DUALMOT_LEGEND_OPTIONS...)
     else

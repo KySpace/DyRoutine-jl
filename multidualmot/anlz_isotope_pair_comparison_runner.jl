@@ -32,12 +32,26 @@ function collect_loading_curves(runinfo::NamedTuple;
         label="$(runinfo.folder) $(runinfo.tag) data[$idx]",
         bounds_sigmax_num, bounds_sigmay_num, num_max_num)
         for (idx, data) in enumerate(runinfo.data)]
-    val_t_load = only(unique([stats.vars.t_load for stats in stats_data]))
-    issorted(val_t_load) ||
-        throw(ArgumentError("$(runinfo.folder): t_load values must be sorted"))
+    combined = combine_num_evol_blocks(stats_data;
+        label="$(runinfo.folder) $(runinfo.tag)")
+    vars = combined.vars
+    idx_rep_axis = findfirst(==(:rep), keys(vars))
+    num_stat = dropdims(mapslices(combined.num_fmt; dims=idx_rep_axis) do values
+        valid = collect(skipmissing(vec(values)))
+        isempty(valid) ? NaN : mean(valid)
+    end; dims=idx_rep_axis)
+    std_num_stat = dropdims(mapslices(combined.num_fmt; dims=idx_rep_axis) do values
+        valid = collect(skipmissing(vec(values)))
+        length(valid) < 2 ? NaN : std(valid)
+    end; dims=idx_rep_axis)
+    n_rep_stat = dropdims(sum(.!ismissing.(combined.num_fmt); dims=idx_rep_axis);
+        dims=idx_rep_axis)
+    name_stat = Tuple(key for key in keys(vars) if key != :rep)
+    stats_combined = (; vars, name_stat, num_stat, std_num_stat, n_rep_stat)
+    val_t_load = vars.t_load
 
     curves = Dict{Tuple{Symbol, Symbol}, NamedTuple}()
-    for stats in stats_data
+    for stats in (stats_combined,)
         idx_axis = Dict(key => idx for (idx, key) in enumerate(stats.name_stat))
         idx_bias = if :β_MOT in stats.name_stat
             isnothing(bias) && throw(ArgumentError("$(runinfo.folder): β_MOT selection is required"))
@@ -113,8 +127,9 @@ balance_biases = Dict(
     :n_balanced => balance_by_pair,
 )
 for pair in val_pair
-    runinfo_626 = only(runinfos_626[pair])
-    val_istp = Symbol.(split(pair, "-"))
+    runinfo_626 = latest_num_evol_runinfo(runinfos_626[pair];
+        label="$pair MOT loading 626 comparison")
+    local val_istp = Symbol.(split(pair, "-"))
 
     curves_626 = collect_loading_curves(runinfo_626;
         bounds_sigmax_num, bounds_sigmay_num, num_max_num)
@@ -129,9 +144,8 @@ for pair in val_pair
             @warn "$pair: no MOT loading 421 data at n-balanced β_MOT = $bias; leaving this comparison point blank"
             continue
         end
-        length(candidates_421) == 1 || throw(ArgumentError(
-            "$pair $(variant): expected one 421 processing entry containing β_MOT = $bias"))
-        runinfo_421 = only(candidates_421)
+        runinfo_421 = latest_num_evol_runinfo(candidates_421;
+            label="$pair MOT loading 421 $(variant) comparison")
         curves_421 = collect_loading_curves(runinfo_421;
             bias, bounds_sigmax_num, bounds_sigmay_num, num_max_num)
         points_421[variant][pair] = final_loading_points(
@@ -339,4 +353,3 @@ for variant in (:t_balanced, :n_balanced)
             filename="[MOT.loading.pairs].[DCS-SCS].[nums.$label]"),
     )
 end
-

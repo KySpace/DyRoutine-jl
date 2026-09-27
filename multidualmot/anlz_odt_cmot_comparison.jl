@@ -91,8 +91,21 @@ for pair in val_pair
     bias_candidates = filter(mot_runinfos[pair]) do runinfo
         any(data -> :β_MOT in keys(data.vars) && bias in data.vars.β_MOT, runinfo.data)
     end
-    length(bias_candidates) == 1 || throw(ArgumentError("$pair: expected one 421 entry at tbiasmot=$bias"))
-    mot_stats = comparison_stats(only(bias_candidates);
+    config_421 = YAML.load_file(joinpath(path_root_421, pair, "config.yaml"))
+    selected_tag = if length(config_421) == 1
+        String(only(config_421)["tag"])
+    else
+        tags_for_odt = [String(entry["tag"]) for entry in config_421
+            if get(entry, "for_odt", false) === true]
+        length(tags_for_odt) == 1 || throw(ArgumentError(
+            "$pair: multiple 421 processing tags require exactly one for_odt: true, got $tags_for_odt"))
+        only(tags_for_odt)
+    end
+    matching_tags = filter(runinfo -> runinfo.tag == selected_tag, mot_runinfos[pair])
+    runinfo_mot = only(matching_tags)
+    runinfo_mot in bias_candidates || throw(ArgumentError(
+        "$pair: selected 421 tag '$selected_tag' has no data at tbiasmot=$bias"))
+    mot_stats = comparison_stats(runinfo_mot;
         bounds_sigmax_num=mot_bounds_sigmax_num,
         bounds_sigmay_num=mot_bounds_sigmay_num, num_max_num)
     tmotload in mot_stats.vars.t_load || throw(ArgumentError("$pair: t_load=$tmotload unavailable"))
