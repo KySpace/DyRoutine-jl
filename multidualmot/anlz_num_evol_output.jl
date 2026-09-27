@@ -81,7 +81,9 @@ for (idx_panel, panel, scale) in jobs_num_evol
             xautolimits, yautolimits)
     end
     for curve in curves_plot
-        lines!(ax, curve.val_x_curve, curve.nums_plot;
+        mask_line = isfinite.(curve.val_x_curve) .& isfinite.(curve.nums_plot)
+        count(mask_line) >= 2 && lines!(ax,
+            curve.val_x_curve[mask_line], curve.nums_plot[mask_line];
             curve.style.line_options...,
             xautolimits=curve.xautolimits, yautolimits=curve.yautolimits)
     end
