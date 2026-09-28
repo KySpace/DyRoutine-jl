@@ -352,6 +352,13 @@ Unavailable pair/variant data are left blank. The concluding OneNote page has
 four comparison rows: t-balanced values, n-balanced values, t-balanced ratios,
 and n-balanced ratios.
 
+The t-balanced 421 number figure also includes DCS points selected from 30-second,
+zero-bias data, using the standard DCS circle marker. Its y-axis limits are
+controlled by `limits_y_numbers` in `anlz_isotope_pair_comparison_runner.jl`.
+The t-balanced loading comparison includes a DIS/DCS ratio figure with the same
+axis limits and styling as the DDM/DIS ratio figure; both ratio panels are shown
+under MOT loading 421 in the OneNote comparison table.
+
 ### ODT / CMOT number comparison
 
 [`anlz_odt_cmot_comparison.jl`](anlz_odt_cmot_comparison.jl) compares each

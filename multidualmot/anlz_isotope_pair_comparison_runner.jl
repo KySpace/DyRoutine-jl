@@ -151,6 +151,25 @@ for pair in val_pair
         points_421[variant][pair] = final_loading_points(
             curves_421, (:DDM, :DIS), val_istp, "$pair MOT loading 421 $(variant)";
             idx_final=only(indexin(t_load_query, curves_421.val_t_load)))
+        if variant == :t_balanced
+            candidates_dcs = filter(runinfos_421[pair]) do runinfo
+                any(data -> :β_MOT in keys(data.vars) && bias in data.vars.β_MOT &&
+                    :DCS in data.vars.loadcfg && t_load_query in data.vars.t_load,
+                    runinfo.data)
+            end
+            if isempty(candidates_dcs)
+                @warn "$pair: no t-balanced MOT loading 421 DCS data at $(t_load_query) sec; omitting DCS points"
+            else
+                runinfo_dcs = latest_num_evol_runinfo(candidates_dcs;
+                    label="$pair t-balanced MOT loading 421 DCS comparison")
+                curves_dcs = collect_loading_curves(runinfo_dcs;
+                    bias, bounds_sigmax_num, bounds_sigmay_num, num_max_num)
+                points_dcs = final_loading_points(curves_dcs, (:DCS,), val_istp,
+                    "$pair t-balanced MOT loading 421 DCS";
+                    idx_final=only(indexin(t_load_query, curves_dcs.val_t_load)))
+                merge!(points_421[variant][pair], points_dcs)
+            end
+        end
     end
 end
 
@@ -200,8 +219,8 @@ function draw_number_style_key!(fig::Figure, loadcfgs::Tuple)
     pos_y = collect(5:-1:1)
     pos_x = 1.10 .+ 0.34 .* (0:length(loadcfgs)-1)
     ax_key = style_key_axis(fig;
-        width=56,
-        limits=(0.65, 1.70, 0.5, 6.2),
+        width=length(loadcfgs) > 2 ? 76 : 56,
+        limits=(0.65, max(1.70, last(pos_x) + 0.26), 0.5, 6.2),
     )
     text!(ax_key, mean(pos_x), 5.8;
         text=join(string.(loadcfgs), "  "),
@@ -254,6 +273,8 @@ function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denomi
     for (idx_pair, pair) in enumerate(val_pair),
         istp in Symbol.(split(pair, "-"))
         haskey(points_by_pair, pair) || continue
+        haskey(points_by_pair[pair], (numerator, istp)) || continue
+        haskey(points_by_pair[pair], (denominator, istp)) || continue
         point_num = points_by_pair[pair][(numerator, istp)]
         point_den = points_by_pair[pair][(denominator, istp)]
         isfinite(point_num.num) && isfinite(point_den.num) && point_den.num > 0 ||
@@ -302,6 +323,7 @@ function draw_pair_numbers(points_by_pair::AbstractDict, loadcfgs::Tuple;
         val_istp = Symbol.(split(pair, "-"))
         for loadcfg in loadcfgs, istp in val_istp
             key = (loadcfg, istp)
+            haskey(points_by_pair[pair], key) || continue
             point = points_by_pair[pair][key]
             isfinite(point.num) && point.num > 0 ||
                 throw(ArgumentError("$pair $key: number must be finite and positive"))
@@ -337,15 +359,24 @@ for variant in (:t_balanced, :n_balanced)
             ylabel=rich("N", subscript("DDM"), " / N", subscript("DIS")),
             title="MOT loading 421 · 30 sec · $bias_text · $label",
             filename="[MOT.loading.pairs].[DDM-DIS].[ratio.$label]"),
+        ratio_421_dis_dcs=variant == :t_balanced ? draw_pair_ratio(points, :DIS, :DCS;
+            ylabel=rich("N", subscript("DIS"), " / N", subscript("DCS")),
+            title="MOT loading 421 · 30 sec · β_MOT = 0 · t-balanced",
+            filename="[MOT.loading.pairs].[DIS-DCS].[ratio.t-balanced]") : nothing,
         ratio_626=draw_pair_ratio(points_626, :DCS, :SCS;
             ylabel=rich("N", subscript("DCS"), " / N", subscript("SCS")),
             title="MOT loading 626 · 30 sec · $label",
             filename="[MOT.loading.pairs].[DCS-SCS].[ratio.$label]"),
-        numbers_421=draw_pair_numbers(points, (:DIS, :DDM);
+        numbers_421=draw_pair_numbers(points,
+            variant == :t_balanced ? (:DIS, :DDM, :DCS) : (:DIS, :DDM);
             limits_y=limits_y_numbers,
-            ylabel=rich("N", subscript("DDM"), ", N", subscript("DIS")),
+            ylabel=variant == :t_balanced ?
+                rich("N", subscript("DDM"), ", N", subscript("DIS"), ", N", subscript("DCS")) :
+                rich("N", subscript("DDM"), ", N", subscript("DIS")),
             title="MOT loading 421 · 30 sec · $bias_text · $label",
-            filename="[MOT.loading.pairs].[DDM-DIS].[nums.$label]"),
+            filename=variant == :t_balanced ?
+                "[MOT.loading.pairs].[DDM-DIS-DCS].[nums.$label]" :
+                "[MOT.loading.pairs].[DDM-DIS].[nums.$label]"),
         numbers_626=draw_pair_numbers(points_626, (:SCS, :DCS);
             limits_y=limits_y_numbers,
             ylabel=rich("N", subscript("DCS"), ", N", subscript("SCS")),

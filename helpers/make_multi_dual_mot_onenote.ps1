@@ -306,7 +306,7 @@ function Get-ComparisonEntries {
     $specs = @(
         @{ Key = 'odt-cmot-numbers'; Group = 'ODT/CMOT'; Parent = 'ODT BField'; Variant = '*'; File = '[ODT.CMOT.comparison].[log].[numbers].png' },
         @{ Key = 'odt-cmot-ratios'; Group = 'ODT/CMOT'; Parent = 'ODT BField'; Variant = '*'; File = '[ODT.CMOT.comparison].[lin].[ratios].png' },
-        @{ Key = 't-421-numbers'; Group = 't-balanced'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[nums.t-balanced].png' },
+        @{ Key = 't-421-numbers'; Group = 't-balanced'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DDM-DIS-DCS].[nums.t-balanced].png' },
         @{ Key = 't-626-numbers'; Group = 't-balanced'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[nums.t-balanced].png' },
         @{ Key = 't-cmot-values'; Group = 't-balanced'; Parent = 'CMOT lifetime'; Variant = 't-balanced'; File = '[CMOT.decay.pairs].[kappa].[values.t-balanced].png' },
         @{ Key = 't-mot-values'; Group = 't-balanced'; Parent = 'MOT lifetime'; Variant = 't-balanced'; File = '[MOT.decay.pairs].[tau].[values.t-balanced].png' },
@@ -314,6 +314,7 @@ function Get-ComparisonEntries {
         @{ Key = 'n-cmot-values'; Group = 'n-balanced'; Parent = 'CMOT lifetime'; Variant = 'n-balanced'; File = '[CMOT.decay.pairs].[kappa].[values.n-balanced].png' },
         @{ Key = 'n-mot-values'; Group = 'n-balanced'; Parent = 'MOT lifetime'; Variant = 'n-balanced'; File = '[MOT.decay.pairs].[tau].[values.n-balanced].png' },
         @{ Key = 't-421-ratio'; Group = 't-balanced'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[ratio.t-balanced].png' },
+        @{ Key = 't-421-dis-dcs-ratio'; Group = 't-balanced'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DIS-DCS].[ratio.t-balanced].png' },
         @{ Key = 't-626-ratio'; Group = 't-balanced'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[ratio.t-balanced].png' },
         @{ Key = 't-cmot-ratio'; Group = 't-balanced'; Parent = 'CMOT lifetime'; Variant = 't-balanced'; File = '[CMOT.decay.pairs].[DIS-DDM].[ratio.t-balanced].png' },
         @{ Key = 't-mot-ratio'; Group = 't-balanced'; Parent = 'MOT lifetime'; Variant = 't-balanced'; File = '[MOT.decay.pairs].[DDM-DIS].[ratio.t-balanced].png' },
@@ -477,6 +478,10 @@ function Add-ComparisonRows {
             else {
                 Add-ImageWithCaption -Document $Document -Parent $cellChildren `
                     -Entry $Entries[$key] -DisplayWidth $DisplayWidth
+                if ($key -eq 't-421-ratio') {
+                    Add-ImageWithCaption -Document $Document -Parent $cellChildren `
+                        -Entry $Entries['t-421-dis-dcs-ratio'] -DisplayWidth $DisplayWidth
+                }
             }
         }
     }
