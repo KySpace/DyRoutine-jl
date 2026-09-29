@@ -18,6 +18,8 @@ function decay_parameter_points(latest::NamedTuple, expected_mode::Symbol,
             value=Float64(getproperty(record, parameter)),
             std=Float64(getproperty(record, Symbol("std_", parameter))),
             panel,
+            n_rep=Float64(get(record, :n_points, NaN)),
+            source=String(get(record, :sources, basename(latest.path))),
         ) for record in records_panel)
     end
     points
@@ -29,7 +31,9 @@ function inverse_decay_points(points_by_pair::AbstractDict)
             throw(ArgumentError("$pair $key: κ must be finite and positive"))
         (value=inv(point.value),
             std=isfinite(point.std) ? point.std / point.value^2 : NaN,
-            panel=point.panel)
+            panel=point.panel,
+            n_rep=point.n_rep,
+            source=point.source)
     end for (key, point) in points) for (pair, points) in points_by_pair)
 end
 
@@ -151,12 +155,15 @@ println("Using CMOT decay fits: $(latest_cmot_decay.path)")
 println("Using MOT decay fits: $(latest_mot_decay.path)")
 
 figs_lifetime_pairs = Dict{Symbol,NamedTuple}()
+comparison_points_lifetime = Dict{Symbol,NamedTuple}()
 for (variant, biases) in ((:t_balanced, balance_biases[:t_balanced]),
     (:n_balanced, balance_biases[:n_balanced]))
     label = variant == :t_balanced ? "t-balanced" : "n-balanced"
     points_cmot_kappa = decay_parameter_points(latest_cmot_decay, :kappa, :kappa, biases)
     points_mot_tau = decay_parameter_points(latest_mot_decay, :tau, :tau, biases)
     points_cmot_inverse_kappa = inverse_decay_points(points_cmot_kappa)
+    comparison_points_lifetime[variant] = (; cmot=points_cmot_inverse_kappa,
+        mot=points_mot_tau)
     figs_lifetime_pairs[variant] = (
         cmot_values=draw_pair_decay_values(points_cmot_inverse_kappa, :inverse_kappa;
             ylabel=rich("1 / κ (atom s)"),
@@ -177,4 +184,66 @@ for (variant, biases) in ((:t_balanced, balance_biases[:t_balanced]),
             title="MOT decay · τ-only fit · $label",
             filename="[MOT.decay.pairs].[DDM-DIS].[ratio.$label]"),
     )
+end
+
+function lifetime_pair_matrix(points_by_pair::AbstractDict;
+    biases::AbstractDict, parameter::AbstractString, ratio=false,
+    numerator=:DDM, denominator=:DIS, quantity::AbstractString)
+    headers = ratio ? Any["pair", "istp", "loadcfg ratio", "CMOT/MOT value",
+        "tbiasmot", "ratio", "std", "n_rep numerator", "n_rep denominator",
+        "source numerator", "source denominator"] :
+        Any["pair", "istp", "loadcfg", "CMOT/MOT value", "tbiasmot",
+            "value", "std", "n_rep", "source", "source denominator"]
+    rows = Vector{Vector{Any}}()
+    for pair in val_pair, istp in Symbol.(split(pair, "-"))
+        if ratio
+            point_num = get(get(points_by_pair, pair, Dict()), (numerator, istp), nothing)
+            point_den = get(get(points_by_pair, pair, Dict()), (denominator, istp), nothing)
+            valid = !isnothing(point_num) && !isnothing(point_den) &&
+                isfinite(point_num.value) && point_num.value > 0 &&
+                isfinite(point_den.value) && point_den.value > 0
+            value = valid ? point_num.value / point_den.value : NaN
+            err = valid && isfinite(point_num.std) && isfinite(point_den.std) ?
+                sqrt((point_num.std / point_den.value)^2 +
+                    (point_num.value * point_den.std / point_den.value^2)^2) : NaN
+            push!(rows, Any[pair, string(istp), "$(numerator)/$(denominator)",
+                quantity, get(biases, pair, NaN), value, err,
+                isnothing(point_num) ? NaN : point_num.n_rep,
+                isnothing(point_den) ? NaN : point_den.n_rep,
+                isnothing(point_num) ? "" : point_num.source,
+                isnothing(point_den) ? "" : point_den.source])
+        else
+            for loadcfg in (:DDM, :DIS)
+                point = get(get(points_by_pair, pair, Dict()), (loadcfg, istp), nothing)
+                push!(rows, Any[pair, string(istp), string(loadcfg), quantity,
+                    isnothing(point) ? get(biases, pair, NaN) : point.panel,
+                    isnothing(point) ? NaN : point.value,
+                    isnothing(point) ? NaN : point.std,
+                    isnothing(point) ? NaN : point.n_rep,
+                    isnothing(point) ? "" : point.source, ""])
+            end
+        end
+    end
+    matrix = Matrix{Any}(undef, length(rows) + 1, length(headers))
+    matrix[1, :] .= headers
+    for (idx, row) in enumerate(rows)
+        matrix[idx + 1, :] .= row
+    end
+    matrix
+end
+
+for (dataset, parameter, field) in (("CMOT lifetime", "1/κ (s)", :cmot),
+    ("MOT lifetime", "τ (s)", :mot))
+    local sheets = Pair{String,Matrix{Any}}[]
+    for variant in (:t_balanced, :n_balanced)
+        label = variant == :t_balanced ? "t" : "n"
+        points = comparison_points_lifetime[variant][field]
+        biases = balance_biases[variant]
+        push!(sheets, "$label values" => lifetime_pair_matrix(points;
+            biases, parameter, quantity=parameter))
+        push!(sheets, "$label DDM-DIS ratio" => lifetime_pair_matrix(points;
+            biases, parameter, ratio=true, numerator=:DDM, denominator=:DIS,
+            quantity="$dataset $parameter ratio"))
+    end
+    write_figure_workbook(joinpath(path_output, "$dataset.xlsx"), sheets)
 end

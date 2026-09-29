@@ -177,6 +177,57 @@ end
 set_time_minor_ticks!(ax_ratio)
 axislegend(ax_ratio; position=:rb, DUALMOT_LEGEND_OPTIONS...)
 
+if isdefined(@__MODULE__, :figure_data_sheets)
+    number_headers = Any["t_load (raw)", "effective t_load (s)"]
+    for loadcfg in (:SCS, :DCS), istp in val_istp
+        append!(number_headers, ["mean [$loadcfg $istp]", "std [$loadcfg $istp]",
+            "n_rep [$loadcfg $istp]", "source [$loadcfg $istp]"])
+    end
+    number_matrix = Matrix{Any}(undef, length(val_t_load) + 1, length(number_headers))
+    number_matrix[1, :] .= number_headers
+    for idx_t in eachindex(val_t_load)
+        number_matrix[idx_t + 1, 1:2] .= (val_t_load[idx_t], val_t_load_plot[idx_t])
+        col = 3
+        for loadcfg in (:SCS, :DCS), istp in val_istp
+            curve = curves_num[(loadcfg, istp)]
+            number_matrix[idx_t + 1, col:col + 3] .= (
+                curve.nums[idx_t], curve.stds[idx_t],
+                curve.n_reps[idx_t] == 0 ? NaN : curve.n_reps[idx_t],
+                figure_xlsx_source(runinfo, (; t_load=val_t_load[idx_t], loadcfg, istp)))
+            col += 4
+        end
+    end
+
+    ratio_headers = Any["t_load (raw)", "effective t_load (s)"]
+    for istp in val_istp
+        append!(ratio_headers, ["ratio DCS/SCS [$istp]", "std [$istp]",
+            "n_rep DCS [$istp]", "n_rep SCS [$istp]",
+            "source DCS [$istp]", "source SCS [$istp]"])
+    end
+    ratio_matrix = Matrix{Any}(undef, length(val_t_load) + 1, length(ratio_headers))
+    ratio_matrix[1, :] .= ratio_headers
+    for idx_t in eachindex(val_t_load)
+        ratio_matrix[idx_t + 1, 1:2] .= (val_t_load[idx_t], val_t_load_plot[idx_t])
+        col = 3
+        for istp in val_istp
+            dcs, scs = curves_num[(:DCS, istp)], curves_num[(:SCS, istp)]
+            ratio = curves_ratio[istp]
+            ratio_matrix[idx_t + 1, col:col + 5] .= (
+                ratio.ratios[idx_t], ratio.stds[idx_t],
+                isfinite(ratio.ratios[idx_t]) && dcs.n_reps[idx_t] > 0 ? dcs.n_reps[idx_t] : NaN,
+                isfinite(ratio.ratios[idx_t]) && scs.n_reps[idx_t] > 0 ? scs.n_reps[idx_t] : NaN,
+                figure_xlsx_source(runinfo, (; t_load=val_t_load[idx_t],
+                    loadcfg=:DCS, istp)),
+                figure_xlsx_source(runinfo, (; t_load=val_t_load[idx_t],
+                    loadcfg=:SCS, istp)))
+            col += 6
+        end
+    end
+    sheets = get!(figure_data_sheets, runinfo.folder, Pair{String,Matrix{Any}}[])
+    push!(sheets, "$(runinfo.tag) numbers" => number_matrix)
+    push!(sheets, "$(runinfo.tag) ratio" => ratio_matrix)
+end
+
 for format in plot_cmpr_loadcfg.formats
     save_options = format == "png" ? (; px_per_unit=4) : (;)
     save(joinpath(path_output, "[$(plot_cmpr_loadcfg.file_head)].[$(runinfo.tag)].[nums].$format"), fig_nums; save_options...)

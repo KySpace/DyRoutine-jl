@@ -14,6 +14,7 @@ runinfos_grouped = [read_num_evol_runinfos(path_root, pair;
 ) for pair in val_pair]
 runinfos = vcat(runinfos_grouped...)
 ids_runinfo = eachindex(runinfos)
+figure_data_sheets = Dict{String,Vector{Pair{String,Matrix{Any}}}}()
 plot_cmpr_loadcfg = (
     file_head="MOT.loading.626",
     xlabel="Effective loading time (s)",
@@ -37,3 +38,4 @@ for idx_runinfo_iter in ids_runinfo
     println("Processing: $tag_head")
     include(joinpath(@__DIR__, "anlz_cmpr_loadcfg.jl"))
 end
+write_pair_figure_workbooks(path_root, figure_data_sheets, "MOT loading 626.xlsx")

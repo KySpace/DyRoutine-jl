@@ -352,6 +352,11 @@ Unavailable pair/variant data are left blank. The concluding OneNote page has
 four comparison rows: t-balanced values, n-balanced values, t-balanced ratios,
 and n-balanced ratios.
 
+For MOT loading 421 comparisons, a sole tagged group is used directly. If a
+pair has multiple tagged groups, exactly one must set `for_load421: true`; all
+421 comparison points, including t-balanced DCS, are selected from that group.
+Missing or duplicate selections raise an error.
+
 The t-balanced 421 number figure also includes DCS points selected from 30-second,
 zero-bias data, using the standard DCS circle marker. Its y-axis limits are
 controlled by `limits_y_numbers` in `anlz_isotope_pair_comparison_runner.jl`.
@@ -428,6 +433,21 @@ subvariant tag
 The table generators rely on this naming convention.
 
 ## Aggregate output
+
+Figure data are exported to Excel alongside the plotted SVG/PNG outputs. Each
+pair-specific analysis folder contains one workbook per figure family, with a
+sheet for each processing tag and balance panel; logarithmic and linear views
+of the same data share a sheet. Sheets retain the configured main-variable
+values, plotted x values, means, sample standard deviations, valid repetition
+counts, and contributing `MMDD runXX` sources. Empty/masked values are written
+as `NaN`.
+
+The isotope-pair comparison folder has one workbook per OneNote comparison
+column (`MOT loading 421`, `MOT loading 626`, `CMOT lifetime`, `MOT lifetime`,
+and `ODT`). Sheets correspond to each balance/configuration/ratio figure.
+Ratio sheets keep numerator and denominator source names and repetition counts
+in separate columns. Fit comparison sheets use the number of time points in
+the fit as `n_rep`.
 
 [`make_multi_dual_mot_table.jl`](../helpers/make_multi_dual_mot_table.jl) collects individual SVGs into the combined table and can render the combined PNG.
 

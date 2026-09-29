@@ -1,10 +1,12 @@
 using YAML
+using XLSX
 using MAT
 using Statistics: mean, std
 using CairoMakie
 using Colors: Oklch, RGB
 using Dates
 using JLD2
+using Printf: @sprintf
 
 isdefined(@__MODULE__, :marker_errorbars!) ||
     include(joinpath(@__DIR__, "..", "snippets", "marker_errorbars.jl"))
@@ -40,6 +42,11 @@ const DUALMOT_ODT_BFIELD_VAR_SPECS = (
     loadcfg=(config="loadcfg", convert=values -> Symbol.(string.(values))),
     istp=(config="istp", convert=values -> Symbol.(string.(values))),
 )
+const DUALMOT_CONFIG_VAR_NAMES = Dict{Symbol,String}(
+    key => spec.config for specs in (DUALMOT_VAR_SPECS,
+        DUALMOT_LOADING_VAR_SPECS, DUALMOT_LOADCFG_VAR_SPECS,
+        DUALMOT_BALANCE_VAR_SPECS, DUALMOT_ODT_BFIELD_VAR_SPECS)
+    for (key, spec) in pairs(specs))
 
 const ODT_BFIELD_CALIBRATION = Dict(
     :x => (Q=1.48094, B0=0.276317),
@@ -282,7 +289,8 @@ function read_num_evol_runinfos(path_root::AbstractString, folder::AbstractStrin
                 var_specs, validate_vars, folder,
                 label="$folder/$tag data[$idx_data]")
         end
-        (; folder=String(folder), tag=String(tag), data)
+        (; folder=String(folder), tag=String(tag),
+            for_load421=get(run_config, "for_load421", false), data)
     end
     tags = getproperty.(runinfos, :tag)
     allunique(tags) || throw(ArgumentError("$folder: processing tags must be unique"))
@@ -304,6 +312,111 @@ end
 
 filename_token(value::AbstractString) = replace(strip(value),
     r"[\[\]<>:\"/\\|?*\s]+" => "-")
+
+function figure_xlsx_cell(value)
+    ismissing(value) && return "NaN"
+    value isa AbstractFloat && isnan(value) && return "NaN"
+    value isa AbstractFloat && isinf(value) && return string(value)
+    value
+end
+
+function figure_xlsx_source(runinfo::NamedTuple, condition::NamedTuple)
+    sources = String[]
+    for data in runinfo.data
+        all(key -> !hasproperty(data.vars, key) ||
+            getproperty(condition, key) in getproperty(data.vars, key), keys(condition)) || continue
+        append!(sources, replace.(basename.(data.sources),
+            r"^liferes\s+" => "", r"\.mat$" => ""))
+    end
+    join(unique(sources), ", ")
+end
+
+function figure_xlsx_sheet_name(value::AbstractString)
+    name = filename_token(value)
+    isempty(name) && (name = "data")
+    name[1:min(lastindex(name), 31)]
+end
+
+function num_evol_xlsx_sheet_name(runinfo::NamedTuple, key_panel, panel;
+    fit::Bool=false)
+    isnothing(key_panel) && return figure_xlsx_sheet_name(runinfo.tag *
+        (fit ? " fit" : ""))
+    suffix = "__β$(@sprintf("%+.2f", Float64(panel)))" * (fit ? "_fit" : "")
+    max_prefix = max(1, 31 - length(suffix))
+    tag = figure_xlsx_sheet_name(runinfo.tag)
+    tag = tag[1:min(lastindex(tag), max_prefix)]
+    tag * suffix
+end
+
+function write_figure_workbook(path::AbstractString, sheets)
+    isempty(sheets) && return nothing
+    mkpath(dirname(path))
+        names_written = Set{String}()
+        XLSX.openxlsx(path; mode="w") do workbook
+            for (idx_sheet, (raw_name, raw_matrix)) in enumerate(sheets)
+                name_base = figure_xlsx_sheet_name(raw_name)
+                name = name_base
+                suffix = 2
+                while name in names_written
+                    tail = "-$suffix"
+                    name = name_base[1:min(lastindex(name_base), 31 - length(tail))] * tail
+                    suffix += 1
+                end
+                push!(names_written, name)
+                sheet = if idx_sheet == 1
+                    first_sheet = workbook[1]
+                    XLSX.renamesheet!(first_sheet, name)
+                    first_sheet
+                else
+                    XLSX.addsheet!(workbook, name)
+                end
+                matrix = map(figure_xlsx_cell, raw_matrix)
+                sheet["A1"] = matrix
+            end
+        end
+    nothing
+end
+
+function write_pair_figure_workbooks(path_root::AbstractString,
+    sheets_by_pair::AbstractDict, filename::AbstractString)
+    for (pair, sheets) in sheets_by_pair
+        isempty(sheets) && continue
+        path_pair = joinpath(path_root, pair)
+        mkpath(path_pair)
+        write_figure_workbook(joinpath(path_pair, filename), sheets)
+    end
+    nothing
+end
+
+function num_evol_figure_matrix(runinfo::NamedTuple, key_x::Symbol, val_x,
+    key_panel, panel, curves_plot::AbstractVector)
+    headers = String["$(get(DUALMOT_CONFIG_VAR_NAMES, key_x, string(key_x))) (raw)"]
+    append!(headers, reduce(vcat, map(curves_plot) do curve
+        condition = join(string.(values(curve.condition)), " ")
+        ["$(key_x) plot [$condition]", "mean [$condition]", "std [$condition]",
+            "n_rep [$condition]", "sources [$condition]"]
+    end; init=String[]))
+    output = Matrix{Any}(undef, length(curves_plot[1].nums) + 1, length(headers))
+    output[1, :] .= headers
+    for idx_x in eachindex(curves_plot[1].nums)
+        output[idx_x + 1, 1] = val_x[idx_x]
+    end
+    for (idx_curve, curve) in enumerate(curves_plot)
+        col = 2 + 5 * (idx_curve - 1)
+        condition_axes = merge(curve.condition,
+            isnothing(key_panel) ? NamedTuple() : NamedTuple{(key_panel,)}((panel,)))
+        for idx_x in eachindex(curve.nums)
+            idx_row = idx_x + 1
+            output[idx_row, col] = curve.val_x_curve[idx_x]
+            output[idx_row, col + 1] = curve.nums[idx_x]
+            output[idx_row, col + 2] = curve.stds[idx_x]
+            output[idx_row, col + 3] = curve.n_reps[idx_x] == 0 ? NaN : curve.n_reps[idx_x]
+            output[idx_row, col + 4] = figure_xlsx_source(runinfo,
+                merge(condition_axes, NamedTuple{(key_x,)}((val_x[idx_x],))))
+        end
+    end
+    output
+end
 
 function calc_num_evol_block(runinfo_data::NamedTuple;
     label::AbstractString,

@@ -84,6 +84,7 @@ end
 
 function final_loading_points(loading_curves::NamedTuple,
     loadcfgs::Tuple, val_istp::AbstractVector{Symbol}, label::AbstractString;
+    runinfo::NamedTuple, bias::Union{Nothing,Real}=nothing,
     idx_final = lastindex(loading_curves.val_t_load)
     )
     points = Dict{Tuple{Symbol, Symbol}, NamedTuple}()
@@ -97,9 +98,21 @@ function final_loading_points(loading_curves::NamedTuple,
             std=curve.stds[idx_final],
             n_rep=curve.n_reps[idx_final],
             t_load=loading_curves.val_t_load[idx_final],
+            source=figure_xlsx_source(runinfo, merge((; loadcfg, istp,
+                t_load=loading_curves.val_t_load[idx_final]),
+                isnothing(bias) ? NamedTuple() : (; β_MOT=bias))),
         )
     end
     points
+end
+
+function select_load421_comparison_runinfo(runinfos::AbstractVector{<:NamedTuple},
+    pair::AbstractString)
+    length(runinfos) == 1 && return only(runinfos)
+    selected = filter(runinfo -> runinfo.for_load421 === true, runinfos)
+    length(selected) == 1 || throw(ArgumentError(
+        "$pair MOT loading 421 comparison requires exactly one tagged group with for_load421: true when multiple groups exist; found $(length(selected)) among $(getproperty.(runinfos, :tag))"))
+    only(selected)
 end
 
 runinfos_421 = Dict(pair => read_num_evol_runinfos(path_root_421, pair;
@@ -127,6 +140,7 @@ balance_biases = Dict(
     :n_balanced => balance_by_pair,
 )
 for pair in val_pair
+    runinfo_421_comparison = select_load421_comparison_runinfo(runinfos_421[pair], pair)
     runinfo_626 = latest_num_evol_runinfo(runinfos_626[pair];
         label="$pair MOT loading 626 comparison")
     local val_istp = Symbol.(split(pair, "-"))
@@ -134,10 +148,11 @@ for pair in val_pair
     curves_626 = collect_loading_curves(runinfo_626;
         bounds_sigmax_num, bounds_sigmay_num, num_max_num)
     points_626[pair] = final_loading_points(
-        curves_626, (:DCS, :SCS), val_istp, "$pair MOT loading 626"; idx_final=only(indexin(t_load_query, curves_626.val_t_load)))
+        curves_626, (:DCS, :SCS), val_istp, "$pair MOT loading 626";
+        runinfo=runinfo_626, idx_final=only(indexin(t_load_query, curves_626.val_t_load)))
     for variant in (:t_balanced, :n_balanced)
         bias = balance_biases[variant][pair]
-        candidates_421 = filter(runinfos_421[pair]) do runinfo
+        candidates_421 = filter([runinfo_421_comparison]) do runinfo
             any(data -> :β_MOT in keys(data.vars) && bias in data.vars.β_MOT, runinfo.data)
         end
         if isempty(candidates_421) && variant == :n_balanced
@@ -150,9 +165,10 @@ for pair in val_pair
             bias, bounds_sigmax_num, bounds_sigmay_num, num_max_num)
         points_421[variant][pair] = final_loading_points(
             curves_421, (:DDM, :DIS), val_istp, "$pair MOT loading 421 $(variant)";
+            runinfo=runinfo_421, bias,
             idx_final=only(indexin(t_load_query, curves_421.val_t_load)))
         if variant == :t_balanced
-            candidates_dcs = filter(runinfos_421[pair]) do runinfo
+            candidates_dcs = filter([runinfo_421_comparison]) do runinfo
                 any(data -> :β_MOT in keys(data.vars) && bias in data.vars.β_MOT &&
                     :DCS in data.vars.loadcfg && t_load_query in data.vars.t_load,
                     runinfo.data)
@@ -166,6 +182,7 @@ for pair in val_pair
                     bias, bounds_sigmax_num, bounds_sigmay_num, num_max_num)
                 points_dcs = final_loading_points(curves_dcs, (:DCS,), val_istp,
                     "$pair t-balanced MOT loading 421 DCS";
+                    runinfo=runinfo_dcs, bias,
                     idx_final=only(indexin(t_load_query, curves_dcs.val_t_load)))
                 merge!(points_421[variant][pair], points_dcs)
             end
@@ -384,3 +401,79 @@ for variant in (:t_balanced, :n_balanced)
             filename="[MOT.loading.pairs].[DCS-SCS].[nums.$label]"),
     )
 end
+
+function loading_pair_table(points_by_pair::AbstractDict, loadcfgs::Tuple;
+    biases::AbstractDict, ratio=false, numerator=nothing, denominator=nothing,
+    quantity::AbstractString)
+    if ratio
+        headers = Any["pair", "istp", "loadcfg ratio", "quantity", "tbiasmot",
+            "t_load (s)", "ratio", "std", "n_rep numerator", "n_rep denominator",
+            "source numerator", "source denominator"]
+    else
+        headers = Any["pair", "istp", "loadcfg", "quantity", "tbiasmot",
+            "t_load (s)", "mean", "std", "n_rep", "source", "source denominator"]
+    end
+    rows = Vector{Vector{Any}}()
+    for pair in val_pair, istp in Symbol.(split(pair, "-"))
+        loadcfg_iter = ratio ? (nothing,) : loadcfgs
+        for loadcfg in loadcfg_iter
+            if ratio
+                point_num = get(get(points_by_pair, pair, Dict()), (numerator, istp), nothing)
+                point_den = get(get(points_by_pair, pair, Dict()), (denominator, istp), nothing)
+                valid = !isnothing(point_num) && !isnothing(point_den) &&
+                    isfinite(point_num.num) && isfinite(point_den.num) && point_den.num > 0
+                value = valid ? point_num.num / point_den.num : NaN
+                err = valid && isfinite(point_num.std) && isfinite(point_den.std) ?
+                    sqrt((point_num.std / point_den.num)^2 +
+                        (point_num.num * point_den.std / point_den.num^2)^2) : NaN
+                push!(rows, Any[pair, string(istp), "$(numerator)/$(denominator)",
+                    quantity, get(biases, pair, NaN), ismissing(point_num) ? NaN :
+                    isnothing(point_num) ? NaN : point_num.t_load, value, err,
+                    isnothing(point_num) || !isfinite(point_num.num) || point_num.n_rep == 0 ? NaN : point_num.n_rep,
+                    isnothing(point_den) || !isfinite(point_den.num) || point_den.n_rep == 0 ? NaN : point_den.n_rep,
+                    isnothing(point_num) ? "" : point_num.source,
+                    isnothing(point_den) ? "" : point_den.source])
+            else
+                point = get(get(points_by_pair, pair, Dict()), (loadcfg, istp), nothing)
+                push!(rows, Any[pair, string(istp), string(loadcfg), quantity,
+                    get(biases, pair, NaN), isnothing(point) ? t_load_query : point.t_load,
+                    isnothing(point) ? NaN : point.num,
+                    isnothing(point) ? NaN : point.std,
+                    isnothing(point) || point.n_rep == 0 ? NaN : point.n_rep,
+                    isnothing(point) ? "" : point.source, ""])
+            end
+        end
+    end
+    matrix = Matrix{Any}(undef, length(rows) + 1, length(headers))
+    matrix[1, :] .= headers
+    for (idx, row) in enumerate(rows)
+        matrix[idx + 1, :] .= row
+    end
+    matrix
+end
+
+comparison_sheets_421 = Pair{String,Matrix{Any}}[]
+for variant in (:t_balanced, :n_balanced)
+    label = variant == :t_balanced ? "t" : "n"
+    points = points_421[variant]
+    push!(comparison_sheets_421, "$label numbers" => loading_pair_table(points,
+        variant == :t_balanced ? (:DDM, :DIS, :DCS) : (:DDM, :DIS);
+        biases=balance_biases[variant], quantity="MOT loading 421"))
+    push!(comparison_sheets_421, "$label DDM-DIS ratio" => loading_pair_table(points,
+        (); biases=balance_biases[variant], ratio=true, numerator=:DDM,
+        denominator=:DIS, quantity="MOT loading 421 ratio"))
+    if variant == :t_balanced
+        push!(comparison_sheets_421, "t DIS-DCS ratio" => loading_pair_table(points,
+            (); biases=balance_biases[variant], ratio=true, numerator=:DIS,
+            denominator=:DCS, quantity="MOT loading 421 ratio"))
+    end
+end
+write_figure_workbook(joinpath(path_output, "MOT loading 421.xlsx"), comparison_sheets_421)
+comparison_sheets_626 = Pair{String,Matrix{Any}}[
+    "t numbers" => loading_pair_table(points_626, (:DCS, :SCS);
+        biases=Dict(pair => NaN for pair in val_pair), quantity="MOT loading 626"),
+    "t DCS-SCS ratio" => loading_pair_table(points_626, ();
+        biases=Dict(pair => NaN for pair in val_pair), ratio=true,
+        numerator=:DCS, denominator=:SCS, quantity="MOT loading 626 ratio"),
+]
+write_figure_workbook(joinpath(path_output, "MOT loading 626.xlsx"), comparison_sheets_626)

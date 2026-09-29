@@ -20,6 +20,7 @@ runinfos_grouped = [read_num_evol_runinfos(path_root, pair;
 ) for pair in val_pair]
 runinfos = vcat(runinfos_grouped...)
 ids_runinfo = eachindex(runinfos)
+figure_data_sheets = Dict{String,Vector{Pair{String,Matrix{Any}}}}()
 plot_num_evol = dualmot_lifetime_plot_spec("CMOT";
     key_x=key_x_num,
     scale_x=1000,
@@ -43,3 +44,4 @@ for idx_runinfo_iter in ids_runinfo
 end
 path_fit_results = save_num_decay_results(
     path_root, "CMOT", fit_num_decay_config.mode, fit_records_num_decay)
+write_pair_figure_workbooks(path_root, figure_data_sheets, "CMOT lifetime.xlsx")

@@ -31,6 +31,7 @@ for (idx_panel, panel) in enumerate(val_panel)
         end
         nums = vec(@view num_stat[indices...])
         stds = vec(@view std_num_stat[indices...])
+        n_reps = vec(@view n_rep_stat[indices...])
         style = plot_num_evol.curve_style(condition)
         label = plot_num_evol.curve_label(condition)
         mask_linear = isfinite.(nums)
@@ -63,6 +64,8 @@ for (idx_panel, panel) in enumerate(val_panel)
                 std_kappa,
                 at_bound=result.at_bound,
                 n_points=count(result.mask),
+                sources=figure_xlsx_source(runinfo, merge(condition,
+                    isnothing(key_panel) ? NamedTuple() : NamedTuple{(key_panel,)}((panel,)))),
             ))
         end
         text_fit = if isnothing(result)
@@ -75,7 +78,41 @@ for (idx_panel, panel) in enumerate(val_panel)
         end
         mask_selected = isnothing(result) ? trues(length(nums)) : result.mask_selected
         (; idx_condition, condition, nums, stds, style, label, mask_linear,
-            mask_log, mask_selected, result, text_fit)
+            mask_log, mask_selected, n_reps, result, text_fit)
+    end
+
+    if isdefined(@__MODULE__, :figure_data_sheets)
+        headers = Any["$(get(DUALMOT_CONFIG_VAR_NAMES, key_x, string(key_x))) (raw)"]
+        for curve in curves_decay
+            label = join(string.(values(curve.condition)), " ")
+            append!(headers, ["$(key_x) plot [$label]", "mean [$label]", "std [$label]",
+                "n_rep [$label]", "fit selected [$label]", "fit mean [$label]",
+                "source [$label]"])
+        end
+        matrix = Matrix{Any}(undef, length(val_x) + 1, length(headers))
+        matrix[1, :] .= headers
+        for idx_x in eachindex(val_x)
+            matrix[idx_x + 1, 1] = val_x[idx_x]
+        end
+        for (idx_curve, curve) in enumerate(curves_decay)
+            col = 2 + 7 * (idx_curve - 1)
+            prediction = isnothing(curve.result) ? fill(NaN, length(val_x_plot)) :
+                curve.result.model(val_x_plot, curve.result.params)
+            condition_axes = merge(curve.condition,
+                isnothing(key_panel) ? NamedTuple() : NamedTuple{(key_panel,)}((panel,)))
+            for idx_x in eachindex(val_x)
+                row = idx_x + 1
+                matrix[row, col:col + 6] .= (
+                    val_x_plot[idx_x], curve.nums[idx_x], curve.stds[idx_x],
+                    curve.n_reps[idx_x] == 0 ? NaN : curve.n_reps[idx_x],
+                    !isnothing(curve.result) && curve.mask_selected[idx_x], prediction[idx_x],
+                    figure_xlsx_source(runinfo, merge(condition_axes,
+                        NamedTuple{(key_x,)}((val_x[idx_x],)))))
+            end
+        end
+        sheet_name = num_evol_xlsx_sheet_name(runinfo, key_panel, panel; fit=true)
+        push!(get!(figure_data_sheets, runinfo.folder,
+            Pair{String,Matrix{Any}}[]), sheet_name => matrix)
     end
 
     # Fitted curves stay underneath every marker and extend over all displayed times.

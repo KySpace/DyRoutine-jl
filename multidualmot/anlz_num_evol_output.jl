@@ -49,6 +49,7 @@ for (idx_panel, panel, scale) in jobs_num_evol
         end
         nums = vec(@view num_stat[indices...])
         stds = vec(@view std_num_stat[indices...])
+        n_reps = vec(@view n_rep_stat[indices...])
         mask_target = isnothing(plot_num_evol_target) ? trues(length(nums)) :
             plot_num_evol_target.mask_x(val_x_plot)
         length(mask_target) == length(nums) ||
@@ -77,8 +78,16 @@ for (idx_panel, panel, scale) in jobs_num_evol
             count_crossing = count(mask .& isfinite.(stds) .& (nums .- stds .<= 0))
             count_crossing > 0 && @warn "$tag_head: log error bars crossing zero omitted" panel condition count_crossing
         end
-        (; condition, nums, stds, nums_plot, val_x_curve, mask_error, style,
+        (; condition, nums, stds, n_reps, nums_plot, val_x_curve, mask_error, style,
             xautolimits, yautolimits)
+    end
+    if isnothing(plot_num_evol_target) && scale == first(plot_num_evol.scales) &&
+        isdefined(@__MODULE__, :figure_data_sheets)
+        sheet_name = num_evol_xlsx_sheet_name(runinfo, key_panel, panel)
+        table = num_evol_figure_matrix(runinfo, key_x, val_x,
+            key_panel, panel, curves_plot)
+        push!(get!(figure_data_sheets, runinfo.folder,
+            Pair{String,Matrix{Any}}[]), sheet_name => table)
     end
     for curve in curves_plot
         mask_line = isfinite.(curve.val_x_curve) .& isfinite.(curve.nums_plot)

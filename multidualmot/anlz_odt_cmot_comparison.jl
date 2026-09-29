@@ -28,7 +28,9 @@ function comparison_stats(runinfo; bounds_sigmax_num, bounds_sigmay_num, num_max
         valid = collect(skipmissing(vec(values)))
         length(valid) < 2 ? NaN : std(valid)
     end; dims=idx_rep)
-    (; vars=combined.vars, name=Tuple(k for k in keys(combined.vars) if k != :rep), num_stat, std_stat)
+    n_rep_stat = dropdims(sum(.!ismissing.(num_fmt); dims=idx_rep); dims=idx_rep)
+    (; vars=combined.vars, name=Tuple(k for k in keys(combined.vars) if k != :rep),
+        num_stat, std_stat, n_rep_stat, runinfo)
 end
 
 function stats_point(stats, condition::NamedTuple)
@@ -39,7 +41,9 @@ function stats_point(stats, condition::NamedTuple)
         idx[axis_idx] = findfirst(==(getproperty(condition, key)), getproperty(stats.vars, key))
         isnothing(idx[axis_idx]) && throw(ArgumentError("condition $key=$(getproperty(condition,key)) unavailable"))
     end
-    (; num=only(stats.num_stat[idx...]), std=only(stats.std_stat[idx...]))
+    (; num=only(stats.num_stat[idx...]), std=only(stats.std_stat[idx...]),
+        n_rep=only(stats.n_rep_stat[idx...]),
+        source=figure_xlsx_source(stats.runinfo, condition))
 end
 
 function draw_marker_point!(ax, x, y, err; marker_options, label=nothing)
@@ -158,4 +162,50 @@ end
 
 fig_numbers = draw_comparison(; ratio=false)
 fig_ratios = draw_comparison(; ratio=true)
+
+number_headers = Any["pair", "istp", "loadcfg", "ODT or CMOT", "tbiasmot",
+    "tmotload (s)", "mean", "std", "n_rep", "source", "source denominator"]
+ratio_headers = Any["pair", "istp", "loadcfg", "ODT/CMOT", "tbiasmot",
+    "tmotload (s)", "ratio", "std", "n_rep numerator", "n_rep denominator",
+    "source numerator", "source denominator"]
+number_rows = Vector{Vector{Any}}()
+ratio_rows = Vector{Vector{Any}}()
+for pair in val_pair, loadcfg in (:DDM, :DIS), istp in Symbol.(split(pair, "-"))
+    condition = conditions[pair]
+    mot = points_cmot[pair][(loadcfg, istp)]
+    for direction in (:x, :z)
+        odt = get(points_odt[pair], (direction, loadcfg, istp), nothing)
+        push!(number_rows, Any[pair, string(istp), string(loadcfg), "ODT $direction",
+            condition.bias, condition.tmotload,
+            isnothing(odt) ? NaN : odt.num, isnothing(odt) ? NaN : odt.std,
+            isnothing(odt) || odt.n_rep == 0 ? NaN : odt.n_rep,
+            isnothing(odt) ? "" : odt.source, ""])
+        valid_ratio = !isnothing(odt) && isfinite(odt.num) &&
+            isfinite(mot.num) && mot.num > 0
+        ratio = valid_ratio ? odt.num / mot.num : NaN
+        err = valid_ratio && isfinite(odt.std) && isfinite(mot.std) ?
+            sqrt((odt.std / mot.num)^2 + (odt.num * mot.std / mot.num^2)^2) : NaN
+        push!(ratio_rows, Any[pair, string(istp), string(loadcfg), "ODT/CMOT",
+            condition.bias, condition.tmotload, ratio, err,
+            isnothing(odt) || odt.n_rep == 0 ? NaN : odt.n_rep,
+            mot.n_rep == 0 ? NaN : mot.n_rep,
+            isnothing(odt) ? "" : odt.source, mot.source])
+    end
+    push!(number_rows, Any[pair, string(istp), string(loadcfg), "CMOT",
+        condition.bias, condition.tmotload, mot.num, mot.std, mot.n_rep, mot.source, ""])
+end
+number_matrix = Matrix{Any}(undef, length(number_rows) + 1, length(number_headers))
+number_matrix[1, :] .= number_headers
+for (idx, row) in enumerate(number_rows)
+    number_matrix[idx + 1, :] .= row
+end
+ratio_matrix = Matrix{Any}(undef, length(ratio_rows) + 1, length(ratio_headers))
+ratio_matrix[1, :] .= ratio_headers
+for (idx, row) in enumerate(ratio_rows)
+    ratio_matrix[idx + 1, :] .= row
+end
+write_figure_workbook(joinpath(path_output, "ODT.xlsx"), [
+    "numbers" => number_matrix,
+    "ODT-CMOT ratio" => ratio_matrix,
+])
 println("Saved ODT/CMOT comparison figures to $path_output")
