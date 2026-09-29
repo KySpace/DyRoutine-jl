@@ -106,15 +106,6 @@ function final_loading_points(loading_curves::NamedTuple,
     points
 end
 
-function select_load421_comparison_runinfo(runinfos::AbstractVector{<:NamedTuple},
-    pair::AbstractString)
-    length(runinfos) == 1 && return only(runinfos)
-    selected = filter(runinfo -> runinfo.for_load421 === true, runinfos)
-    length(selected) == 1 || throw(ArgumentError(
-        "$pair MOT loading 421 comparison requires exactly one tagged group with for_load421: true when multiple groups exist; found $(length(selected)) among $(getproperty.(runinfos, :tag))"))
-    only(selected)
-end
-
 runinfos_421 = Dict(pair => read_num_evol_runinfos(path_root_421, pair;
     var_specs=DUALMOT_LOADING_VAR_SPECS,
     validate_vars=validate_dualmot_vars,
@@ -140,7 +131,7 @@ balance_biases = Dict(
     :n_balanced => balance_by_pair,
 )
 for pair in val_pair
-    runinfo_421_comparison = select_load421_comparison_runinfo(runinfos_421[pair], pair)
+    runinfo_421_comparison = select_for_load421_runinfo(runinfos_421[pair], pair)
     runinfo_626 = latest_num_evol_runinfo(runinfos_626[pair];
         label="$pair MOT loading 626 comparison")
     local val_istp = Symbol.(split(pair, "-"))

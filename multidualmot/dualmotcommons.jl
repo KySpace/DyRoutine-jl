@@ -87,7 +87,8 @@ const LIGHTNESS_DIS_LINE, CHROMA_DIS_LINE = 0.65, 0.08
 const MARKER_LOADCFG = Dict(
     :DDM => :rect, :DIS => :utriangle, :DCS => :circle, :SCS => :diamond)
 const DUALMOT_LOG_MAJOR_TICKS = LogTicks(-20:20)
-const DUALMOT_LOG_MINOR_TICKS = IntervalsBetween(10)
+const DUALMOT_LOG_MINOR_TICKS = sort!([Float64(multiplier) * 10.0^exponent
+    for exponent in -20:20 for multiplier in 2:9])
 const DUALMOT_FONT = "Helvetica World"
 set_theme!(fonts=(;
     regular=DUALMOT_FONT,
@@ -310,6 +311,15 @@ function latest_num_evol_runinfo(runinfos::AbstractVector{<:NamedTuple};
     runinfos[idx_latest]
 end
 
+function select_for_load421_runinfo(runinfos::AbstractVector{<:NamedTuple},
+    pair::AbstractString)
+    length(runinfos) == 1 && return only(runinfos)
+    selected = filter(runinfo -> runinfo.for_load421 === true, runinfos)
+    length(selected) == 1 || throw(ArgumentError(
+        "$pair MOT loading 421 comparison requires exactly one tagged group with for_load421: true when multiple groups exist; found $(length(selected)) among $(getproperty.(runinfos, :tag))"))
+    only(selected)
+end
+
 filename_token(value::AbstractString) = replace(strip(value),
     r"[\[\]<>:\"/\\|?*\s]+" => "-")
 
@@ -334,7 +344,7 @@ end
 function figure_xlsx_sheet_name(value::AbstractString)
     name = filename_token(value)
     isempty(name) && (name = "data")
-    name[1:min(lastindex(name), 31)]
+    first(name, min(length(name), 31))
 end
 
 function num_evol_xlsx_sheet_name(runinfo::NamedTuple, key_panel, panel;
@@ -359,7 +369,7 @@ function write_figure_workbook(path::AbstractString, sheets)
                 suffix = 2
                 while name in names_written
                     tail = "-$suffix"
-                    name = name_base[1:min(lastindex(name_base), 31 - length(tail))] * tail
+                    name = first(name_base, min(length(name_base), 31 - length(tail))) * tail
                     suffix += 1
                 end
                 push!(names_written, name)

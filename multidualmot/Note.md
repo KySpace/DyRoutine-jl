@@ -357,6 +357,14 @@ pair has multiple tagged groups, exactly one must set `for_load421: true`; all
 421 comparison points, including t-balanced DCS, are selected from that group.
 Missing or duplicate selections raise an error.
 
+Each MOT loading 421 pair folder also receives two log-y ratio-evolution
+figures for each balance in the selected group: DIS/DCS and DDM/DIS. The two
+isotopes share each figure, distinguished by isotope color. Ratio means are
+ratios of the per-isotope means; uncertainty is propagated from the repetition
+standard deviations assuming independent samples. In the combined table, 421
+tag/balance combinations occupy separate subrows, with the inner columns
+ordered linear loading, log loading, DDM/DIS, and DIS/DCS.
+
 The t-balanced 421 number figure also includes DCS points selected from 30-second,
 zero-bias data, using the standard DCS circle marker. Its y-axis limits are
 controlled by `limits_y_numbers` in `anlz_isotope_pair_comparison_runner.jl`.

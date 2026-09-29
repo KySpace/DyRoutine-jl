@@ -111,6 +111,11 @@ function collect_entries(parent_dirs::AbstractVector{<:AbstractString},
             svg_paths = filter(path -> isfile(path) && endswith(lowercase(path), ".svg"),
                                readdir(pair_dir; join=true))
             cell_entries = parse_svg_entry.(sort(svg_paths; by=lowercase))
+            if parent_name == "MOT loading 421"
+                current_styles = Set(("lin", "log", "ratio.DIS-DCS", "ratio.DDM-DIS"))
+                filter!(entry -> entry.style_tag in current_styles &&
+                    occursin('.', entry.subvariant_tag), cell_entries)
+            end
             isempty(cell_entries) || (entries[(parent_name, pair_name)] = cell_entries)
         end
     end
@@ -118,15 +123,24 @@ function collect_entries(parent_dirs::AbstractVector{<:AbstractString},
 end
 
 function cell_layout(cell_entries::AbstractVector{SvgEntry}, parent_name::AbstractString)
-    isempty(cell_entries) && return (
-        styles=String[], subvariants=String[], widths=Float64[], heights=Float64[],
-        width=0.0, height=0.0,
-    )
+    if isempty(cell_entries)
+        styles = parent_name == "MOT loading 421" ?
+            ["lin", "log", "ratio.DDM-DIS", "ratio.DIS-DCS"] : String[]
+        return (; styles, subvariants=String[], widths=zeros(length(styles)),
+            heights=Float64[], width=0.0, height=0.0)
+    end
 
-    styles = sort!(unique(entry.style_tag for entry in cell_entries); by=lowercase)
+    styles = if parent_name == "MOT loading 421"
+        ["lin", "log", "ratio.DDM-DIS", "ratio.DIS-DCS"]
+    else
+        sort!(unique(entry.style_tag for entry in cell_entries); by=lowercase)
+    end
     subvariants = sort!(unique(entry.subvariant_tag for entry in cell_entries); by=lowercase)
-    if parent_name in ("MOT loading 421", "MOT loading 626",
-                       "MOT lifetime", "CMOT lifetime")
+    if parent_name == "MOT loading 421"
+        balance_order(tag) = startswith(tag, "t-balanced") ? 1 :
+            startswith(tag, "n-balanced") ? 2 : 3
+        sort!(subvariants; by=tag -> (balance_order(tag), lowercase(tag)))
+    elseif parent_name in ("MOT loading 626", "MOT lifetime", "CMOT lifetime")
         order_balance = ("t-balanced", "n-balanced")
         sort!(subvariants;
             by=tag -> (something(findfirst(==(tag), order_balance), 3), lowercase(tag)))
@@ -293,6 +307,18 @@ function make_multi_dual_mot_table(root::AbstractString, output_path::AbstractSt
         )
         for parent_name in parent_names for pair_name in pair_names
     )
+    if "MOT loading 421" in parent_names
+        pair_layouts = [layouts[("MOT loading 421", pair)] for pair in pair_names]
+        shared_widths = [maximum((layout.widths[idx] for layout in pair_layouts);
+            init=0.0) for idx in 1:4]
+        for pair in pair_names
+            key = ("MOT loading 421", pair)
+            layout = layouts[key]
+            layouts[key] = merge(layout, (;
+                widths=shared_widths,
+                width=sum(shared_widths) + INNER_GAP * 3))
+        end
+    end
     column_widths = [maximum(
         (layouts[(parent_name, pair_name)].width for pair_name in pair_names); init=0.0,
     ) for parent_name in parent_names]

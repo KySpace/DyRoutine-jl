@@ -277,20 +277,28 @@ function Get-PngEntries {
                     Write-Warning "Ignoring PNG with an unexpected name: $($file.FullName)"
                     continue
                 }
+                $testTag = $Matches[1]
+                $styleTag = $Matches[2]
+                $subvariantTag = $Matches[3]
+                if ($parentName -eq 'MOT loading 421' -and
+                    ($styleTag -notin @('lin', 'log', 'ratio.DDM-DIS', 'ratio.DIS-DCS') -or
+                     -not $subvariantTag.Contains('.'))) {
+                    continue
+                }
                 $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
                 $size = Get-PngDimensions -Bytes $bytes -Path $file.FullName
                 $entriesByCell[$cellKey].Add([pscustomobject]@{
                     Path = $file.FullName
-                    TestTag = $Matches[1]
-                    StyleTag = $Matches[2]
-                    SubvariantTag = $Matches[3]
-                    Alt = "$($Matches[1]) / $($Matches[2]) / $($Matches[3])"
+                    TestTag = $testTag
+                    StyleTag = $styleTag
+                    SubvariantTag = $subvariantTag
+                    Alt = "$testTag / $styleTag / $subvariantTag"
                     Width = $size.Width
                     Height = $size.Height
                     Base64 = [Convert]::ToBase64String($bytes)
                     SourceCaption = if (Test-Path -LiteralPath $configPath -PathType Leaf) {
                         Get-SourceCaption -ConfigPath $configPath `
-                            -StyleTag $Matches[2] -SubvariantTag $Matches[3]
+                            -StyleTag $styleTag -SubvariantTag $subvariantTag
                     } else { '' }
                 })
             }
@@ -398,7 +406,11 @@ function Add-ImageTable {
         return 0
     }
 
-    $styles = @($entryArray.StyleTag | Sort-Object -Unique)
+    $styles = if ($CellLabel -like 'MOT loading 421/*') {
+        @('lin', 'log', 'ratio.DDM-DIS', 'ratio.DIS-DCS')
+    } else {
+        @($entryArray.StyleTag | Sort-Object -Unique)
+    }
     $subvariants = @($entryArray.SubvariantTag | Sort-Object -Unique)
     if ($CellLabel -match '^(MOT loading|MOT lifetime|CMOT lifetime)') {
         $balanceOrder = @('t-balanced', 'n-balanced')
@@ -630,6 +642,24 @@ try {
     }
     if ($verifiedTableCount -lt 3) {
         throw "OneNote returned only $verifiedTableCount table node(s)"
+    }
+
+    $outerTable = $verifiedDocument.SelectSingleNode('//one:Table', $namespaceManager)
+    foreach ($pairName in @('161-163', '162-164')) {
+        $pairIndex = [Array]::IndexOf($script:PairNames, $pairName) + 1
+        $pairRow = $outerTable.SelectNodes('./one:Row', $namespaceManager)[$pairIndex]
+        $loadingTable = $pairRow.SelectSingleNode('./one:Cell[2]//one:Table', $namespaceManager)
+        if ($null -eq $loadingTable) {
+            throw "OneNote read-back is missing the 421 table for $pairName"
+        }
+        $columnCount = $loadingTable.SelectNodes('./one:Row[1]/one:Cell', $namespaceManager).Count - 1
+        $rowCount = $loadingTable.SelectNodes('./one:Row', $namespaceManager).Count - 1
+        $expectedRows = @($EntriesByCell["MOT loading 421`n$pairName"] |
+            ForEach-Object { $_.SubvariantTag } | Sort-Object -Unique).Count
+        if ($columnCount -ne 4 -or $rowCount -ne $expectedRows) {
+            throw "OneNote 421 table for $pairName has $columnCount figure columns and $rowCount tag/balance rows; expected 4 and $expectedRows"
+        }
+        Write-Host "Verified OneNote $pairName 421 table: $columnCount figure columns, $rowCount tag/balance rows."
     }
 
     if ($ShowPage) {
