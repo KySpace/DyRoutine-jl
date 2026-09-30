@@ -478,10 +478,19 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
     num_data_masked = Vector{Union{Missing, Float64}}(num_data)
     num_data_masked[.!mask_valid] .= missing
     append!(num_data_masked, fill(missing, n_padding))
+    sigmax_masked = Vector{Union{Missing, Float64}}(sigmax_data)
+    sigmax_masked[.!mask_valid] .= missing
+    append!(sigmax_masked, fill(missing, n_padding))
+    sigmay_masked = Vector{Union{Missing, Float64}}(sigmay_data)
+    sigmay_masked[.!mask_valid] .= missing
+    append!(sigmay_masked, fill(missing, n_padding))
 
-    num_acq = reshape(num_data_masked, reverse(n_dims_acq)) |>
-        data -> permutedims(data, reverse(1:length(n_dims_acq)))
-    num_fmt = permutedims(num_acq, indexin(collect(name), collect(name_acq)))
+    fmt_from_flat(data) = reshape(data, reverse(n_dims_acq)) |>
+        values -> permutedims(values, reverse(1:length(n_dims_acq))) |>
+        values -> permutedims(values, indexin(collect(name), collect(name_acq)))
+    num_fmt = fmt_from_flat(num_data_masked)
+    sigmax_fmt = fmt_from_flat(sigmax_masked)
+    sigmay_fmt = fmt_from_flat(sigmay_masked)
     for key in keys(runinfo_data.selector)
         axis_values = getproperty(vars, key)
         predicate_spec = getproperty(runinfo_data.selector, key)
@@ -492,8 +501,8 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
         selected isa AbstractVector{Bool} && length(selected) == length(axis_values) ||
             throw(ArgumentError("$label selector for $key.$kind must return one Boolean per axis value"))
         idx_axis = findfirst(==(key), name)
-        for idx in eachindex(selected)
-            selected[idx] || (selectdim(num_fmt, idx_axis, idx) .= missing)
+        for fmt in (num_fmt, sigmax_fmt, sigmay_fmt), idx in eachindex(selected)
+            selected[idx] || (selectdim(fmt, idx_axis, idx) .= missing)
         end
     end
     idx_rep_axis = findfirst(==(:rep), name)
@@ -519,7 +528,7 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
         "$n_masked_sigmay sigmay; $n_masked_num_low below zero, " *
         "$n_masked_num_high above $num_max_num)")
     (; vars, name_stat, num_fmt, num_stat, std_num_stat, n_rep_stat, n_rep,
-        mask_valid, n_masked_total)
+        sigmax_fmt, sigmay_fmt, mask_valid, n_masked_total)
 end
 
 function combine_num_evol_blocks(blocks::AbstractVector{<:NamedTuple};
@@ -533,8 +542,10 @@ function combine_num_evol_blocks(blocks::AbstractVector{<:NamedTuple};
         keys(block.vars) == name ||
             throw(ArgumentError("$label data[$idx_block]: variable axes $(keys(block.vars)) must match $name"))
         expected_size = Tuple(length(getproperty(block.vars, key)) for key in name)
-        size(block.num_fmt) == expected_size ||
-            throw(DimensionMismatch("$label data[$idx_block]: num_fmt size $(size(block.num_fmt)) must match variable dimensions $expected_size"))
+        for field in (:num_fmt, :sigmax_fmt, :sigmay_fmt)
+            size(getproperty(block, field)) == expected_size ||
+                throw(DimensionMismatch("$label data[$idx_block]: $field size $(size(getproperty(block, field))) must match variable dimensions $expected_size"))
+        end
         for key in name
             values_axis = getproperty(block.vars, key)
             allunique(values_axis) ||
@@ -551,27 +562,32 @@ function combine_num_evol_blocks(blocks::AbstractVector{<:NamedTuple};
     end
     vars = NamedTuple{name}(values_combined)
     size_combined = Tuple(length.(values_combined))
-    num_fmt = Array{Union{Missing, Float64}}(undef, size_combined)
-    fill!(num_fmt, missing)
-
-    pos_rep = 0
-    for (idx_block, block) in enumerate(blocks)
-        indices = map(name) do key
-            if key == :rep
-                (pos_rep + 1):(pos_rep + block.n_rep)
-            else
-                values_axis = getproperty(block.vars, key)
-                values_axis_combined = getproperty(vars, key)
-                positions = indexin(values_axis, values_axis_combined)
-                all(!isnothing, positions) ||
-                    error("$label data[$idx_block]: failed to align $key values")
-                Int.(positions)
+    combine_fmt(field) = begin
+        output = Array{Union{Missing, Float64}}(undef, size_combined)
+        fill!(output, missing)
+        pos_rep = 0
+        for (idx_block, block) in enumerate(blocks)
+            indices = map(name) do key
+                if key == :rep
+                    (pos_rep + 1):(pos_rep + block.n_rep)
+                else
+                    values_axis = getproperty(block.vars, key)
+                    values_axis_combined = getproperty(vars, key)
+                    positions = indexin(values_axis, values_axis_combined)
+                    all(!isnothing, positions) ||
+                        error("$label data[$idx_block]: failed to align $key values")
+                    Int.(positions)
+                end
             end
+            @views output[indices...] .= getproperty(block, field)
+            pos_rep += block.n_rep
         end
-        @views num_fmt[indices...] .= block.num_fmt
-        pos_rep += block.n_rep
+        output
     end
-    (; vars, num_fmt, n_rep)
+    num_fmt = combine_fmt(:num_fmt)
+    sigmax_fmt = combine_fmt(:sigmax_fmt)
+    sigmay_fmt = combine_fmt(:sigmay_fmt)
+    (; vars, num_fmt, sigmax_fmt, sigmay_fmt, n_rep)
 end
 
 function read_cres_fields(paths::AbstractVector{<:AbstractString}, fields::Tuple{Vararg{String}})

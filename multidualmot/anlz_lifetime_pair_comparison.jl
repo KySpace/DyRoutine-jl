@@ -1,3 +1,9 @@
+if !isdefined(@__MODULE__, :pair_istp_offset)
+    global pair_istp_offset = 0.05
+end
+isdefined(@__MODULE__, :pair_istp_position) ||
+    include(joinpath(@__DIR__, "anlz_pair_comparison_plot_helpers.jl"))
+
 function decay_parameter_points(latest::NamedTuple, expected_mode::Symbol,
     parameter::Symbol, biases::AbstractDict{String,<:Real})
     latest.fit_mode == expected_mode ||
@@ -17,6 +23,8 @@ function decay_parameter_points(latest::NamedTuple, expected_mode::Symbol,
         points[pair] = Dict((record.loadcfg, record.istp) => (
             value=Float64(getproperty(record, parameter)),
             std=Float64(getproperty(record, Symbol("std_", parameter))),
+            n0=Float64(record.n0),
+            std_n0=Float64(record.std_n0),
             panel,
             n_rep=Float64(get(record, :n_points, NaN)),
             source=String(get(record, :sources, basename(latest.path))),
@@ -33,12 +41,15 @@ function inverse_decay_points(points_by_pair::AbstractDict)
             std=isfinite(point.std) ? point.std / point.value^2 : NaN,
             panel=point.panel,
             n_rep=point.n_rep,
-            source=point.source)
+            source=point.source,
+            n0=point.n0,
+            std_n0=point.std_n0)
     end for (key, point) in points) for (pair, points) in points_by_pair)
 end
 
-function draw_pair_decay_values(points_by_pair::AbstractDict, parameter::Symbol;
-    ylabel, title::AbstractString, filename::AbstractString, scale_y::Real=1.0, limits_y::Tuple)
+function draw_pair_lifetime_values(points_by_pair::AbstractDict, value_key::Symbol,
+    error_key::Symbol; ylabel, title::AbstractString, filename::AbstractString,
+    limits_y::Union{Nothing,Tuple}=nothing)
     fig = Figure(size=(320, 164), fontsize=8, figure_padding=1)
     ax = Axis(fig[1, 1];
         xticks=(eachindex(val_pair), val_pair),
@@ -56,20 +67,24 @@ function draw_pair_decay_values(points_by_pair::AbstractDict, parameter::Symbol;
         haskey(points_by_pair, pair) || continue
         haskey(points_by_pair[pair], (loadcfg, istp)) || continue
         point = points_by_pair[pair][(loadcfg, istp)]
-        isfinite(point.value) && point.value > 0 ||
-            throw(ArgumentError("$pair $loadcfg $istp: $parameter must be finite and positive"))
-        value = point.value / scale_y
-        std = point.std / scale_y
+        value = Float64(getproperty(point, value_key))
+        std = Float64(getproperty(point, error_key))
+        isfinite(value) && value > 0 ||
+            throw(ArgumentError("$pair $loadcfg $istp: $value_key must be finite and positive"))
         x = pair_istp_position(idx_pair, pair, istp)
         style = dualmot_curve_style((; loadcfg, istp))
         marker_options = marker_style(style; markersize=6)
         if isfinite(std) && std >= 0
-            value - std > 0 || throw(ArgumentError(
-                "$pair $loadcfg $istp: log-scale $parameter error bar crosses zero"))
-            marker_errorbars!(ax, [x], [value], [std];
-                marker_options..., errorlinewidth=0.75)
-            lower = min(lower, value - std)
-            upper = max(upper, value + std)
+            if value - std > 0
+                marker_errorbars!(ax, [x], [value], [std];
+                    marker_options..., errorlinewidth=0.75)
+                lower = min(lower, value - std)
+                upper = max(upper, value + std)
+            else
+                scatter!(ax, [x], [value]; marker_options...)
+                lower = min(lower, value)
+                upper = max(upper, value)
+            end
         else
             scatter!(ax, [x], [value]; marker_options...)
             lower = min(lower, value)
@@ -82,7 +97,11 @@ function draw_pair_decay_values(points_by_pair::AbstractDict, parameter::Symbol;
         lower_limit = 10.0^floor(log10(lower)) / 1.02
         upper_limit = 10.0^ceil(log10(upper)) * 1.02
     end
-    ylims!(ax, limits_y...)
+    if isnothing(limits_y)
+        ylims!(ax, lower_limit, upper_limit)
+    else
+        ylims!(ax, limits_y...)
+    end
     draw_number_style_key!(fig, (:DIS, :DDM))
     for format in formats_output
         save_options = format == "png" ? (; px_per_unit=4) : (;)
@@ -90,6 +109,14 @@ function draw_pair_decay_values(points_by_pair::AbstractDict, parameter::Symbol;
     end
     fig
 end
+
+draw_pair_decay_values(points_by_pair::AbstractDict, parameter::Symbol;
+    kwargs...) = draw_pair_lifetime_values(points_by_pair, :value, :std; kwargs...)
+
+draw_pair_n0_values(points_by_pair::AbstractDict;
+    title::AbstractString, filename::AbstractString) =
+    draw_pair_lifetime_values(points_by_pair, :n0, :std_n0;
+        ylabel="N₀ (atom)", title, filename)
 
 function draw_pair_decay_ratio(points_by_pair::AbstractDict,
     numerator::Symbol, denominator::Symbol;
@@ -170,6 +197,9 @@ for (variant, biases) in ((:t_balanced, balance_biases[:t_balanced]),
             title="CMOT decay · κ-only fit · $label",
             filename="[CMOT.decay.pairs].[kappa].[values.$label]",
             limits_y=(0.5e6, 1.0e7)),
+        cmot_n0=draw_pair_n0_values(points_cmot_inverse_kappa;
+            title="CMOT decay · fitted N₀ · $label",
+            filename="[CMOT.decay.pairs].[n0].[values.$label]"),
         cmot_ratio=draw_pair_decay_ratio(points_cmot_inverse_kappa, :DDM, :DIS;
             ylabel=rich("(1 / κ)", subscript("DDM"), " / (1 / κ)", subscript("DIS")),
             title="CMOT decay · κ-only fit · $label",
@@ -179,6 +209,9 @@ for (variant, biases) in ((:t_balanced, balance_biases[:t_balanced]),
             title="MOT decay · τ-only fit · $label",
             filename="[MOT.decay.pairs].[tau].[values.$label]",
             limits_y=(0.9e0, 5.5e1)),
+        mot_n0=draw_pair_n0_values(points_mot_tau;
+            title="MOT decay · fitted N₀ · $label",
+            filename="[MOT.decay.pairs].[n0].[values.$label]"),
         mot_ratio=draw_pair_decay_ratio(points_mot_tau, :DDM, :DIS;
             ylabel=rich("τ", subscript("DDM"), " / τ", subscript("DIS")),
             title="MOT decay · τ-only fit · $label",
@@ -187,13 +220,13 @@ for (variant, biases) in ((:t_balanced, balance_biases[:t_balanced]),
 end
 
 function lifetime_pair_matrix(points_by_pair::AbstractDict;
-    biases::AbstractDict, parameter::AbstractString, ratio=false,
+    biases::AbstractDict, parameter::AbstractString, ratio=false, n0=false,
     numerator=:DDM, denominator=:DIS, quantity::AbstractString)
     headers = ratio ? Any["pair", "istp", "loadcfg ratio", "CMOT/MOT value",
         "tbiasmot", "ratio", "std", "n_rep numerator", "n_rep denominator",
         "source numerator", "source denominator"] :
         Any["pair", "istp", "loadcfg", "CMOT/MOT value", "tbiasmot",
-            "value", "std", "n_rep", "source", "source denominator"]
+            n0 ? "N₀" : "value", "std", "n_rep", "source", "source denominator"]
     rows = Vector{Vector{Any}}()
     for pair in val_pair, istp in Symbol.(split(pair, "-"))
         if ratio
@@ -215,10 +248,12 @@ function lifetime_pair_matrix(points_by_pair::AbstractDict;
         else
             for loadcfg in (:DDM, :DIS)
                 point = get(get(points_by_pair, pair, Dict()), (loadcfg, istp), nothing)
+                value = isnothing(point) ? NaN : getproperty(point, n0 ? :n0 : :value)
+                error = isnothing(point) ? NaN : getproperty(point, n0 ? :std_n0 : :std)
                 push!(rows, Any[pair, string(istp), string(loadcfg), quantity,
                     isnothing(point) ? get(biases, pair, NaN) : point.panel,
-                    isnothing(point) ? NaN : point.value,
-                    isnothing(point) ? NaN : point.std,
+                    value,
+                    error,
                     isnothing(point) ? NaN : point.n_rep,
                     isnothing(point) ? "" : point.source, ""])
             end
@@ -241,6 +276,8 @@ for (dataset, parameter, field) in (("CMOT lifetime", "1/κ (s)", :cmot),
         biases = balance_biases[variant]
         push!(sheets, "$label values" => lifetime_pair_matrix(points;
             biases, parameter, quantity=parameter))
+        push!(sheets, "$label N₀" => lifetime_pair_matrix(points;
+            biases, parameter, n0=true, quantity="N₀ (atom)"))
         push!(sheets, "$label DDM-DIS ratio" => lifetime_pair_matrix(points;
             biases, parameter, ratio=true, numerator=:DDM, denominator=:DIS,
             quantity="$dataset $parameter ratio"))

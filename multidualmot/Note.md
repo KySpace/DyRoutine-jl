@@ -128,7 +128,7 @@ For number-evolution analysis, it extracts the selected number field and these
 fit-quality fields from every `cres` entry:
 
 ```text
-atomnum (default; lifetime runners use pixsum)
+atomnum (default; lifetime runners use atomnum)
 sigmax
 sigmay
 ```
@@ -332,10 +332,18 @@ CMOT lifetime/Fit results/
 MOT lifetime/Fit results/
 ```
 
-CMOT and MOT lifetime runners use `pixsum` as their number field; other
-number-evolution runners retain `atomnum`. Their decay axes and κ units name
-the selected signal. Pairwise CMOT decay comparisons use `1/κ` from those
-pixsum fits, while MOT comparisons use the fitted `τ` values.
+CMOT and MOT lifetime runners use `atomnum` as their number field. Their decay
+axes and κ units name the selected signal. Pairwise CMOT decay comparisons use
+`1/κ` from those atom-number fits, while MOT comparisons use the fitted `τ`
+values. Pairwise fitted `N₀` values are labeled in atom-number units.
+
+The CMOT/MOT pairwise lifetime comparison exports the fitted `N₀` and the
+`1/κ` or `τ` comparisons as separate figures. In OneNote, the two figures share
+one comparison cell and are stacked vertically. Their workbook data use
+separate sheets. Each per-pair CMOT/MOT lifetime cell also
+includes a `size` figure with repetition means and sample deviations of fitted
+`sigmax` and `sigmay`, using the same accepted shots and condition alignment as
+the number curves. The size figure occupies the final inner-grid column.
 
 The isotope-pair lifetime comparisons read the newest JLD2 file in each folder.
 

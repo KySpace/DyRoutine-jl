@@ -16,6 +16,8 @@ name, val_vars = keys(vars), values(vars)
 n_rep = combined_num_evol.n_rep
 val_rep = vars.rep
 num_fmt = combined_num_evol.num_fmt
+sigmax_fmt = combined_num_evol.sigmax_fmt
+sigmay_fmt = combined_num_evol.sigmay_fmt
 
 idx_rep_axis = findfirst(==(:rep), name)
 num_stat = dropdims(mapslices(num_fmt; dims=idx_rep_axis) do values
@@ -27,6 +29,22 @@ std_num_stat = dropdims(mapslices(num_fmt; dims=idx_rep_axis) do values
     length(valid) < 2 ? NaN : std(valid)
 end; dims=idx_rep_axis)
 n_rep_stat = dropdims(sum(.!ismissing.(num_fmt); dims=idx_rep_axis); dims=idx_rep_axis)
+sigmax_stat = dropdims(mapslices(sigmax_fmt; dims=idx_rep_axis) do values
+    valid = collect(skipmissing(vec(values)))
+    isempty(valid) ? NaN : mean(valid)
+end; dims=idx_rep_axis)
+std_sigmax_stat = dropdims(mapslices(sigmax_fmt; dims=idx_rep_axis) do values
+    valid = collect(skipmissing(vec(values)))
+    length(valid) < 2 ? NaN : std(valid)
+end; dims=idx_rep_axis)
+sigmay_stat = dropdims(mapslices(sigmay_fmt; dims=idx_rep_axis) do values
+    valid = collect(skipmissing(vec(values)))
+    isempty(valid) ? NaN : mean(valid)
+end; dims=idx_rep_axis)
+std_sigmay_stat = dropdims(mapslices(sigmay_fmt; dims=idx_rep_axis) do values
+    valid = collect(skipmissing(vec(values)))
+    length(valid) < 2 ? NaN : std(valid)
+end; dims=idx_rep_axis)
 name_stat = Tuple(key for key in name if key != :rep)
 n_rep == 1 && @warn "$tag_head: one repetition; sample standard deviations are undefined (NaN)"
 length(blocks_num_evol) > 1 && println("$tag_head: combined $(length(blocks_num_evol)) data blocks " *

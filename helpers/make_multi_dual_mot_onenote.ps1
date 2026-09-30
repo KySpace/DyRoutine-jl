@@ -317,10 +317,14 @@ function Get-ComparisonEntries {
         @{ Key = 't-421-numbers'; Group = 't-balanced'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DDM-DIS-DCS].[nums.t-balanced].png' },
         @{ Key = 't-626-numbers'; Group = 't-balanced'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[nums.t-balanced].png' },
         @{ Key = 't-cmot-values'; Group = 't-balanced'; Parent = 'CMOT lifetime'; Variant = 't-balanced'; File = '[CMOT.decay.pairs].[kappa].[values.t-balanced].png' },
+        @{ Key = 't-cmot-n0'; Group = 't-balanced'; Parent = 'CMOT lifetime'; Variant = 't-balanced'; File = '[CMOT.decay.pairs].[n0].[values.t-balanced].png' },
         @{ Key = 't-mot-values'; Group = 't-balanced'; Parent = 'MOT lifetime'; Variant = 't-balanced'; File = '[MOT.decay.pairs].[tau].[values.t-balanced].png' },
+        @{ Key = 't-mot-n0'; Group = 't-balanced'; Parent = 'MOT lifetime'; Variant = 't-balanced'; File = '[MOT.decay.pairs].[n0].[values.t-balanced].png' },
         @{ Key = 'n-421-numbers'; Group = 'n-balanced'; Parent = 'MOT loading 421'; Variant = 'n-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[nums.n-balanced].png' },
         @{ Key = 'n-cmot-values'; Group = 'n-balanced'; Parent = 'CMOT lifetime'; Variant = 'n-balanced'; File = '[CMOT.decay.pairs].[kappa].[values.n-balanced].png' },
+        @{ Key = 'n-cmot-n0'; Group = 'n-balanced'; Parent = 'CMOT lifetime'; Variant = 'n-balanced'; File = '[CMOT.decay.pairs].[n0].[values.n-balanced].png' },
         @{ Key = 'n-mot-values'; Group = 'n-balanced'; Parent = 'MOT lifetime'; Variant = 'n-balanced'; File = '[MOT.decay.pairs].[tau].[values.n-balanced].png' },
+        @{ Key = 'n-mot-n0'; Group = 'n-balanced'; Parent = 'MOT lifetime'; Variant = 'n-balanced'; File = '[MOT.decay.pairs].[n0].[values.n-balanced].png' },
         @{ Key = 't-421-ratio'; Group = 't-balanced'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DDM-DIS].[ratio.t-balanced].png' },
         @{ Key = 't-421-dis-dcs-ratio'; Group = 't-balanced'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DIS-DCS].[ratio.t-balanced].png' },
         @{ Key = 't-626-ratio'; Group = 't-balanced'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[ratio.t-balanced].png' },
@@ -408,6 +412,8 @@ function Add-ImageTable {
 
     $styles = if ($CellLabel -like 'MOT loading 421/*') {
         @('lin', 'log', 'ratio.DDM-DIS', 'ratio.DIS-DCS')
+    } elseif ($CellLabel -like 'MOT lifetime/*' -or $CellLabel -like 'CMOT lifetime/*') {
+        @(@('lin', 'log', 'fit.log', 'size') | Where-Object { $_ -in $entryArray.StyleTag })
     } else {
         @($entryArray.StyleTag | Sort-Object -Unique)
     }
@@ -493,6 +499,17 @@ function Add-ComparisonRows {
                 if ($key -eq 't-421-ratio') {
                     Add-ImageWithCaption -Document $Document -Parent $cellChildren `
                         -Entry $Entries['t-421-dis-dcs-ratio'] -DisplayWidth $DisplayWidth
+                }
+                $n0Key = switch ($key) {
+                    't-cmot-values' { 't-cmot-n0' }
+                    't-mot-values' { 't-mot-n0' }
+                    'n-cmot-values' { 'n-cmot-n0' }
+                    'n-mot-values' { 'n-mot-n0' }
+                    default { $null }
+                }
+                if ($null -ne $n0Key) {
+                    Add-ImageWithCaption -Document $Document -Parent $cellChildren `
+                        -Entry $Entries[$n0Key] -DisplayWidth $DisplayWidth
                 }
             }
         }
