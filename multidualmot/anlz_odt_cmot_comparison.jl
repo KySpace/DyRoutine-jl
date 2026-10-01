@@ -46,9 +46,15 @@ function stats_point(stats, condition::NamedTuple)
         source=figure_xlsx_source(stats.runinfo, condition))
 end
 
-function draw_marker_point!(ax, x, y, err; marker_options, label=nothing)
+function draw_marker_point!(ax, x, y, err; marker_options, label=nothing,
+    log_floor::Union{Nothing,Real}=nothing)
     if isfinite(err) && err >= 0
-        marker_errorbars!(ax, [x], [y], [err]; marker_options..., errorlinewidth=0.8, label)
+        if isnothing(log_floor)
+            marker_errorbars!(ax, [x], [y], [err]; marker_options..., errorlinewidth=0.8, label)
+        elseif y > log_floor
+            marker_errorbars_log!(ax, [x], [y], [err]; floor=log_floor,
+                marker_options..., errorlinewidth=0.8, label)
+        end
     else
         scatter!(ax, [x], [y]; marker_options..., label)
     end
@@ -126,6 +132,20 @@ function draw_comparison(; ratio::Bool)
         yscale=ratio ? identity : log10, dualmot_axis_kwargs(; log_y=!ratio, text_size=9)...)
     xlims!(ax, 0.5, length(val_pair)+0.5)
     ratio && hlines!(ax, [1]; color=(:black,0.45), linestyle=:dash, linewidth=0.8)
+    log_floor = nothing
+    if !ratio
+        log_values = Float64[]
+        log_errors = Float64[]
+        for pair in val_pair
+            append!(log_values, (pt.num for pt in values(points_odt[pair])))
+            append!(log_errors, (pt.std for pt in values(points_odt[pair])))
+            append!(log_values, (pt.num for pt in values(points_cmot[pair])))
+            append!(log_errors, (pt.std for pt in values(points_cmot[pair])))
+        end
+        log_limits = log_plot_limits(log_values, log_errors)
+        ylims!(ax, log_limits...)
+        log_floor = log_limits[1]
+    end
     for (ip,pair) in enumerate(val_pair), loadcfg in (:DDM,:DIS), istp in Symbol.(split(pair,"-"))
         style = dualmot_curve_style((; loadcfg, istp))
         pos = ip + (istp == Symbol(first(split(pair,"-"))) ? -0.07 : 0.07) + (loadcfg == :DDM ? -0.025 : 0.025)
@@ -145,11 +165,13 @@ function draw_comparison(; ratio::Bool)
                 shift = dir == :x ? -0.025 : 0.025
                 draw_marker_point!(ax, pos+shift, pt.num, pt.std; marker_options=(;
                     color=style.markercolor, marker=style.marker, markersize=7,
-                    strokecolor=style.strokecolor, strokewidth=style.strokewidth))
+                    strokecolor=style.strokecolor, strokewidth=style.strokewidth),
+                    log_floor)
             end
             hollow = (; color=:transparent, marker=style.marker, markersize=7,
                 strokecolor=style.strokecolor, strokewidth=style.strokewidth)
-            draw_marker_point!(ax, pos, mot.num, mot.std; marker_options=hollow)
+            draw_marker_point!(ax, pos, mot.num, mot.std; marker_options=hollow,
+                log_floor)
         end
     end
     filename = ratio ? "[ODT.CMOT.comparison].[lin].[ratios]" : "[ODT.CMOT.comparison].[log].[numbers]"

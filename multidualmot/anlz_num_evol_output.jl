@@ -73,11 +73,6 @@ for (idx_panel, panel, scale) in jobs_num_evol
         yautolimits isa Bool ||
             throw(ArgumentError("$tag_head: yautolimits must return Bool for $condition"))
         mask_error = mask .& isfinite.(stds)
-        if scale == :log
-            mask_error .&= nums .- stds .> 0
-            count_crossing = count(mask .& isfinite.(stds) .& (nums .- stds .<= 0))
-            count_crossing > 0 && @warn "$tag_head: log error bars crossing zero omitted" panel condition count_crossing
-        end
         (; condition, nums, stds, n_reps, nums_plot, val_x_curve, mask_error, style,
             xautolimits, yautolimits)
     end
@@ -96,20 +91,44 @@ for (idx_panel, panel, scale) in jobs_num_evol
             curve.style.line_options...,
             xautolimits=curve.xautolimits, yautolimits=curve.yautolimits)
     end
+    limits_log = nothing
+    if scale == :log
+        log_values = vcat((curve.nums_plot[isfinite.(curve.nums_plot) .&
+            (curve.nums_plot .> 0)] for curve in curves_plot)...)
+        if !isempty(log_values)
+            log_errors = vcat(((curve.stds ./ scale_num)[isfinite.(curve.nums_plot) .&
+                (curve.nums_plot .> 0)] for curve in curves_plot)...)
+            limits_log = log_plot_limits(log_values, log_errors)
+            ylims!(ax, limits_log...)
+        end
+    end
     for curve in curves_plot
         mask_error = curve.mask_error
         mask_marker = isfinite.(curve.nums_plot)
         label = plot_num_evol.curve_label(curve.condition)
         if any(mask_error)
-            marker_errorbars!(ax,
-                curve.val_x_curve[mask_error], curve.nums_plot[mask_error],
-                curve.stds[mask_error] ./ scale_num;
-                curve.style.marker_options...,
-                curve.style.errorbar_options...,
-                marker=curve.style.marker,
-                xautolimits=curve.xautolimits,
-                yautolimits=curve.yautolimits,
-                label)
+            if scale == :log && !isnothing(limits_log)
+                marker_errorbars_log!(ax,
+                    curve.val_x_curve[mask_error], curve.nums_plot[mask_error],
+                    (curve.stds ./ scale_num)[mask_error];
+                    floor=limits_log[1],
+                    curve.style.marker_options...,
+                    curve.style.errorbar_options...,
+                    marker=curve.style.marker,
+                    xautolimits=curve.xautolimits,
+                    yautolimits=curve.yautolimits,
+                    label)
+            else
+                marker_errorbars!(ax,
+                    curve.val_x_curve[mask_error], curve.nums_plot[mask_error],
+                    curve.stds[mask_error] ./ scale_num;
+                    curve.style.marker_options...,
+                    curve.style.errorbar_options...,
+                    marker=curve.style.marker,
+                    xautolimits=curve.xautolimits,
+                    yautolimits=curve.yautolimits,
+                    label)
+            end
             mask_marker_only = mask_marker .& .!mask_error
             any(mask_marker_only) && scatter!(ax,
                 curve.val_x_curve[mask_marker_only], curve.nums_plot[mask_marker_only];

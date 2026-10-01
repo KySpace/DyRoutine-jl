@@ -5,6 +5,7 @@ param(
     [string]$PageTitle = 'Dual-isotope MOT table',
     [ValidateRange(20.0, 2000.0)]
     [double]$ImageDisplayWidth = 240.0,
+    [switch]$CmotModelComparison,
     [switch]$ShowPage
 )
 
@@ -26,6 +27,9 @@ if ($PSVersionTable.PSEdition -eq 'Core') {
     )
     if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
         $relayArguments += @('-OutputPath', $OutputPath)
+    }
+    if ($CmotModelComparison) {
+        $relayArguments += '-CmotModelComparison'
     }
     if ($ShowPage) {
         $relayArguments += '-ShowPage'
@@ -578,6 +582,212 @@ function New-OneNotePageXml {
     return [pscustomobject]@{ Document = $document; ImageCount = $imageCount }
 }
 
+function New-CmotModelPageXmlAligned {
+    param([Parameter(Mandatory)] [string]$PageId)
+
+    $document = [System.Xml.XmlDocument]::new()
+    $page = $document.CreateElement('one', 'Page', $script:OneNoteNamespace)
+    $page.SetAttribute('ID', $PageId)
+    $page.SetAttribute('name', 'CMOT decay model comparison')
+    [void]$document.AppendChild($page)
+    $titleNode = Add-OneNoteElement -Document $document -Parent $page -Name 'Title'
+    $titleOe = Add-OneNoteElement -Document $document -Parent $titleNode -Name 'OE' -Attributes @{ style = 'font-family:Calibri;font-size:20.0pt' }
+    $titleText = Add-OneNoteElement -Document $document -Parent $titleOe -Name 'T'
+    [void]$titleText.AppendChild($document.CreateCDataSection('CMOT decay model comparison'))
+    $outline = Add-OneNoteElement -Document $document -Parent $page -Name 'Outline'
+    [void](Add-OneNoteElement -Document $document -Parent $outline -Name 'Position' -Attributes @{ x = '36.0'; y = '90.0'; z = '0' })
+    $children = Add-OneNoteElement -Document $document -Parent $outline -Name 'OEChildren'
+    $outerOe = Add-OneNoteElement -Document $document -Parent $children -Name 'OE'
+    $table = Add-OneNoteElement -Document $document -Parent $outerOe -Name 'Table' -Attributes @{ bordersVisible = 'true'; hasHeaderRow = 'true' }
+    $groupHeader = Add-OneNoteElement -Document $document -Parent $table -Name 'Row'
+    foreach ($label in @('t-balanced', '', '', '', 'n-balanced', '', '', '')) {
+        $cell = Add-OneNoteCell -Document $document -Row $groupHeader -ShadingColor '#B7D7EA'
+        [void](Add-OneNoteText -Document $document -Parent $cell -Text $label -Style 'font-family:Calibri;font-size:9.0pt;font-weight:bold')
+    }
+    $columnHeader = Add-OneNoteElement -Document $document -Parent $table -Name 'Row'
+    foreach ($label in @('Isotope pair', 'CMOT data', ':full', ':kappa', 'Isotope pair', 'CMOT data', ':full', ':kappa')) {
+        $cell = Add-OneNoteCell -Document $document -Row $columnHeader -ShadingColor '#D9EAF7'
+        [void](Add-OneNoteText -Document $document -Parent $cell -Text $label -Style 'font-family:Calibri;font-size:8.0pt;font-weight:bold')
+    }
+    $imageCount = 0
+    foreach ($pairName in $script:PairNames) {
+        $row = Add-OneNoteElement -Document $document -Parent $table -Name 'Row'
+        foreach ($variant in @('t-balanced', 'n-balanced')) {
+            $nameCell = Add-OneNoteCell -Document $document -Row $row -ShadingColor '#D9EAF7'
+            [void](Add-OneNoteText -Document $document -Parent $nameCell -Text $pairName -Style 'font-family:Calibri;font-size:8.0pt;font-weight:bold')
+            $pairFolder = Join-Path (Join-Path $DataRoot 'CMOT lifetime') $pairName
+            $dataCell = Add-OneNoteCell -Document $document -Row $row
+            $dataFiles = if (Test-Path -LiteralPath $pairFolder -PathType Container) {
+                @(Get-ChildItem -LiteralPath $pairFolder -File -Filter '*.png' | Where-Object { $_.Name -match "^\[CMOT\.lifetime\]\.\[fit\.log\]\.\[$variant\]\.png$" } | Sort-Object Name)
+            } else { @() }
+            foreach ($file in $dataFiles) {
+                $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+                $size = Get-PngDimensions -Bytes $bytes -Path $file.FullName
+                $entry = [pscustomobject]@{ Alt = "CMOT $variant data / $pairName"; Width = $size.Width; Height = $size.Height; Base64 = [Convert]::ToBase64String($bytes) }
+                Add-OneNoteImage -Document $document -Parent $dataCell -Entry $entry -DisplayWidth 100.0
+                $imageCount++
+            }
+            if (@($dataFiles).Count -eq 0) { [void](Add-OneNoteText -Document $document -Parent $dataCell -Text '') }
+            foreach ($mode in @('full', 'kappa')) {
+                $cell = Add-OneNoteCell -Document $document -Row $row
+                $modeFolder = Join-Path $pairFolder 'alternatives'
+                $modelFiles = if (Test-Path -LiteralPath $modeFolder -PathType Container) {
+                    @(Get-ChildItem -LiteralPath $modeFolder -File -Filter '*.png' | Where-Object { $_.Name -match "^\[CMOT\.lifetime\]\.\[fit\.log\.$mode\]\.\[$variant\]\.png$" } | Sort-Object Name)
+                } else { @() }
+                foreach ($file in $modelFiles) {
+                    $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+                    $size = Get-PngDimensions -Bytes $bytes -Path $file.FullName
+                    $entry = [pscustomobject]@{ Alt = "CMOT $variant $mode fit / $pairName"; Width = $size.Width; Height = $size.Height; Base64 = [Convert]::ToBase64String($bytes) }
+                    Add-OneNoteImage -Document $document -Parent $cell -Entry $entry -DisplayWidth 100.0
+                    $imageCount++
+                }
+                if (@($modelFiles).Count -eq 0) { [void](Add-OneNoteText -Document $document -Parent $cell -Text '') }
+            }
+        }
+    }
+    foreach ($parameter in @('n0', 'tau', 'kappa')) {
+        $row = Add-OneNoteElement -Document $document -Parent $table -Name 'Row'
+        $label = switch ($parameter) { 'n0' { 'N₀ comparison' } 'tau' { 'τ comparison' } default { 'κ comparison' } }
+        foreach ($variant in @('t-balanced', 'n-balanced')) {
+            $cell = Add-OneNoteCell -Document $document -Row $row -ShadingColor '#D9EAF7'
+            [void](Add-OneNoteText -Document $document -Parent $cell -Text $label -Style 'font-family:Calibri;font-size:8.0pt;font-weight:bold')
+            $cell = Add-OneNoteCell -Document $document -Row $row
+            [void](Add-OneNoteText -Document $document -Parent $cell -Text '')
+            foreach ($mode in @('full', 'kappa')) {
+                $cell = Add-OneNoteCell -Document $document -Row $row
+                if ($parameter -ne 'tau' -or $mode -eq 'full') {
+                    $imagePath = Join-Path (Join-Path $DataRoot 'Isotope pair comparison') "[CMOT.models].[$parameter.$mode].[$variant].png"
+                    if (-not (Test-Path -LiteralPath $imagePath -PathType Leaf)) { throw "Missing CMOT model comparison PNG: $imagePath" }
+                    $bytes = [System.IO.File]::ReadAllBytes($imagePath)
+                    $size = Get-PngDimensions -Bytes $bytes -Path $imagePath
+                    $entry = [pscustomobject]@{ Alt = "CMOT $variant $parameter comparison / $mode"; Width = $size.Width; Height = $size.Height; Base64 = [Convert]::ToBase64String($bytes) }
+                    Add-OneNoteImage -Document $document -Parent $cell -Entry $entry -DisplayWidth 100.0
+                    $imageCount++
+                } else { [void](Add-OneNoteText -Document $document -Parent $cell -Text '') }
+            }
+        }
+    }
+    $legendRow = Add-OneNoteElement -Document $document -Parent $table -Name 'Row'
+    $legendCell = Add-OneNoteCell -Document $document -Row $legendRow
+    $legendPath = Join-Path (Join-Path $DataRoot 'Isotope pair comparison') '[CMOT.models].[legend].[all].png'
+    if (-not (Test-Path -LiteralPath $legendPath -PathType Leaf)) { throw "Missing CMOT model legend PNG: $legendPath" }
+    $legendBytes = [System.IO.File]::ReadAllBytes($legendPath)
+    $legendSize = Get-PngDimensions -Bytes $legendBytes -Path $legendPath
+    $legendEntry = [pscustomobject]@{ Alt = 'CMOT model comparison marker legend'; Width = $legendSize.Width; Height = $legendSize.Height; Base64 = [Convert]::ToBase64String($legendBytes) }
+    Add-OneNoteImage -Document $document -Parent $legendCell -Entry $legendEntry -DisplayWidth 120.0
+    $imageCount++
+    for ($index = 1; $index -lt 8; $index++) {
+        $cell = Add-OneNoteCell -Document $document -Row $legendRow
+        [void](Add-OneNoteText -Document $document -Parent $cell -Text '')
+    }
+    return [pscustomobject]@{ Document = $document; ImageCount = $imageCount }
+}
+
+function New-CmotModelPageXml {
+    param([Parameter(Mandatory)] [string]$PageId)
+
+    $document = [System.Xml.XmlDocument]::new()
+    $page = $document.CreateElement('one', 'Page', $script:OneNoteNamespace)
+    $page.SetAttribute('ID', $PageId)
+    $page.SetAttribute('name', 'CMOT decay model comparison')
+    [void]$document.AppendChild($page)
+    $titleNode = Add-OneNoteElement -Document $document -Parent $page -Name 'Title'
+    $titleOe = Add-OneNoteElement -Document $document -Parent $titleNode -Name 'OE' -Attributes @{
+        style = 'font-family:Calibri;font-size:20.0pt'
+    }
+    $titleText = Add-OneNoteElement -Document $document -Parent $titleOe -Name 'T'
+    [void]$titleText.AppendChild($document.CreateCDataSection('CMOT decay model comparison'))
+    $outline = Add-OneNoteElement -Document $document -Parent $page -Name 'Outline'
+    [void](Add-OneNoteElement -Document $document -Parent $outline -Name 'Position' -Attributes @{ x = '36.0'; y = '90.0'; z = '0' })
+    $children = Add-OneNoteElement -Document $document -Parent $outline -Name 'OEChildren'
+    $outerOe = Add-OneNoteElement -Document $document -Parent $children -Name 'OE'
+    $table = Add-OneNoteElement -Document $document -Parent $outerOe -Name 'Table' -Attributes @{
+        bordersVisible = 'true'
+        hasHeaderRow = 'true'
+    }
+    $outerHeader = Add-OneNoteElement -Document $document -Parent $table -Name 'Row'
+    foreach ($variant in @('t-balanced', 'n-balanced')) {
+        $headerCell = Add-OneNoteCell -Document $document -Row $outerHeader -ShadingColor '#D9EAF7'
+        [void](Add-OneNoteText -Document $document -Parent $headerCell -Text $variant -Style 'font-family:Calibri;font-size:11.0pt;font-weight:bold')
+    }
+    $outerRow = Add-OneNoteElement -Document $document -Parent $table -Name 'Row'
+    $imageCount = 0
+    foreach ($variant in @('t-balanced', 'n-balanced')) {
+        $outerCell = Add-OneNoteCell -Document $document -Row $outerRow
+        $innerOe = Add-OneNoteElement -Document $document -Parent $outerCell -Name 'OE'
+        $innerTable = Add-OneNoteElement -Document $document -Parent $innerOe -Name 'Table' -Attributes @{
+            bordersVisible = 'true'
+            hasHeaderRow = 'true'
+        }
+        $innerHeader = Add-OneNoteElement -Document $document -Parent $innerTable -Name 'Row'
+        foreach ($label in @('Isotope pair', 'CMOT data', ':full', ':kappa')) {
+            $cell = Add-OneNoteCell -Document $document -Row $innerHeader -ShadingColor '#D9EAF7'
+            [void](Add-OneNoteText -Document $document -Parent $cell -Text $label -Style 'font-family:Calibri;font-size:9.0pt;font-weight:bold')
+        }
+        foreach ($pairName in $script:PairNames) {
+            $row = Add-OneNoteElement -Document $document -Parent $innerTable -Name 'Row'
+            $nameCell = Add-OneNoteCell -Document $document -Row $row -ShadingColor '#D9EAF7'
+            [void](Add-OneNoteText -Document $document -Parent $nameCell -Text $pairName -Style 'font-family:Calibri;font-size:8.0pt;font-weight:bold')
+            $pairFolder = Join-Path (Join-Path $DataRoot 'CMOT lifetime') $pairName
+            $dataCell = Add-OneNoteCell -Document $document -Row $row
+            $dataFiles = if (Test-Path -LiteralPath $pairFolder -PathType Container) {
+                @(Get-ChildItem -LiteralPath $pairFolder -File -Filter '*.png' |
+                    Where-Object { $_.Name -match "^\[CMOT\.lifetime\]\.\[fit\.log\]\.\[$variant\]\.png$" } |
+                    Sort-Object Name)
+            } else { @() }
+            foreach ($file in $dataFiles) {
+                $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+                $size = Get-PngDimensions -Bytes $bytes -Path $file.FullName
+                $entry = [pscustomobject]@{ Alt = "CMOT $variant data / $pairName / $($file.BaseName)"; Width = $size.Width; Height = $size.Height; Base64 = [Convert]::ToBase64String($bytes) }
+                Add-OneNoteImage -Document $document -Parent $dataCell -Entry $entry -DisplayWidth 125.0
+                $imageCount++
+            }
+            if (@($dataFiles).Count -eq 0) { [void](Add-OneNoteText -Document $document -Parent $dataCell -Text '') }
+            foreach ($mode in @('full', 'kappa')) {
+                $cell = Add-OneNoteCell -Document $document -Row $row
+                $modeFolder = Join-Path $pairFolder 'alternatives'
+                $modelFiles = if (Test-Path -LiteralPath $modeFolder -PathType Container) {
+                    @(Get-ChildItem -LiteralPath $modeFolder -File -Filter '*.png' |
+                        Where-Object { $_.Name -match "^\[CMOT\.lifetime\]\.\[fit\.log\.$mode\]\.\[$variant\]\.png$" } |
+                        Sort-Object Name)
+                } else { @() }
+                foreach ($file in $modelFiles) {
+                    $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+                    $size = Get-PngDimensions -Bytes $bytes -Path $file.FullName
+                    $entry = [pscustomobject]@{ Alt = "CMOT $variant $mode fit / $pairName / $($file.BaseName)"; Width = $size.Width; Height = $size.Height; Base64 = [Convert]::ToBase64String($bytes) }
+                    Add-OneNoteImage -Document $document -Parent $cell -Entry $entry -DisplayWidth 125.0
+                    $imageCount++
+                }
+                if (@($modelFiles).Count -eq 0) { [void](Add-OneNoteText -Document $document -Parent $cell -Text '') }
+            }
+        }
+        foreach ($parameter in @('n0', 'tau', 'kappa')) {
+            $row = Add-OneNoteElement -Document $document -Parent $innerTable -Name 'Row'
+            $labelCell = Add-OneNoteCell -Document $document -Row $row -ShadingColor '#D9EAF7'
+            $parameterLabel = switch ($parameter) { 'n0' { 'N₀ comparison' } 'tau' { 'τ comparison' } default { 'κ comparison' } }
+            [void](Add-OneNoteText -Document $document -Parent $labelCell -Text $parameterLabel -Style 'font-family:Calibri;font-size:8.0pt;font-weight:bold')
+            $emptyCell = Add-OneNoteCell -Document $document -Row $row
+            [void](Add-OneNoteText -Document $document -Parent $emptyCell -Text '')
+            foreach ($mode in @('full', 'kappa')) {
+                $cell = Add-OneNoteCell -Document $document -Row $row
+                $available = $parameter -ne 'tau' -or $mode -eq 'full'
+                if ($available) {
+                    $imagePath = Join-Path (Join-Path $DataRoot 'Isotope pair comparison') "[CMOT.models].[$parameter.$mode].[$variant].png"
+                    if (-not (Test-Path -LiteralPath $imagePath -PathType Leaf)) { throw "Missing CMOT model comparison PNG: $imagePath" }
+                    $bytes = [System.IO.File]::ReadAllBytes($imagePath)
+                    $size = Get-PngDimensions -Bytes $bytes -Path $imagePath
+                    $entry = [pscustomobject]@{ Alt = "CMOT $variant $parameter comparison / $mode"; Width = $size.Width; Height = $size.Height; Base64 = [Convert]::ToBase64String($bytes) }
+                    Add-OneNoteImage -Document $document -Parent $cell -Entry $entry -DisplayWidth 125.0
+                    $imageCount++
+                }
+                else { [void](Add-OneNoteText -Document $document -Parent $cell -Text '') }
+            }
+        }
+        $imageCount += 0
+    }
+    return [pscustomobject]@{ Document = $document; ImageCount = $imageCount }
+}
+
 if (-not (Test-Path -LiteralPath $DataRoot -PathType Container)) {
     throw "Data root does not exist: $DataRoot"
 }
@@ -588,6 +798,47 @@ $OutputPath = [System.IO.Path]::GetFullPath($OutputPath)
 $outputDirectory = Split-Path -Parent $OutputPath
 if (-not (Test-Path -LiteralPath $outputDirectory -PathType Container)) {
     throw "Output directory does not exist: $outputDirectory"
+}
+
+if ($CmotModelComparison) {
+    $oneNote = $null
+    try {
+        try { $oneNote = New-Object -ComObject OneNote.Application }
+        catch { throw "Could not start the OneNote COM application: $($_.Exception.Message)" }
+        $sectionId = ''
+        $oneNote.OpenHierarchy($OutputPath, '', [ref]$sectionId, 3)
+        $pageId = ''
+        $oneNote.CreateNewPage($sectionId, [ref]$pageId, 0)
+        $page = New-CmotModelPageXmlAligned -PageId $pageId
+        $oneNote.UpdatePageContent($page.Document.OuterXml, [datetime]::MinValue, 2, $true)
+        $verifiedXml = ''
+        $oneNote.GetPageContent($pageId, [ref]$verifiedXml, 0, 2)
+        $verifiedDocument = [xml]$verifiedXml
+        $namespaceManager = [System.Xml.XmlNamespaceManager]::new($verifiedDocument.NameTable)
+        $namespaceManager.AddNamespace('one', $script:OneNoteNamespace)
+        $verifiedImages = $verifiedDocument.SelectNodes('//one:Image', $namespaceManager).Count
+        if ($verifiedImages -ne $page.ImageCount) {
+            throw "OneNote returned $verifiedImages model images after $($page.ImageCount) were submitted"
+        }
+        $verifiedTables = $verifiedDocument.SelectNodes('//one:Table', $namespaceManager)
+        if ($verifiedTables.Count -ne 1) { throw "Expected one aligned CMOT comparison table; OneNote returned $($verifiedTables.Count) tables" }
+        $modelTable = $verifiedTables[0]
+        $columnCount = $modelTable.SelectNodes('./one:Row[1]/one:Cell', $namespaceManager).Count
+        $rowCount = $modelTable.SelectNodes('./one:Row', $namespaceManager).Count
+        if ($columnCount -ne 8 -or $rowCount -ne 13) {
+            throw "CMOT comparison table has $columnCount columns and $rowCount rows; expected 8 and 13"
+        }
+        if ($ShowPage) { $oneNote.NavigateTo($pageId, '') }
+        Write-Host "Created OneNote page 'CMOT decay model comparison'."
+        Write-Host "Section: $OutputPath"
+        Write-Host "Embedded PNGs: $verifiedImages"
+        Write-Host "Aligned balance table: 8 columns"
+        Write-Host "Page ID: $pageId"
+    }
+    finally {
+        if ($null -ne $oneNote) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($oneNote) }
+    }
+    return
 }
 
 $entriesByCell = Get-PngEntries -Root $DataRoot

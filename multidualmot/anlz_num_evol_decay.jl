@@ -45,6 +45,8 @@ for (idx_panel, panel) in enumerate(val_panel)
         fits_num_decay[(panel, condition)] = result
         if !isnothing(result)
             p, e = result.params, result.errors
+            residual_sse = sum(abs2, nums[result.mask] .-
+                result.model(val_x_plot[result.mask], result.params))
             tau = result.mode == :kappa ? Inf : p[2]
             std_tau = result.mode == :kappa ? NaN : e[2]
             kappa = result.mode == :tau ? 0.0 : p[result.mode == :full ? 3 : 2]
@@ -64,6 +66,8 @@ for (idx_panel, panel) in enumerate(val_panel)
                 std_kappa,
                 at_bound=result.at_bound,
                 n_points=count(result.mask),
+                residual_sse,
+                residual_rms=sqrt(residual_sse / count(result.mask)),
                 sources=figure_xlsx_source(runinfo, merge(condition,
                     isnothing(key_panel) ? NamedTuple() : NamedTuple{(key_panel,)}((panel,)))),
             ))
@@ -74,7 +78,8 @@ for (idx_panel, panel) in enumerate(val_panel)
             number_unit = plot_num_evol.field_num == "pixsum" ? "pixsum" : "atom"
             fit_label = label_num_decay(result; number_unit)
             println("$tag_head / $panel / $label: ", replace(fit_label, '\n' => "; "))
-            "$label\n$fit_label"
+            sse_label = @sprintf("SSE = %.3g atom²", residual_sse)
+            "$label\n$fit_label\n$sse_label"
         end
         mask_selected = isnothing(result) ? trues(length(nums)) : result.mask_selected
         (; idx_condition, condition, nums, stds, style, label, mask_linear,
@@ -124,10 +129,24 @@ for (idx_panel, panel) in enumerate(val_panel)
             xautolimits=false, yautolimits=false)
     end
 
+    log_values = Float64[]
+    log_errors = Float64[]
+    for curve in curves_decay
+        append!(log_values, curve.nums[curve.mask_log])
+        append!(log_errors, curve.stds[curve.mask_log])
+        isnothing(curve.result) && continue
+        ts = collect(range(minimum(val_x_plot), maximum(val_x_plot); length=400))
+        prediction = curve.result.model(ts, curve.result.params)
+        valid_prediction = isfinite.(prediction) .& (prediction .> 0)
+        append!(log_values, prediction[valid_prediction])
+        append!(log_errors, fill(NaN, count(valid_prediction)))
+    end
+    limits_log = log_plot_limits(log_values, log_errors)
+    ylims!(ax_log, limits_log...)
+
     for (ax, is_log) in ((ax_log, true), (ax_linear, false)), curve in curves_decay
         mask_display = is_log ? curve.mask_log : curve.mask_linear
         mask_error = mask_display .& isfinite.(curve.stds)
-        is_log && (mask_error .&= curve.nums .- curve.stds .> 0)
         mask_filled = mask_display .& curve.mask_selected
         mask_hollow = mask_display .& .!curve.mask_selected
         mask_filled_error = mask_filled .& mask_error
@@ -136,13 +155,24 @@ for (idx_panel, panel) in enumerate(val_panel)
         mask_hollow_only = mask_hollow .& .!mask_error
         label_plot = ax === ax_log ? curve.label : nothing
         if any(mask_filled_error)
-            marker_errorbars!(ax,
-                val_x_plot[mask_filled_error], curve.nums[mask_filled_error],
-                curve.stds[mask_filled_error];
-                curve.style.marker_options...,
-                curve.style.errorbar_options...,
-                marker=curve.style.marker,
-                label=label_plot)
+            if is_log
+                marker_errorbars_log!(ax,
+                    val_x_plot[mask_filled_error], curve.nums[mask_filled_error],
+                    curve.stds[mask_filled_error];
+                    floor=limits_log[1],
+                    curve.style.marker_options...,
+                    curve.style.errorbar_options...,
+                    marker=curve.style.marker,
+                    label=label_plot)
+            else
+                marker_errorbars!(ax,
+                    val_x_plot[mask_filled_error], curve.nums[mask_filled_error],
+                    curve.stds[mask_filled_error];
+                    curve.style.marker_options...,
+                    curve.style.errorbar_options...,
+                    marker=curve.style.marker,
+                    label=label_plot)
+            end
             label_plot = nothing
         end
         if any(mask_filled_only)
@@ -154,13 +184,24 @@ for (idx_panel, panel) in enumerate(val_panel)
         end
         hollow_options = merge(curve.style.marker_options, (; color=:transparent))
         if any(mask_hollow_error)
-            marker_errorbars!(ax,
-                val_x_plot[mask_hollow_error], curve.nums[mask_hollow_error],
-                curve.stds[mask_hollow_error];
-                hollow_options...,
-                curve.style.errorbar_options...,
-                marker=curve.style.marker,
-                label=label_plot)
+            if is_log
+                marker_errorbars_log!(ax,
+                    val_x_plot[mask_hollow_error], curve.nums[mask_hollow_error],
+                    curve.stds[mask_hollow_error];
+                    floor=limits_log[1],
+                    hollow_options...,
+                    curve.style.errorbar_options...,
+                    marker=curve.style.marker,
+                    label=label_plot)
+            else
+                marker_errorbars!(ax,
+                    val_x_plot[mask_hollow_error], curve.nums[mask_hollow_error],
+                    curve.stds[mask_hollow_error];
+                    hollow_options...,
+                    curve.style.errorbar_options...,
+                    marker=curve.style.marker,
+                    label=label_plot)
+            end
             label_plot = nothing
         end
         any(mask_hollow_only) && scatter!(ax,
@@ -187,6 +228,10 @@ for (idx_panel, panel) in enumerate(val_panel)
     resize_to_layout!(fig)
     name_output = replace(plot_num_evol.filename(:log, panel),
         ".[log]." => ".[fit.log].")
+    if isdefined(@__MODULE__, :fit_model_tag)
+        name_output = replace(name_output, ".[fit.log]." =>
+            ".[fit.log.$fit_model_tag].")
+    end
     for format in plot_num_evol.formats
         save_options = format == "png" ? (; px_per_unit=4) : (;)
         save(joinpath(path_output, "$name_output.$format"), fig; save_options...)

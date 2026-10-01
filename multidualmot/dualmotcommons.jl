@@ -11,6 +11,53 @@ using Printf: @sprintf
 isdefined(@__MODULE__, :marker_errorbars!) ||
     include(joinpath(@__DIR__, "..", "snippets", "marker_errorbars.jl"))
 
+function log_plot_limits(values::AbstractVector{<:Real}, errors::AbstractVector{<:Real};
+    cap_factor::Real=10, margin::Real=1.04)
+    length(values) == length(errors) || throw(DimensionMismatch(
+        "log plot values and errors must have equal lengths"))
+    cap_factor > 1 || throw(ArgumentError("log plot cap factor must exceed 1"))
+    margin >= 1 || throw(ArgumentError("log plot margin must be at least 1"))
+    positive = Float64[value for value in values if isfinite(value) && value > 0]
+    isempty(positive) && throw(ArgumentError("log plot needs at least one positive value"))
+    min_value, max_value = extrema(positive)
+    floor_cap = min_value / cap_factor
+    ceil_cap = max_value * cap_factor
+    lows = Float64[]
+    highs = Float64[]
+    for (value_raw, error_raw) in zip(values, errors)
+        value = Float64(value_raw)
+        isfinite(value) && value > 0 || continue
+        error = Float64(error_raw)
+        if isfinite(error) && error >= 0
+            push!(lows, max(value - error, floor_cap))
+            push!(highs, min(value + error, ceil_cap))
+        else
+            push!(lows, value)
+            push!(highs, value)
+        end
+    end
+    low = max(minimum(lows) / margin, floor_cap)
+    high = min(maximum(highs) * margin, ceil_cap)
+    if !(low < high)
+        low, high = floor_cap, ceil_cap
+    end
+    low, high
+end
+
+function marker_errorbars_log!(ax::Axis, x::AbstractVector{<:Real},
+    y::AbstractVector{<:Real}, error::AbstractVector{<:Real};
+    floor::Real, kwargs...)
+    length(x) == length(y) == length(error) || throw(DimensionMismatch(
+        "log error-bar coordinate and error lengths must match"))
+    floor > 0 || throw(ArgumentError("log error-bar floor must be positive"))
+    all(value -> isfinite(value) && value > floor, y) || throw(ArgumentError(
+        "log error-bar values must be finite and above the axis floor"))
+    error_low = [isfinite(err) && err >= 0 ? min(Float64(err), Float64(value) - floor) : 0.0
+        for (value, err) in zip(y, error)]
+    error_high = [isfinite(err) && err >= 0 ? Float64(err) : 0.0 for err in error]
+    marker_errorbars!(ax, x, y, error_low, error_high; kwargs...)
+end
+
 const DUALMOT_VAR_SPECS = (
     β_MOT=(config="tbiasmot", convert=values -> Float64.(values)),
     t_hold=(config="t_hold", convert=values -> Float64.(values)),
@@ -939,12 +986,20 @@ function load_latest_num_decay_results(path_root::AbstractString, dataset::Abstr
         isfile(path) && startswith(basename(path), prefix) && endswith(path, ".jld2")
     end
     isempty(paths) && throw(ArgumentError("no $dataset decay-fit JLD2 files in $path_results"))
-    path = paths[argmax(mtime.(paths))]
+    expected_mode = dataset == "CMOT" ? :kappa : dataset == "MOT" ? :tau : nothing
+    candidates = sort(paths; by=mtime, rev=true)
+    selected = findfirst(candidates) do candidate
+        payload = JLD2.load(candidate)
+        get(payload, "schema_version", nothing) == 1 ||
+            throw(ArgumentError("unsupported decay-fit schema in $candidate"))
+        get(payload, "dataset", nothing) == dataset ||
+            throw(ArgumentError("expected $dataset decay fits in $candidate"))
+        isnothing(expected_mode) || Symbol(payload["fit_mode"]) == expected_mode
+    end
+    isnothing(selected) && throw(ArgumentError(
+        "no $dataset decay-fit result using expected mode $expected_mode in $path_results"))
+    path = candidates[selected]
     payload = JLD2.load(path)
-    get(payload, "schema_version", nothing) == 1 ||
-        throw(ArgumentError("unsupported decay-fit schema in $path"))
-    get(payload, "dataset", nothing) == dataset ||
-        throw(ArgumentError("expected $dataset decay fits in $path"))
     records = get(payload, "records", nothing)
     records isa AbstractVector || throw(ArgumentError("missing decay-fit records in $path"))
     (; path, fit_mode=Symbol(payload["fit_mode"]), records)

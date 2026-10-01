@@ -332,6 +332,22 @@ CMOT lifetime/Fit results/
 MOT lifetime/Fit results/
 ```
 
+[`anlz_cmot_decay_model_runner.jl`](anlz_cmot_decay_model_runner.jl) compares
+the CMOT `:full`, `:kappa`, and `:tau` fits using the same data and
+`t_hold ≤ 2.0 s` selection as the standard runner. It compares only `:full`
+and `:kappa`. Its fit figures are saved
+under each isotope pair's `alternatives/` folder. One timestamped JLD2 file
+in `CMOT lifetime/Fit results/` stores all three modes, each parameter value
+and local 1σ error, and the residual RMS in atom units. The standard result
+loader skips the `:alternatives` file and continues to select the newest
+`:kappa` CMOT result (and `:tau` MOT result).
+
+The model runner also writes balance-specific parameter-comparison figures
+under `Isotope pair comparison/` and appends a `CMOT decay model comparison`
+page to `multi_dual_mot_table.one`. That page has t-balanced and n-balanced
+tables side by side, each with the matching raw CMOT data and `:full`/`:kappa`
+fit figures. Pair comparisons show N₀ and κ for both modes and τ for `:full`.
+
 CMOT and MOT lifetime runners use `atomnum` as their number field. Their decay
 axes and κ units name the selected signal. Pairwise CMOT decay comparisons use
 `1/κ` from those atom-number fits, while MOT comparisons use the fitted `τ`

@@ -60,8 +60,7 @@ function draw_pair_lifetime_values(points_by_pair::AbstractDict, value_key::Symb
         dualmot_axis_kwargs(; log_y=true, text_size=8)...,
     )
     draw_pair_spans!(ax)
-    lower = Inf
-    upper = 0.0
+    plot_points = NamedTuple[]
     for (idx_pair, pair) in enumerate(val_pair), loadcfg in (:DIS, :DDM),
         istp in Symbol.(split(pair, "-"))
         haskey(points_by_pair, pair) || continue
@@ -74,33 +73,20 @@ function draw_pair_lifetime_values(points_by_pair::AbstractDict, value_key::Symb
         x = pair_istp_position(idx_pair, pair, istp)
         style = dualmot_curve_style((; loadcfg, istp))
         marker_options = marker_style(style; markersize=6)
-        if isfinite(std) && std >= 0
-            if value - std > 0
-                marker_errorbars!(ax, [x], [value], [std];
-                    marker_options..., errorlinewidth=0.75)
-                lower = min(lower, value - std)
-                upper = max(upper, value + std)
-            else
-                scatter!(ax, [x], [value]; marker_options...)
-                lower = min(lower, value)
-                upper = max(upper, value)
-            end
+        push!(plot_points, (; x, value, std, marker_options))
+    end
+    values = getproperty.(plot_points, :value)
+    errors = getproperty.(plot_points, :std)
+    axis_limits = isnothing(limits_y) ? log_plot_limits(values, errors) : limits_y
+    ylims!(ax, axis_limits...)
+    for point in plot_points
+        point.value > axis_limits[1] || continue
+        if isfinite(point.std) && point.std >= 0
+            marker_errorbars_log!(ax, [point.x], [point.value], [point.std];
+                floor=axis_limits[1], point.marker_options..., errorlinewidth=0.75)
         else
-            scatter!(ax, [x], [value]; marker_options...)
-            lower = min(lower, value)
-            upper = max(upper, value)
+            scatter!(ax, [point.x], [point.value]; point.marker_options...)
         end
-    end
-    lower_limit, upper_limit = lower / 1.15, 1.15 * upper
-    has_decade_tick = any(lower_limit <= 10.0^exponent <= upper_limit for exponent in -20:20)
-    if !has_decade_tick
-        lower_limit = 10.0^floor(log10(lower)) / 1.02
-        upper_limit = 10.0^ceil(log10(upper)) * 1.02
-    end
-    if isnothing(limits_y)
-        ylims!(ax, lower_limit, upper_limit)
-    else
-        ylims!(ax, limits_y...)
     end
     draw_number_style_key!(fig, (:DIS, :DDM))
     for format in formats_output

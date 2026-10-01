@@ -95,6 +95,7 @@ function save_loading_ratio_figures(runinfo::NamedTuple, vars::NamedTuple,
             for (idx_t, t_load) in enumerate(val_t_load)
                 ratio_sheet[idx_t + 1, 1:2] .= (t_load, t_load)
             end
+            log_ratio_curves = NamedTuple[]
             for istp in val_istp
                 num = loading_421_curve_stats(name_stat, vars, num_stat,
                     idx_bias, numerator, istp)
@@ -118,21 +119,7 @@ function save_loading_ratio_figures(runinfo::NamedTuple, vars::NamedTuple,
 
                 style = dualmot_curve_style((; loadcfg=numerator, istp))
                 mask_line = isfinite.(ratio) .& (ratio .> 0)
-                count(mask_line) >= 2 && lines!(ax, val_t_load[mask_line],
-                    ratio[mask_line]; style.line_options...)
-                mask_error = mask_line .& isfinite.(ratio_std) .&
-                    (ratio .- ratio_std .> 0)
-                mask_marker_only = mask_line .& .!mask_error
-                if any(mask_error)
-                    marker_errorbars!(ax, val_t_load[mask_error], ratio[mask_error],
-                        ratio_std[mask_error]; style.marker_options...,
-                        style.errorbar_options..., marker=style.marker,
-                        label=nothing)
-                end
-                any(mask_marker_only) && scatter!(ax,
-                    val_t_load[mask_marker_only], ratio[mask_marker_only];
-                    style.marker_options..., marker=style.marker,
-                    label=nothing)
+                push!(log_ratio_curves, (; ratio, ratio_std, mask_line, style))
 
                 idx_sheet_col = 3 + 10 * (findfirst(==(istp), val_istp) - 1)
                 for idx_t in eachindex(val_t_load)
@@ -147,6 +134,33 @@ function save_loading_ratio_figures(runinfo::NamedTuple, vars::NamedTuple,
                         figure_xlsx_source(runinfo, condition_den), ratio[idx_t],
                         ratio_std[idx_t])
                 end
+            end
+            log_values = vcat((curve.ratio[curve.mask_line]
+                for curve in log_ratio_curves)...)
+            limits_log = nothing
+            if !isempty(log_values)
+                log_errors = vcat((curve.ratio_std[curve.mask_line]
+                    for curve in log_ratio_curves)...)
+                limits_log = log_plot_limits(log_values, log_errors)
+                ylims!(ax, limits_log...)
+            end
+            for curve in log_ratio_curves
+                count(curve.mask_line) >= 2 && lines!(ax,
+                    val_t_load[curve.mask_line], curve.ratio[curve.mask_line];
+                    curve.style.line_options...)
+                mask_error = curve.mask_line .& isfinite.(curve.ratio_std)
+                mask_marker_only = curve.mask_line .& .!mask_error
+                if any(mask_error) && !isnothing(limits_log)
+                    marker_errorbars_log!(ax, val_t_load[mask_error],
+                        curve.ratio[mask_error], curve.ratio_std[mask_error];
+                        floor=limits_log[1], curve.style.marker_options...,
+                        curve.style.errorbar_options..., marker=curve.style.marker,
+                        label=nothing)
+                end
+                any(mask_marker_only) && scatter!(ax,
+                    val_t_load[mask_marker_only], curve.ratio[mask_marker_only];
+                    curve.style.marker_options..., marker=curve.style.marker,
+                    label=nothing)
             end
             set_time_minor_ticks!(ax)
             axislegend(ax; position=:rt, DUALMOT_LEGEND_OPTIONS...)

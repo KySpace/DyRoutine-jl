@@ -249,9 +249,9 @@ function draw_pair_numbers(points_by_pair::AbstractDict, loadcfgs::Tuple;
             x = pair_istp_position(idx_pair, pair, istp)
             style = dualmot_curve_style((; loadcfg, istp))
             marker_options = marker_style(style; markersize=6)
-            if isfinite(point.std) && point.num - point.std > 0
-                marker_errorbars!(ax, [x], [point.num], [point.std];
-                    marker_options..., errorlinewidth=0.75)
+            if isfinite(point.std) && point.std >= 0 && point.num > limits_y[1]
+                marker_errorbars_log!(ax, [x], [point.num], [point.std];
+                    floor=limits_y[1], marker_options..., errorlinewidth=0.75)
             else
                 scatter!(ax, [x], [point.num]; marker_options...)
             end
