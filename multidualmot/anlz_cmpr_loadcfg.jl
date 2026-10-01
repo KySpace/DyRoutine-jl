@@ -50,9 +50,10 @@ slot_nums = isnothing(plot_cmpr_loadcfg_target) ? fig_nums[1, 1] :
 frame_options_nums = isnothing(plot_cmpr_loadcfg_target) ?
     (; width=plot_cmpr_loadcfg.frame_size[1],
         height=plot_cmpr_loadcfg.frame_size[2]) :
-    (; aspect=AxisAspect(4 / 3))
+    get(plot_cmpr_loadcfg_target, :frame_options, (; aspect=AxisAspect(4 / 3)))
 axis_options_nums = dualmot_axis_kwargs(;
-    compact_spacing=!isnothing(plot_cmpr_loadcfg_target))
+    compact_spacing=!isnothing(plot_cmpr_loadcfg_target) &&
+        get(plot_cmpr_loadcfg_target, :compact_spacing, true))
 !isnothing(plot_cmpr_loadcfg_target) &&
     (axis_options_nums = merge(axis_options_nums, plot_cmpr_loadcfg_target.axis_options))
 ax_nums = Axis(slot_nums; xlabel=plot_cmpr_loadcfg.xlabel,
@@ -104,18 +105,23 @@ if isnothing(plot_cmpr_loadcfg_target)
         ylims!(ax_nums, limits_linear_cmpr.y...)
     end
 else
-    for loadcfg in (:DIS, :DDM), istp in val_istp
-        style = dualmot_curve_style((; loadcfg, istp))
-        scatter!(ax_nums, Float64[], Float64[];
-            style.marker_options..., marker=style.marker,
-            label="$(istp) $loadcfg")
+    if get(plot_cmpr_loadcfg_target, :show_legend, true)
+        for loadcfg in (:DIS, :DDM), istp in val_istp
+            style = dualmot_curve_style((; loadcfg, istp))
+            scatter!(ax_nums, Float64[], Float64[];
+                style.marker_options..., marker=style.marker,
+                label="$(istp) $loadcfg")
+        end
     end
     xlimits = plot_cmpr_loadcfg_target.limits.x
     ylimits = plot_cmpr_loadcfg_target.limits.y
     isnothing(xlimits) || xlims!(ax_nums, xlimits...)
     isnothing(ylimits) || ylims!(ax_nums, ylimits...)
 end
-axislegend(ax_nums; position=:rb, DUALMOT_LEGEND_OPTIONS...)
+if isnothing(plot_cmpr_loadcfg_target) ||
+    get(plot_cmpr_loadcfg_target, :show_legend, true)
+    axislegend(ax_nums; position=:rb, DUALMOT_LEGEND_OPTIONS...)
+end
 
 curves_ratio = Dict{Symbol, NamedTuple}()
 if isnothing(plot_cmpr_loadcfg_target)

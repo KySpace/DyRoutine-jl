@@ -1,7 +1,6 @@
 include(joinpath(@__DIR__, "dualmotcommons.jl"))
 
-path_data = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data"
-path_result = joinpath(path_data, "Result")
+path_result = joinpath(path_root, "Result")
 
 val_istp = (Symbol("162"), Symbol("164"))
 loadcfgs = (:SCS, :DCS, :DIS, :DDM)

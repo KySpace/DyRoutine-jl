@@ -1,7 +1,7 @@
 include(joinpath(@__DIR__, "dualmotcommons.jl"))
 
-path_root_odt = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\ODT BField"
-path_root_421 = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\MOT loading 421"
+path_root_odt = joinpath(path_root, "ODT BField")
+path_root_421 = joinpath(path_root, "MOT loading 421")
 path_output = joinpath(dirname(path_root_odt), "Isotope pair comparison")
 val_pair = ["160-162", "162-164", "161-162", "161-164", "162-163", "163-164", "161-163"]
 bounds_sigmax_num = (2e-4, 10e-4)

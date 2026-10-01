@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$DataRoot = 'C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data',
+    [Parameter(Mandatory = $true)]
+    [string]$DataRoot,
     [string]$OutputPath = '',
     [string]$PageTitle = 'Dual-isotope MOT table',
     [ValidateRange(20.0, 2000.0)]

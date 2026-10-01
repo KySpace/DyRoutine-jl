@@ -20,14 +20,15 @@ for (idx_panel, panel, scale) in jobs_num_evol
     slot = isnothing(plot_num_evol_target) ? fig[1, 1] : plot_num_evol_target.slot
     frame_options = isnothing(plot_num_evol_target) ?
         (; width=plot_num_evol.frame_size[1], height=plot_num_evol.frame_size[2]) :
-        (; aspect=AxisAspect(4 / 3))
+        get(plot_num_evol_target, :frame_options, (; aspect=AxisAspect(4 / 3)))
     indices_panel = Any[Colon() for _ in name_stat]
     isnothing(key_panel) || (indices_panel[idx_axis_stat[key_panel]] = idx_panel)
     reps_panel = vec(@view n_rep_stat[indices_panel...])
     reps_min, reps_max = extrema(reps_panel)
     reps_used = reps_min == reps_max ? string(reps_min) : "$(reps_min)–$(reps_max)"
     axis_options = dualmot_axis_kwargs(; log_y=scale == :log,
-        compact_spacing=!isnothing(plot_num_evol_target))
+        compact_spacing=!isnothing(plot_num_evol_target) &&
+            get(plot_num_evol_target, :compact_spacing, true))
     axis_options = merge(axis_options, plot_num_evol.axis_options)
     !isnothing(plot_num_evol_target) &&
         (axis_options = merge(axis_options, plot_num_evol_target.axis_options))
@@ -165,6 +166,9 @@ for (idx_panel, panel, scale) in jobs_num_evol
         plot_num_evol_target.show_legend &&
             axislegend(ax; position=plot_num_evol.legend_position, DUALMOT_LEGEND_OPTIONS...)
     end
+    !isnothing(plot_num_evol_target) &&
+        !isnothing(get(plot_num_evol_target, :draw_overlay, nothing)) &&
+        plot_num_evol_target.draw_overlay(ax)
     if isnothing(plot_num_evol_target)
         name_output = plot_num_evol.filename(scale, panel)
         for format in plot_num_evol.formats

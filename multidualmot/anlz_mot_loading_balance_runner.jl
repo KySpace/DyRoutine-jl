@@ -1,7 +1,7 @@
 include(joinpath(@__DIR__, "dualmotcommons.jl"))
 using CSV
 
-path_root = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\MOT loading balance"
+path_dataset = joinpath(path_root, "MOT loading balance")
 val_pair = ["162-164", "160-162", "161-162", "161-164", "163-164",
     "162-163", "161-163"]
 var_specs_num = DUALMOT_BALANCE_VAR_SPECS
@@ -10,7 +10,7 @@ bounds_sigmax_num = (4e-4, Inf)
 bounds_sigmay_num = (4e-4, Inf)
 num_max_num = 2e8
 
-path_balance = joinpath(path_root, "balance.csv")
+path_balance = joinpath(path_dataset, "balance.csv")
 rows_balance = collect(CSV.File(path_balance;
     header=["Pair", "tbiasmot"], skipto=2, stripwhitespace=true))
 canonical_pair_name(pair) = begin
@@ -42,7 +42,7 @@ function balance_axis_options(values::AbstractVector{<:Real})
     )
 end
 
-runinfos_grouped = [read_num_evol_runinfos(path_root, pair;
+runinfos_grouped = [read_num_evol_runinfos(path_dataset, pair;
     var_specs=var_specs_num,
     validate_vars=validate_balance_vars,
 ) for pair in val_pair]
@@ -68,7 +68,7 @@ for idx_runinfo_iter in ids_runinfo
     global idx_runinfo = idx_runinfo_iter
     global runinfo = runinfos[idx_runinfo]
     global tag_head = "$(runinfo.folder) $(runinfo.tag)"
-    global path_output = joinpath(path_root, runinfo.folder)
+    global path_output = joinpath(path_dataset, runinfo.folder)
     values_beta = reduce(vcat, [data.vars.β_MOT for data in runinfo.data])
     balance_bias = balance_by_pair[runinfo.folder]
     global plot_num_evol = merge(plot_num_evol, (
@@ -81,4 +81,4 @@ for idx_runinfo_iter in ids_runinfo
     include(joinpath(@__DIR__, "anlz_num_evol.jl"))
     include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 end
-write_pair_figure_workbooks(path_root, figure_data_sheets, "MOT loading balance.xlsx")
+write_pair_figure_workbooks(path_dataset, figure_data_sheets, "MOT loading balance.xlsx")

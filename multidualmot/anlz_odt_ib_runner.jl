@@ -1,6 +1,6 @@
 include(joinpath(@__DIR__, "dualmotcommons.jl"))
 
-path_root = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\ODT BField"
+path_dataset = joinpath(path_root, "ODT BField")
 val_pair = ["162-164", "160-162", "161-162", "161-164", "163-164",
     "162-163", "161-163"]
 var_specs_num = DUALMOT_ODT_BFIELD_VAR_SPECS
@@ -9,7 +9,7 @@ bounds_sigmax_num = (2e-4, 10e-4)
 bounds_sigmay_num = (1e-4, 5e-4)
 num_max_num = 2e8
 
-runinfos_grouped = [read_num_evol_runinfos(path_root, pair;
+runinfos_grouped = [read_num_evol_runinfos(path_dataset, pair;
     var_specs=var_specs_num,
     validate_vars=validate_odt_bfield_vars,
 ) for pair in val_pair]
@@ -35,7 +35,7 @@ for idx_runinfo_iter in ids_runinfo
         throw(ArgumentError("$(runinfo.folder): ODT BField tag must be x or z, got $(runinfo.tag)"))
     current_values = reduce(vcat, [data.vars.ib for data in runinfo.data])
     global tag_head = "$(runinfo.folder) $(runinfo.tag)"
-    global path_output = joinpath(path_root, runinfo.folder)
+    global path_output = joinpath(path_dataset, runinfo.folder)
     global plot_num_evol = merge(plot_num_evol_base, (
         key_panel=nothing,
         xlabel=_ -> odt_bfield_xlabel(direction),
@@ -50,4 +50,4 @@ for idx_runinfo_iter in ids_runinfo
     include(joinpath(@__DIR__, "anlz_num_evol.jl"))
     include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 end
-write_pair_figure_workbooks(path_root, figure_data_sheets, "ODT BField.xlsx")
+write_pair_figure_workbooks(path_dataset, figure_data_sheets, "ODT BField.xlsx")

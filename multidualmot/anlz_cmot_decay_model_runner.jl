@@ -2,8 +2,8 @@ include(joinpath(@__DIR__, "dualmotcommons.jl"))
 include(joinpath(@__DIR__, "anlz_pair_comparison_plot_helpers.jl"))
 using CSV
 
-path_root = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\CMOT lifetime"
-path_data_root = dirname(path_root)
+path_dataset = joinpath(path_root, "CMOT lifetime")
+path_data_root = path_root
 val_pair = ["162-164", "160-162", "161-162", "161-164", "163-164", "162-163", "161-163"]
 var_specs_num = DUALMOT_VAR_SPECS
 key_x_num = :t_hold
@@ -26,7 +26,7 @@ balance_biases = Dict(
     "n-balanced" => balance_bias_by_pair,
 )
 
-runinfos_grouped = [read_num_evol_runinfos(path_root, pair;
+runinfos_grouped = [read_num_evol_runinfos(path_dataset, pair;
     var_specs=var_specs_num,
     validate_vars=validate_dualmot_vars,
 ) for pair in val_pair]
@@ -47,7 +47,7 @@ for idx_runinfo_iter in ids_runinfo
     global idx_runinfo = idx_runinfo_iter
     global runinfo = runinfos[idx_runinfo]
     global tag_head = "$(runinfo.folder) $(runinfo.tag)"
-    global path_output = joinpath(path_root, runinfo.folder)
+    global path_output = joinpath(path_dataset, runinfo.folder)
     println("Processing: $tag_head")
     GC.gc()
     include(joinpath(@__DIR__, "anlz_num_evol.jl"))
@@ -59,14 +59,14 @@ for idx_runinfo_iter in ids_runinfo
             selector=fit_selector_num,
         )
         global fit_model_tag = string(mode)
-        global path_output = joinpath(path_root, runinfo.folder, "alternatives")
+        global path_output = joinpath(path_dataset, runinfo.folder, "alternatives")
         mkpath(path_output)
         include(joinpath(@__DIR__, "anlz_num_evol_decay.jl"))
     end
 end
 
 path_fit_results = save_num_decay_results(
-    path_root, "CMOT", :alternatives, fit_records_num_decay)
+    path_dataset, "CMOT", :alternatives, fit_records_num_decay)
 
 function selected_model_records(records, variant::AbstractString)
     biases = balance_biases[variant]

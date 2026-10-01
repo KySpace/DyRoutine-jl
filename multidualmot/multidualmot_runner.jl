@@ -10,4 +10,4 @@ include(joinpath(@__DIR__, "anlz_odt_ib_runner.jl"))
 include(joinpath(@__DIR__, "anlz_odt_cmot_comparison.jl"))
 isdefined(@__MODULE__, :main_multi_dual_mot_table) ||
     include(joinpath(@__DIR__, "..", "helpers", "make_multi_dual_mot_table.jl"))
-main_multi_dual_mot_table(["--formats=svg,png,one"])
+main_multi_dual_mot_table([path_root, "--formats=svg,png,one"])

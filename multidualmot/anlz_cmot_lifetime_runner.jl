@@ -1,6 +1,6 @@
 include(joinpath(@__DIR__, "dualmotcommons.jl"))
 
-path_root = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\CMOT lifetime"
+path_dataset = joinpath(path_root, "CMOT lifetime")
 val_pair = ["162-164", "160-162", "161-162", "161-164", "163-164", "162-163", "161-163"]
 var_specs_num = DUALMOT_VAR_SPECS
 key_x_num = :t_hold
@@ -14,7 +14,7 @@ fit_num_decay_config = (
     selector=times -> times .<= 2.0,
 )
 
-runinfos_grouped = [read_num_evol_runinfos(path_root, pair;
+runinfos_grouped = [read_num_evol_runinfos(path_dataset, pair;
     var_specs=var_specs_num,
     validate_vars=validate_dualmot_vars,
 ) for pair in val_pair]
@@ -35,7 +35,7 @@ for idx_runinfo_iter in ids_runinfo
     global idx_runinfo = idx_runinfo_iter
     global runinfo = runinfos[idx_runinfo]
     global tag_head = "$(runinfo.folder) $(runinfo.tag)"
-    global path_output = joinpath(path_root, runinfo.folder)
+    global path_output = joinpath(path_dataset, runinfo.folder)
     println("Processing: $tag_head")
     GC.gc() # Release figures from preceding datasets before rendering more.
     include(joinpath(@__DIR__, "anlz_num_evol.jl"))
@@ -44,5 +44,5 @@ for idx_runinfo_iter in ids_runinfo
     include(joinpath(@__DIR__, "anlz_num_evol_size_output.jl"))
 end
 path_fit_results = save_num_decay_results(
-    path_root, "CMOT", fit_num_decay_config.mode, fit_records_num_decay)
-write_pair_figure_workbooks(path_root, figure_data_sheets, "CMOT lifetime.xlsx")
+    path_dataset, "CMOT", fit_num_decay_config.mode, fit_records_num_decay)
+write_pair_figure_workbooks(path_dataset, figure_data_sheets, "CMOT lifetime.xlsx")

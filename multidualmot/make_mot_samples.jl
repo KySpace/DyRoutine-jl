@@ -3,11 +3,12 @@ using MAT
 using CairoMakie
 using Printf
 
+include(joinpath(@__DIR__, "dualmotcommons.jl"))
 include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 CairoMakie.activate!()
 
 path_folder = length(ARGS) >= 1 ? ARGS[1] :
-    raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\insitu samples\162-164 MOT"
+    joinpath(path_root, "insitu samples", "162-164 MOT")
 path_plot = length(ARGS) >= 2 ? ARGS[2] : joinpath(path_folder, "MOT in-situ samples.svg")
 path_plot_misc = length(ARGS) >= 3 ? ARGS[3] :
     joinpath(path_folder, "MOT in-situ samples miscibility.svg")

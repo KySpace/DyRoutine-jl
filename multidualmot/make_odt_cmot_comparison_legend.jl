@@ -1,6 +1,6 @@
 include(joinpath(@__DIR__, "dualmotcommons.jl"))
 
-path_output = joinpath(raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data", "Isotope pair comparison")
+path_output = joinpath(path_root, "Isotope pair comparison")
 mkpath(path_output)
 val_istp_legend = Symbol.(string.(160:164))
 

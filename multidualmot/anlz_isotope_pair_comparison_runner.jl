@@ -1,8 +1,8 @@
 include(joinpath(@__DIR__, "dualmotcommons.jl"))
 using CSV
 
-path_root_421 = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\MOT loading 421"
-path_root_626 = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\MOT loading 626"
+path_root_421 = joinpath(path_root, "MOT loading 421")
+path_root_626 = joinpath(path_root, "MOT loading 626")
 path_output = joinpath(dirname(path_root_421), "Isotope pair comparison")
 val_pair = ["160-162", "162-164", "161-162", "161-164", "162-163",
     "163-164", "161-163"]

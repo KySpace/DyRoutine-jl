@@ -8,6 +8,12 @@ using Dates
 using JLD2
 using Printf: @sprintf
 
+DUALMOT_CONFIG = YAML.load_file(joinpath(@__DIR__, "config.yaml"))
+path_root_configured = get(DUALMOT_CONFIG, "path_root", nothing)
+path_root_configured isa AbstractString && !isempty(strip(path_root_configured)) ||
+    throw(ArgumentError("multidualmot/config.yaml must define a nonempty string path_root"))
+path_root = normpath(abspath(expanduser(path_root_configured)))
+
 isdefined(@__MODULE__, :marker_errorbars!) ||
     include(joinpath(@__DIR__, "..", "snippets", "marker_errorbars.jl"))
 

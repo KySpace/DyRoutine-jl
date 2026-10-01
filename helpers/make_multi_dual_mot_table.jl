@@ -1,6 +1,7 @@
 using Base64
 
-const DEFAULT_ROOT = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data"
+const DEFAULT_ROOT = isdefined(@__MODULE__, :path_root) ?
+    String(getfield(@__MODULE__, :path_root)) : ""
 const DEFAULT_OUTPUT_NAME = "multi_dual_mot_table.svg"
 const DEFAULT_ONENOTE_OUTPUT_NAME = "multi_dual_mot_table.one"
 const ONENOTE_HELPER_PATH = joinpath(@__DIR__, "make_multi_dual_mot_onenote.ps1")
@@ -438,7 +439,7 @@ function parse_multi_dual_mot_table_args(args::AbstractVector{<:AbstractString})
     ))
     length(positional) <= 3 || throw(ArgumentError(
         "usage: julia helpers/make_multi_dual_mot_table.jl " *
-        "[data_root] [output.svg] [output.png] " *
+        "<data_root> [output.svg] [output.png] " *
         "[--formats=svg,png,one] [--one-output=output.one]",
     ))
 
@@ -450,6 +451,8 @@ function main_multi_dual_mot_table(args::AbstractVector{<:AbstractString}=ARGS)
     positional = options.positional
     formats = options.formats
     root = isempty(positional) ? DEFAULT_ROOT : abspath(positional[1])
+    isempty(root) && throw(ArgumentError(
+        "data root is required; pass it as the first argument or include dualmotcommons.jl first"))
     output_path = length(positional) < 2 ? joinpath(root, DEFAULT_OUTPUT_NAME) : abspath(positional[2])
     png_path = if "png" in formats
         length(positional) < 3 ? splitext(output_path)[1] * ".png" : abspath(positional[3])

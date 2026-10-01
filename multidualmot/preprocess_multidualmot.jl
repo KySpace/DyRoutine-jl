@@ -62,7 +62,7 @@ function loading_runinfo_stats(runinfo::NamedTuple;
 end
 
 function preprocess_loading_limits()
-    path_data = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data"
+    path_data = path_root
     pairs = ("162-164", "160-162", "161-162", "161-164", "163-164",
         "162-163", "161-163")
     bounds_sigmax_num = (4e-4, Inf)

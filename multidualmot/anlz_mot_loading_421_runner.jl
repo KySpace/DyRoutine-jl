@@ -1,6 +1,6 @@
 include(joinpath(@__DIR__, "dualmotcommons.jl"))
 
-path_root = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\MOT loading 421"
+path_dataset = joinpath(path_root, "MOT loading 421")
 val_pair = ["162-164", "160-162", "161-162", "161-164", "163-164",
     "162-163", "161-163"]
 var_specs_num = DUALMOT_LOADING_VAR_SPECS
@@ -10,7 +10,7 @@ bounds_sigmay_num = (4e-4, Inf)
 num_max_num = 2e8
 γ_active = 0.43
 
-runinfos_grouped = [read_num_evol_runinfos(path_root, pair;
+runinfos_grouped = [read_num_evol_runinfos(path_dataset, pair;
     var_specs=var_specs_num,
     validate_vars=validate_dualmot_vars,
 ) for pair in val_pair]
@@ -187,7 +187,7 @@ for idx_runinfo_iter in ids_runinfo
     global idx_runinfo = idx_runinfo_iter
     global runinfo = runinfos[idx_runinfo]
     global tag_head = "$(runinfo.folder) $(runinfo.tag)"
-    global path_output = joinpath(path_root, runinfo.folder)
+    global path_output = joinpath(path_dataset, runinfo.folder)
     local filename_run = (scale, bias) ->
         "[MOT.loading.421].[$scale].[$(balance_tag(bias))-balanced.$(filename_token(runinfo.tag))]"
     local folder_run = runinfo.folder
@@ -206,4 +206,4 @@ for idx_runinfo_iter in ids_runinfo
     runinfo.tag == selected_runinfo.tag && save_loading_ratio_figures(
         runinfo, vars, name_stat, num_stat, std_num_stat, n_rep_stat, path_output)
 end
-write_pair_figure_workbooks(path_root, figure_data_sheets, "MOT loading 421.xlsx")
+write_pair_figure_workbooks(path_dataset, figure_data_sheets, "MOT loading 421.xlsx")
