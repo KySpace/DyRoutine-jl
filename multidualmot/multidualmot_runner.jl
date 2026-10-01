@@ -8,6 +8,8 @@ include(joinpath(@__DIR__, "anlz_isotope_pair_comparison_runner.jl"))
 include(joinpath(@__DIR__, "anlz_lifetime_pair_comparison.jl"))
 include(joinpath(@__DIR__, "anlz_odt_ib_runner.jl"))
 include(joinpath(@__DIR__, "anlz_odt_cmot_comparison.jl"))
+include(joinpath(@__DIR__, "draw_selected_pair_results.jl"))
+include(joinpath(@__DIR__, "draw_result_legends.jl"))
 isdefined(@__MODULE__, :main_multi_dual_mot_table) ||
     include(joinpath(@__DIR__, "..", "helpers", "make_multi_dual_mot_table.jl"))
 main_multi_dual_mot_table([path_root, "--formats=svg,png,one"])

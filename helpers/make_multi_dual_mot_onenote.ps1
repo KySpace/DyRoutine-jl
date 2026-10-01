@@ -319,6 +319,7 @@ function Get-ComparisonEntries {
     $specs = @(
         @{ Key = 'odt-cmot-numbers'; Group = 'ODT/CMOT'; Parent = 'ODT BField'; Variant = '*'; File = '[ODT.CMOT.comparison].[log].[numbers].png' },
         @{ Key = 'odt-cmot-ratios'; Group = 'ODT/CMOT'; Parent = 'ODT BField'; Variant = '*'; File = '[ODT.CMOT.comparison].[lin].[ratios].png' },
+        @{ Key = 'odt-cmot-efficiency-ratios'; Group = 'ODT/CMOT'; Parent = 'ODT BField'; Variant = '*'; File = '[ODT.CMOT.comparison].[lin].[DDM-DIS-efficiency-ratio].png' },
         @{ Key = 't-421-numbers'; Group = 't-balanced'; Parent = 'MOT loading 421'; Variant = 't-balanced'; File = '[MOT.loading.pairs].[DDM-DIS-DCS].[nums.t-balanced].png' },
         @{ Key = 't-626-numbers'; Group = 't-balanced'; Parent = 'MOT loading 626'; Variant = '*'; File = '[MOT.loading.pairs].[DCS-SCS].[nums.t-balanced].png' },
         @{ Key = 't-cmot-values'; Group = 't-balanced'; Parent = 'CMOT lifetime'; Variant = 't-balanced'; File = '[CMOT.decay.pairs].[kappa].[values.t-balanced].png' },
@@ -504,6 +505,10 @@ function Add-ComparisonRows {
                 if ($key -eq 't-421-ratio') {
                     Add-ImageWithCaption -Document $Document -Parent $cellChildren `
                         -Entry $Entries['t-421-dis-dcs-ratio'] -DisplayWidth $DisplayWidth
+                }
+                if ($key -eq 'odt-cmot-ratios') {
+                    Add-ImageWithCaption -Document $Document -Parent $cellChildren `
+                        -Entry $Entries['odt-cmot-efficiency-ratios'] -DisplayWidth $DisplayWidth
                 }
                 $n0Key = switch ($key) {
                     't-cmot-values' { 't-cmot-n0' }

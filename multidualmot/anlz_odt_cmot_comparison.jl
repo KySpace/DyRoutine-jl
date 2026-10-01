@@ -182,8 +182,59 @@ function draw_comparison(; ratio::Bool)
     fig
 end
 
+function odt_cmot_efficiency_ratio(direction::Symbol, pair::AbstractString,
+    istp::Symbol)
+    odt_ddm = get(points_odt[pair], (direction, :DDM, istp), nothing)
+    odt_dis = get(points_odt[pair], (direction, :DIS, istp), nothing)
+    cmot_ddm = points_cmot[pair][(:DDM, istp)]
+    cmot_dis = points_cmot[pair][(:DIS, istp)]
+    all(point -> !isnothing(point) && isfinite(point.num) && point.num > 0,
+        (odt_ddm, odt_dis, cmot_ddm, cmot_dis)) || return nothing
+    value = (odt_ddm.num / cmot_ddm.num) / (odt_dis.num / cmot_dis.num)
+    relvar = sum((point.std / point.num)^2 for point in
+        (odt_ddm, cmot_ddm, odt_dis, cmot_dis) if isfinite(point.std))
+    n_valid_errors = count(point -> isfinite(point.std),
+        (odt_ddm, cmot_ddm, odt_dis, cmot_dis))
+    error = n_valid_errors == 4 ? value * sqrt(relvar) : NaN
+    (; value, error, odt_ddm, cmot_ddm, odt_dis, cmot_dis)
+end
+
+function draw_efficiency_ratio()
+    labels = ["$pair\n$(conditions[pair].bias >= 0 ? "+" : "")$(round(conditions[pair].bias, digits=3)) $(Int(conditions[pair].tmotload))s"
+        for pair in val_pair]
+    fig = Figure(size=(690, 340), fontsize=11, figure_padding=4)
+    ax = Axis(fig[1, 1]; xticks=(eachindex(val_pair), labels),
+        xlabel="Isotope pair · tbiasmot / tmotload",
+        ylabel="(ODT / CMOT) DDM / (ODT / CMOT) DIS",
+        title="ODT loading efficiency · DDM / DIS",
+        yticks=0:0.2:1.2, yminorticks=IntervalsBetween(2),
+        dualmot_axis_kwargs(; text_size=9)...)
+    ax.yminorticks = IntervalsBetween(2)
+    xlims!(ax, 0.5, length(val_pair) + 0.5)
+    hlines!(ax, [0.9, 1.1]; color=(:black, 0.45), linestyle=:dash, linewidth=0.8)
+    for (idx_pair, pair) in enumerate(val_pair), istp in Symbol.(split(pair, "-")),
+        (idx_direction, direction) in enumerate((:x, :z))
+        result = odt_cmot_efficiency_ratio(direction, pair, istp)
+        isnothing(result) && continue
+        pos = idx_pair + (istp == Symbol(first(split(pair, "-"))) ? -0.07 : 0.07) +
+            (idx_direction == 1 ? -0.025 : 0.025)
+        style = dualmot_curve_style((; loadcfg=:DDM, istp))
+        options = merge(marker_style(style; markersize=7), (; marker=:hexagon))
+        draw_marker_point!(ax, pos, result.value, result.error;
+            marker_options=options)
+    end
+    ylims!(ax, 0, 1.25)
+    filename = "[ODT.CMOT.comparison].[lin].[DDM-DIS-efficiency-ratio]"
+    for format in formats_output
+        save_options = format == "png" ? (; px_per_unit=3) : (;)
+        save(joinpath(path_output, "$filename.$format"), fig; save_options...)
+    end
+    fig
+end
+
 fig_numbers = draw_comparison(; ratio=false)
 fig_ratios = draw_comparison(; ratio=true)
+fig_efficiency_ratios = draw_efficiency_ratio()
 
 number_headers = Any["pair", "istp", "loadcfg", "ODT or CMOT", "tbiasmot",
     "tmotload (s)", "mean", "std", "n_rep", "source", "source denominator"]
@@ -192,6 +243,7 @@ ratio_headers = Any["pair", "istp", "loadcfg", "ODT/CMOT", "tbiasmot",
     "source numerator", "source denominator"]
 number_rows = Vector{Vector{Any}}()
 ratio_rows = Vector{Vector{Any}}()
+efficiency_rows = Vector{Vector{Any}}()
 for pair in val_pair, loadcfg in (:DDM, :DIS), istp in Symbol.(split(pair, "-"))
     condition = conditions[pair]
     mot = points_cmot[pair][(loadcfg, istp)]
@@ -213,6 +265,17 @@ for pair in val_pair, loadcfg in (:DDM, :DIS), istp in Symbol.(split(pair, "-"))
             mot.n_rep == 0 ? NaN : mot.n_rep,
             isnothing(odt) ? "" : odt.source, mot.source])
     end
+    for direction in (:x, :z)
+        efficiency = odt_cmot_efficiency_ratio(direction, pair, istp)
+        push!(efficiency_rows, Any[pair, string(istp), string(direction),
+            "(ODT/CMOT) DDM/DIS", condition.bias, condition.tmotload,
+            isnothing(efficiency) ? NaN : efficiency.value,
+            isnothing(efficiency) ? NaN : efficiency.error,
+            isnothing(efficiency) ? "" : efficiency.odt_ddm.source,
+            isnothing(efficiency) ? "" : efficiency.cmot_ddm.source,
+            isnothing(efficiency) ? "" : efficiency.odt_dis.source,
+            isnothing(efficiency) ? "" : efficiency.cmot_dis.source])
+    end
     push!(number_rows, Any[pair, string(istp), string(loadcfg), "CMOT",
         condition.bias, condition.tmotload, mot.num, mot.std, mot.n_rep, mot.source, ""])
 end
@@ -229,5 +292,16 @@ end
 write_figure_workbook(joinpath(path_output, "ODT.xlsx"), [
     "numbers" => number_matrix,
     "ODT-CMOT ratio" => ratio_matrix,
+    "DDM-DIS efficiency ratio" => begin
+        headers = Any["pair", "istp", "ODT direction", "quantity", "tbiasmot",
+            "tmotload (s)", "ratio", "std", "source ODT DDM", "source CMOT DDM",
+            "source ODT DIS", "source CMOT DIS"]
+        matrix = Matrix{Any}(undef, length(efficiency_rows) + 1, length(headers))
+        matrix[1, :] .= headers
+        for (idx, row) in enumerate(efficiency_rows)
+            matrix[idx + 1, :] .= row
+        end
+        matrix
+    end,
 ])
 println("Saved ODT/CMOT comparison figures to $path_output")

@@ -794,7 +794,7 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
     yautolimits=(condition, panel) -> true,
     legend_position::Symbol=:rt,
     loadcfg_plot::Tuple=(:DDM, :DIS),
-    ylabel::AbstractString="CMOT number",
+    ylabel="CMOT number",
     limits_linear=nothing,
 )
     isfinite(scale_x) && scale_x > 0 ||
@@ -833,7 +833,7 @@ function dualmot_num_evol_plot_spec(kind::AbstractString;
 end
 
 dualmot_lifetime_plot_spec(kind::AbstractString; key_x::Symbol,
-    xlabel::AbstractString, scale_x::Real=1.0, ylabel::AbstractString="CMOT number",
+    xlabel::AbstractString, scale_x::Real=1.0, ylabel="CMOT number",
     field_num::AbstractString="atomnum") =
     dualmot_num_evol_plot_spec(kind; key_x, xlabel, scale_x, ylabel, field_num,
         file_head="$kind.lifetime")

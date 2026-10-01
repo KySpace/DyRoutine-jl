@@ -32,8 +32,10 @@ for (idx_panel, panel, scale) in jobs_num_evol
     axis_options = merge(axis_options, plot_num_evol.axis_options)
     !isnothing(plot_num_evol_target) &&
         (axis_options = merge(axis_options, plot_num_evol_target.axis_options))
+    ylabel = scale == :lin ? rich(plot_num_evol.ylabel, " (10⁷)") :
+        plot_num_evol.ylabel
     ax = Axis(slot; xlabel=plot_num_evol.xlabel(panel),
-        ylabel=scale == :lin ? "$(plot_num_evol.ylabel) (10⁷)" : plot_num_evol.ylabel,
+        ylabel,
         title=isnothing(plot_num_evol_target) ?
             plot_num_evol.title(tag_head, panel, reps_used) : "",
         yscale=scale == :log ? log10 : identity,
@@ -166,9 +168,6 @@ for (idx_panel, panel, scale) in jobs_num_evol
         plot_num_evol_target.show_legend &&
             axislegend(ax; position=plot_num_evol.legend_position, DUALMOT_LEGEND_OPTIONS...)
     end
-    !isnothing(plot_num_evol_target) &&
-        !isnothing(get(plot_num_evol_target, :draw_overlay, nothing)) &&
-        plot_num_evol_target.draw_overlay(ax)
     if isnothing(plot_num_evol_target)
         name_output = plot_num_evol.filename(scale, panel)
         for format in plot_num_evol.formats
