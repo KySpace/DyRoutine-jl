@@ -24,7 +24,7 @@ axis_options_loading = merge(axis_options_numbers,
         xminorticks=setdiff(collect(0:1:20), collect(0:5:20)),
         xminorticksvisible=true))
 limits_loading = (x=nothing, y=(0.0, 11.5))
-limits_decay = (x=nothing, y=(1e6, 1e8))
+limits_decay = (x=nothing, y=(2e6, 1e8))
 axis_options_decay = merge(axis_options_ticks,
     (yticks=DUALMOT_LOG_MAJOR_TICKS,
         yminorticks=DUALMOT_LOG_MINOR_TICKS, yminorticksvisible=true))

@@ -429,13 +429,15 @@ load configuration, and ODT x/z direction. It writes a hexagon-marker plot
 with pair-specific bias and loading-time labels, plus a workbook sheet that
 retains the four contributing sources. The OneNote ODT ratio cell stacks this
 plot below the ODT/CMOT number-ratio plot. The selected `Result/` comparison
-figure combines the t-balanced 421 DDM/DIS numbers, the 421 DDM/DIS number
-ratio, the n-balanced CMOT inverse-κ ratio, and the DDM/DIS ratio of ODT
-loading efficiencies in a title-free 2×2 layout. For each isotope/pair, the
-Result ODT panel shows only the larger of the x- and z-scan efficiency ratios;
-the standard comparison plot retains both directions. Its atom-number axis is
-logarithmic with limits of 10⁶–2×10⁸; pair labels omit bias and loading-time
-details. Result axis labels are 7 pt. Separate 6 pt PDF legends are saved for
+figure combines the t-balanced 421 DDM/DIS numbers and number ratio, the
+n-balanced CMOT inverse-κ ratio, the DDM/DIS ratio of ODT loading efficiencies,
+the 30-second DCS/SCS CMOT-number ratio for MOT loading 626, and the n-balanced
+MOT lifetime τ DDM/DIS ratio in a title-free 3×2 layout. Both new ratio panels
+use y-limits of 0–1.25. For each isotope/pair, the Result ODT panel shows only
+the larger of the x- and z-scan efficiency ratios; the standard comparison plot
+retains both directions. Its atom-number axis is logarithmic with limits of
+10⁶–2×10⁸; pair labels omit bias and loading-time details. Result axis labels
+are 7 pt. Separate 6 pt PDF legends are saved for
 162/164 × DCS/DIS/DDM, 162/164 × SCS/DCS, and 162/164 × DIS/DDM, with constant
 physical row/column label spacing across the three widths. Two further legends
 show isotopes 160–164 in columns with DIS/DDM rows, and as one row of hexagon
