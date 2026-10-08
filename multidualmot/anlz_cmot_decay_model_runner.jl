@@ -10,7 +10,7 @@ key_x_num = :t_hold
 bounds_sigmax_num = (4e-4, Inf)
 bounds_sigmay_num = (4e-4, Inf)
 num_max_num = 2e8
-fit_selector_num = times -> times .<= 2.0
+fit_selector_num = times -> (times .>= 0.0) .& (times .<= 1.0)
 fit_bounds_n0_num = (0.5, 2.0)
 fit_bounds_kappa_num = (eps(Float64), Inf)
 fit_modes_num = (:full, :kappa)

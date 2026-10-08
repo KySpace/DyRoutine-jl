@@ -418,6 +418,8 @@ function Add-ImageTable {
 
     $styles = if ($CellLabel -like 'MOT loading 421/*') {
         @('lin', 'log', 'ratio.DDM-DIS', 'ratio.DIS-DCS')
+    } elseif ($CellLabel -like 'ODT BField/*') {
+        @(@('lin', 'log', 'fit.lin') | Where-Object { $_ -in $entryArray.StyleTag })
     } elseif ($CellLabel -like 'MOT lifetime/*' -or $CellLabel -like 'CMOT lifetime/*') {
         @(@('lin', 'log', 'fit.log', 'size') | Where-Object { $_ -in $entryArray.StyleTag })
     } else {

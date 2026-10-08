@@ -929,6 +929,98 @@ function fit_num_decay(t::AbstractVector{<:Real}, nums::AbstractVector{<:Real};
         mask_selected=collect(mask_selected))
 end
 
+"""Gaussian profile with a constant baseline and positive amplitude."""
+function model_num_gaussian(x::AbstractVector, p::AbstractVector)
+    baseline, amplitude, center, sigma = p
+    @. baseline + amplitude * exp(-0.5 * ((x - center) / sigma)^2)
+end
+
+"""Bounded, unweighted Gaussian fit, scaled internally for stable ODT scans."""
+function fit_num_gaussian(x::AbstractVector{<:Real}, nums::AbstractVector{<:Real})
+    length(x) == length(nums) || throw(DimensionMismatch(
+        "Gaussian-fit x and number lengths differ"))
+    mask = isfinite.(x) .& isfinite.(nums) .& (nums .>= 0)
+    xs = Float64.(x[mask])
+    ys = Float64.(nums[mask])
+    length(unique(xs)) >= 5 || throw(ArgumentError(
+        "Gaussian fitting needs at least five distinct valid x values"))
+    x_low, x_high = extrema(xs)
+    x_scale = x_high - x_low
+    x_scale > 0 || throw(ArgumentError("Gaussian-fit x values must span a positive range"))
+    x_center = (x_low + x_high) / 2
+    y_scale = max(maximum(ys), 1.0)
+    x_scaled = (xs .- x_center) ./ x_scale
+    y_scaled = ys ./ y_scale
+    lower = [0.0, 0.0, -0.5, 0.01]
+    upper = [1.5, 2.0, 0.5, 1.0]
+    peak_x = x_scaled[argmax(y_scaled)]
+    baseline_start = clamp(minimum(y_scaled), lower[1], upper[1])
+    amplitude_start = clamp(maximum(y_scaled) - baseline_start, 1e-6, upper[2])
+    fitted = []
+    for center_shift in (0.0, -0.05, 0.05), sigma_start in (0.12, 0.2, 0.32, 0.5)
+        start = clamp.([baseline_start, amplitude_start,
+            peak_x + center_shift, sigma_start], lower, upper)
+        try
+            result = curve_fit((values, p) -> model_num_gaussian(values, p),
+                x_scaled, y_scaled, start; lower, upper, maxIter=1000)
+            result.converged && push!(fitted, result)
+        catch
+        end
+    end
+    isempty(fitted) && error("Gaussian fit did not converge for any initial guess")
+    fit = fitted[argmin([sum(abs2, result.resid) for result in fitted])]
+    params_scaled = fit.param
+    params = [params_scaled[1] * y_scale, params_scaled[2] * y_scale,
+        x_center + params_scaled[3] * x_scale, params_scaled[4] * x_scale]
+    errors_scaled = try
+        stderror(fit)
+    catch err
+        @warn "Gaussian parameter covariance unavailable" exception=err
+        fill(NaN, length(params_scaled))
+    end
+    errors = [errors_scaled[1] * y_scale, errors_scaled[2] * y_scale,
+        errors_scaled[3] * x_scale, errors_scaled[4] * x_scale]
+    at_bound = any(isapprox.(params_scaled, lower; atol=1e-7, rtol=1e-4) .|
+        isapprox.(params_scaled, upper; atol=1e-7, rtol=1e-4))
+    residual_sse = sum(abs2, ys .- model_num_gaussian(xs, params))
+    (; model=model_num_gaussian, params, errors, at_bound, fit, mask,
+        residual_sse, residual_rms=sqrt(residual_sse / length(ys)),
+        n_points=length(ys))
+end
+
+function save_odt_gaussian_results(path_dataset::AbstractString,
+    records::AbstractVector)
+    isempty(records) && throw(ArgumentError("cannot save empty ODT Gaussian-fit results"))
+    path_results = joinpath(path_dataset, "Fit results")
+    mkpath(path_results)
+    created_at = Dates.now()
+    stamp = Dates.format(created_at, dateformat"yyyymmdd-HHMMSS") * "-" *
+        lpad(string(Dates.millisecond(created_at)), 3, '0')
+    path = joinpath(path_results, "[ODT.BField.gaussian.fit].[$stamp].jld2")
+    JLD2.jldsave(path;
+        schema_version=1,
+        dataset="ODT BField",
+        fit_mode=:gaussian,
+        created_at=string(created_at),
+        records=collect(records),
+    )
+    println("Saved ODT Gaussian fits to $path")
+    path
+end
+
+function fit_num_evol_curve(x::AbstractVector{<:Real}, nums::AbstractVector{<:Real},
+    fit_spec::NamedTuple)
+    fit_spec.kind == :gaussian && return fit_num_gaussian(x, nums)
+    fit_spec.kind == :decay || throw(ArgumentError(
+        "unsupported number-evolution fit kind $(fit_spec.kind)"))
+    fit_num_decay(x, nums;
+        mode=fit_spec.mode,
+        bounds_n0=get(fit_spec, :bounds_n0, (0.5, 2.0)),
+        bounds_tau=get(fit_spec, :bounds_tau, (0.1, 50.0)),
+        bounds_kappa=get(fit_spec, :bounds_kappa, (eps(Float64), Inf)),
+        selector=get(fit_spec, :selector, values -> trues(length(values))))
+end
+
 function format_fit_scientific(value::Real, error::Real)
     isfinite(value) && !iszero(value) || return "($(value) ± $(error))"
     exponent = floor(Int, log10(abs(value)))

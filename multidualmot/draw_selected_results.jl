@@ -31,9 +31,10 @@ axis_options_decay = merge(axis_options_ticks,
 mask_loading_421 = values -> values .!= 40.0
 mask_loading_626 = values -> values .<= 30.0
 panel_target(fig, col; panel=0.0, scale=:lin, axis_options,
-    limits=limits_loading, mask_x=values -> trues(length(values))) =
+    limits=limits_loading, mask_x=values -> trues(length(values)),
+    fit=nothing, fit_points_only=false) =
     (fig=fig, slot=fig[1, col], panel, scale, axis_options, limits,
-        show_legend=false, mask_x, compact_spacing=false)
+        show_legend=false, mask_x, fit, fit_points_only, compact_spacing=false)
 
 # MOT loading 421, zero-bias panel. Use the alternative 0712 dataset.
 path_dataset = joinpath(path_root, "MOT loading 421")
@@ -168,12 +169,16 @@ plot_num_evol = dualmot_lifetime_plot_spec("CMOT";
 axis_options_cmot_decay = merge(axis_options_decay,
     (xticks=0:0.5:2, xminorticks=IntervalsBetween(4),
         xminorticksvisible=true))
+mask_cmot_fit = values -> (values .>= 0.0) .& (values .<= 1.0)
 plot_num_evol_target = panel_target(fig_result_decay, 2;
-    scale=:log, axis_options=axis_options_cmot_decay, limits=limits_decay)
+    scale=:log, axis_options=axis_options_cmot_decay, limits=limits_decay,
+    mask_x=mask_cmot_fit,
+    fit=(kind=:decay, mode=:kappa, selector=mask_cmot_fit),
+    fit_points_only=true)
 include(joinpath(@__DIR__, "anlz_num_evol.jl"))
 include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 
-# MOT decay, zero-bias panel; retain times through 50 s (including 50 s).
+# MOT decay, zero-bias panel; retain the inclusive 0–20 s fit range.
 path_dataset = joinpath(path_root, "MOT lifetime")
 runinfo = only(filter(info -> length(info.data) == 1 &&
     0.0 in only(info.data).vars.β_MOT,
@@ -189,9 +194,12 @@ plot_num_evol = dualmot_lifetime_plot_spec("MOT";
 axis_options_mot_decay = merge(axis_options_decay,
     (xticks=0:20:60, xminorticks=IntervalsBetween(4),
         xminorticksvisible=true))
+mask_mot_fit = values -> (values .>= 0.0) .& (values .<= 20.0)
 plot_num_evol_target = panel_target(fig_result_decay, 1;
     scale=:log, axis_options=axis_options_mot_decay, limits=limits_decay,
-    mask_x=values -> values .<= 50.0)
+    mask_x=mask_mot_fit,
+    fit=(kind=:decay, mode=:tau, selector=mask_mot_fit),
+    fit_points_only=true)
 include(joinpath(@__DIR__, "anlz_num_evol.jl"))
 include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 
@@ -216,7 +224,8 @@ plot_num_evol = merge(dualmot_num_evol_plot_spec("ODT";
     loadcfg_plot=(:DDM, :DIS)),
     (key_panel=nothing,))
 plot_num_evol_target = panel_target(fig_result_decay, 3;
-    panel=nothing, axis_options=axis_options_ticks, limits=nothing)
+    panel=nothing, axis_options=axis_options_ticks, limits=nothing,
+    fit=(kind=:gaussian,))
 include(joinpath(@__DIR__, "anlz_num_evol.jl"))
 include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 

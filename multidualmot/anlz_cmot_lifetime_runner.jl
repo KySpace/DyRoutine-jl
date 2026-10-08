@@ -11,7 +11,7 @@ fit_num_decay_config = (
     mode=:kappa,
     bounds_n0=(0.5, 2.0),
     bounds_kappa=(eps(Float64), Inf),
-    selector=times -> times .<= 2.0,
+    selector=times -> (times .>= 0.0) .& (times .<= 1.0),
 )
 
 runinfos_grouped = [read_num_evol_runinfos(path_dataset, pair;

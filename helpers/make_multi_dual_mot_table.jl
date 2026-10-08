@@ -133,6 +133,10 @@ function cell_layout(cell_entries::AbstractVector{SvgEntry}, parent_name::Abstra
 
     styles = if parent_name == "MOT loading 421"
         ["lin", "log", "ratio.DDM-DIS", "ratio.DIS-DCS"]
+    elseif parent_name == "ODT BField"
+        preferred = ["lin", "log", "fit.lin"]
+        filter!(style -> any(entry -> entry.style_tag == style, cell_entries), preferred)
+        preferred
     elseif parent_name in ("MOT lifetime", "CMOT lifetime")
         preferred = ["lin", "log", "fit.log", "size"]
         filter!(style -> any(entry -> entry.style_tag == style, cell_entries), preferred)

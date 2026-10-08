@@ -11,6 +11,7 @@ fit_num_decay_config = (
     mode=:tau,
     bounds_n0=(0.5, 2.0),
     bounds_tau=(0.1, 50.0),
+    selector=times -> (times .>= 0.0) .& (times .<= 20.0),
 )
 
 runinfos_grouped = [read_num_evol_runinfos(path_dataset, pair;

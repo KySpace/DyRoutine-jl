@@ -16,6 +16,7 @@ runinfos_grouped = [read_num_evol_runinfos(path_dataset, pair;
 runinfos = vcat(runinfos_grouped...)
 ids_runinfo = eachindex(runinfos)
 figure_data_sheets = Dict{String,Vector{Pair{String,Matrix{Any}}}}()
+fit_records_num_gaussian = NamedTuple[]
 plot_num_evol_base = dualmot_num_evol_plot_spec("ODT";
     key_x=key_x_num,
     scale_x=1,
@@ -49,5 +50,7 @@ for idx_runinfo_iter in ids_runinfo
     GC.gc()
     include(joinpath(@__DIR__, "anlz_num_evol.jl"))
     include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
+    include(joinpath(@__DIR__, "anlz_num_evol_gaussian.jl"))
 end
+save_odt_gaussian_results(path_dataset, fit_records_num_gaussian)
 write_pair_figure_workbooks(path_dataset, figure_data_sheets, "ODT BField.xlsx")

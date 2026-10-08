@@ -43,6 +43,10 @@ for (idx_panel, panel, scale) in jobs_num_evol
         axis_options...)
     plot_num_evol.draw_background(ax, panel, scale)
 
+    fit_spec = isnothing(plot_num_evol_target) ? nothing :
+        get(plot_num_evol_target, :fit, nothing)
+    fit_points_only = !isnothing(plot_num_evol_target) &&
+        get(plot_num_evol_target, :fit_points_only, false)
     curves_plot = map(conditions_curve) do condition
         indices = Any[Colon() for _ in name_stat]
         isnothing(key_panel) || (indices[idx_axis_stat[key_panel]] = idx_panel)
@@ -53,13 +57,6 @@ for (idx_panel, panel, scale) in jobs_num_evol
         nums = vec(@view num_stat[indices...])
         stds = vec(@view std_num_stat[indices...])
         n_reps = vec(@view n_rep_stat[indices...])
-        mask_target = isnothing(plot_num_evol_target) ? trues(length(nums)) :
-            plot_num_evol_target.mask_x(val_x_plot)
-        length(mask_target) == length(nums) ||
-            throw(DimensionMismatch("$tag_head: target x mask length $(length(mask_target)) must equal $(length(nums))"))
-        mask = (scale == :log ? nums .> 0 : trues(length(nums))) .& mask_target
-        !all(mask) && @warn "$tag_head: omitting nonpositive log points" panel condition count=count(!, mask)
-        nums_plot = ifelse.(mask, nums ./ scale_num, NaN)
         style = plot_num_evol.curve_style(condition)
         idx_istp = :istp in keys_curve ?
             findfirst(==(condition.istp), vars.istp) : nothing
@@ -69,6 +66,21 @@ for (idx_panel, panel, scale) in jobs_num_evol
             throw(DimensionMismatch("$tag_head: transformed x length $(length(val_x_curve)) must equal $(length(val_x_plot))"))
         all(isfinite, val_x_curve) ||
             throw(ArgumentError("$tag_head: transformed x values must be finite for $condition"))
+        mask_target = isnothing(plot_num_evol_target) ? trues(length(nums)) :
+            collect(plot_num_evol_target.mask_x(val_x_plot))
+        length(mask_target) == length(nums) ||
+            throw(DimensionMismatch("$tag_head: target x mask length $(length(mask_target)) must equal $(length(nums))"))
+        fit_result = isnothing(fit_spec) ? nothing :
+            fit_num_evol_curve(val_x_curve, nums, fit_spec)
+        fit_points_only && isnothing(fit_result) && throw(ArgumentError(
+            "$tag_head: fit_points_only requires a fitted target curve"))
+        fit_points_only && (mask_target .&= fit_result.mask)
+        mask = (scale == :log ? nums .> 0 : trues(length(nums))) .& mask_target
+        if scale == :log
+            mask_nonpositive = (nums .<= 0) .& mask_target
+            any(mask_nonpositive) && @warn "$tag_head: omitting nonpositive log points" panel condition count=count(mask_nonpositive)
+        end
+        nums_plot = ifelse.(mask, nums ./ scale_num, NaN)
         xautolimits = plot_num_evol.xautolimits(condition, panel)
         xautolimits isa Bool ||
             throw(ArgumentError("$tag_head: xautolimits must return Bool for $condition"))
@@ -76,7 +88,8 @@ for (idx_panel, panel, scale) in jobs_num_evol
         yautolimits isa Bool ||
             throw(ArgumentError("$tag_head: yautolimits must return Bool for $condition"))
         mask_error = mask .& isfinite.(stds)
-        (; condition, nums, stds, n_reps, nums_plot, val_x_curve, mask_error, style,
+        (; condition, nums, stds, n_reps, nums_plot, val_x_curve, mask_error,
+            fit_result, style,
             xautolimits, yautolimits)
     end
     if isnothing(plot_num_evol_target) && scale == first(plot_num_evol.scales) &&
@@ -88,19 +101,38 @@ for (idx_panel, panel, scale) in jobs_num_evol
             Pair{String,Matrix{Any}}[]), sheet_name => table)
     end
     for curve in curves_plot
-        mask_line = isfinite.(curve.val_x_curve) .& isfinite.(curve.nums_plot)
-        count(mask_line) >= 2 && lines!(ax,
-            curve.val_x_curve[mask_line], curve.nums_plot[mask_line];
-            curve.style.line_options...,
-            xautolimits=curve.xautolimits, yautolimits=curve.yautolimits)
+        if isnothing(curve.fit_result)
+            mask_line = isfinite.(curve.val_x_curve) .& isfinite.(curve.nums_plot)
+            count(mask_line) >= 2 && lines!(ax,
+                curve.val_x_curve[mask_line], curve.nums_plot[mask_line];
+                curve.style.line_options...,
+                xautolimits=curve.xautolimits, yautolimits=curve.yautolimits)
+        else
+            fitted_x = curve.val_x_curve[curve.fit_result.mask]
+            fitted_times = collect(range(minimum(fitted_x), maximum(fitted_x); length=400))
+            fitted_nums = curve.fit_result.model(fitted_times, curve.fit_result.params) ./ scale_num
+            lines!(ax, fitted_times, fitted_nums;
+                curve.style.line_options...,
+                xautolimits=curve.xautolimits, yautolimits=curve.yautolimits)
+        end
     end
     limits_log = nothing
     if scale == :log
-        log_values = vcat((curve.nums_plot[isfinite.(curve.nums_plot) .&
-            (curve.nums_plot .> 0)] for curve in curves_plot)...)
+        log_values = Float64[]
+        log_errors = Float64[]
+        for curve in curves_plot
+            mask_positive = isfinite.(curve.nums_plot) .& (curve.nums_plot .> 0)
+            append!(log_values, curve.nums_plot[mask_positive])
+            append!(log_errors, (curve.stds ./ scale_num)[mask_positive])
+            isnothing(curve.fit_result) && continue
+            fitted_x = curve.val_x_curve[curve.fit_result.mask]
+            fitted_times = collect(range(minimum(fitted_x), maximum(fitted_x); length=400))
+            fitted_nums = curve.fit_result.model(fitted_times, curve.fit_result.params)
+            mask_fitted_positive = isfinite.(fitted_nums) .& (fitted_nums .> 0)
+            append!(log_values, fitted_nums[mask_fitted_positive])
+            append!(log_errors, fill(NaN, count(mask_fitted_positive)))
+        end
         if !isempty(log_values)
-            log_errors = vcat(((curve.stds ./ scale_num)[isfinite.(curve.nums_plot) .&
-                (curve.nums_plot .> 0)] for curve in curves_plot)...)
             limits_log = log_plot_limits(log_values, log_errors)
             ylims!(ax, limits_log...)
         end
