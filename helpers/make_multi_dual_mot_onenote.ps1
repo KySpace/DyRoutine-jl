@@ -45,6 +45,7 @@ $ErrorActionPreference = 'Stop'
 
 $script:OneNoteNamespace = 'http://schemas.microsoft.com/office/onenote/2013/onenote'
 $script:ParentNames = @(
+    'MOT loading 421 monofreq',
     'MOT loading 421',
     'MOT loading 626',
     'MOT loading balance',
@@ -290,6 +291,14 @@ function Get-PngEntries {
                      -not $subvariantTag.Contains('.'))) {
                     continue
                 }
+                if (($parentName -eq 'MOT lifetime' -or $parentName -eq 'CMOT lifetime') -and
+                    $styleTag -notin @('lin', 'log', 'fit.log', 'size')) {
+                    continue
+                }
+                if ($parentName -eq 'ODT BField' -and
+                    $styleTag -notin @('lin', 'log', 'fit.lin')) {
+                    continue
+                }
                 $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
                 $size = Get-PngDimensions -Bytes $bytes -Path $file.FullName
                 $entriesByCell[$cellKey].Add([pscustomobject]@{
@@ -416,7 +425,9 @@ function Add-ImageTable {
         return 0
     }
 
-    $styles = if ($CellLabel -like 'MOT loading 421/*') {
+    $styles = if ($CellLabel -like 'MOT loading 421 monofreq/*') {
+        @('lin', 'log')
+    } elseif ($CellLabel -like 'MOT loading 421/*') {
         @('lin', 'log', 'ratio.DDM-DIS', 'ratio.DIS-DCS')
     } elseif ($CellLabel -like 'ODT BField/*') {
         @(@('lin', 'log', 'fit.lin') | Where-Object { $_ -in $entryArray.StyleTag })
@@ -924,7 +935,7 @@ try {
     foreach ($pairName in @('161-163', '162-164')) {
         $pairIndex = [Array]::IndexOf($script:PairNames, $pairName) + 1
         $pairRow = $outerTable.SelectNodes('./one:Row', $namespaceManager)[$pairIndex]
-        $loadingTable = $pairRow.SelectSingleNode('./one:Cell[2]//one:Table', $namespaceManager)
+        $loadingTable = $pairRow.SelectSingleNode('./one:Cell[3]//one:Table', $namespaceManager)
         if ($null -eq $loadingTable) {
             throw "OneNote read-back is missing the 421 table for $pairName"
         }
@@ -936,6 +947,22 @@ try {
             throw "OneNote 421 table for $pairName has $columnCount figure columns and $rowCount tag/balance rows; expected 4 and $expectedRows"
         }
         Write-Host "Verified OneNote $pairName 421 table: $columnCount figure columns, $rowCount tag/balance rows."
+    }
+
+    foreach ($pairName in @('161-163', '162-163')) {
+        $pairIndex = [Array]::IndexOf($script:PairNames, $pairName) + 1
+        $pairRow = $outerTable.SelectNodes('./one:Row', $namespaceManager)[$pairIndex]
+        $loadingTable = $pairRow.SelectSingleNode('./one:Cell[2]//one:Table', $namespaceManager)
+        if ($null -eq $loadingTable) {
+            throw "OneNote read-back is missing the 421 monofreq table for $pairName"
+        }
+        $rowCount = $loadingTable.SelectNodes('./one:Row', $namespaceManager).Count - 1
+        $expectedRows = @($EntriesByCell["MOT loading 421 monofreq`n$pairName"] |
+            ForEach-Object { $_.SubvariantTag } | Sort-Object -Unique).Count
+        if ($rowCount -ne $expectedRows -or $rowCount -eq 0) {
+            throw "OneNote monofreq table for $pairName has $rowCount rows; expected $expectedRows"
+        }
+        Write-Host "Verified OneNote $pairName 421 monofreq table: $rowCount tag/balance rows."
     }
 
     if ($ShowPage) {

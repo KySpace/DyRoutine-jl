@@ -139,7 +139,10 @@ const LIGHTNESS_STROKE, CHROMA_STROKE = 0.45, 0.10
 const LIGHTNESS_FACE, CHROMA_FACE = 0.85, 0.06
 const LIGHTNESS_DIS_LINE, CHROMA_DIS_LINE = 0.65, 0.08
 const MARKER_LOADCFG = Dict(
-    :DDM => :rect, :DIS => :utriangle, :DCS => :circle, :SCS => :diamond)
+    :DDM => :rect      , :SDS => :pentagon   ,
+    :DIS => :utriangle , :SIS => :star5  ,
+    :DCS => :circle    , :SCS => :diamond    ,
+    )
 const DUALMOT_LOG_MAJOR_TICKS = LogTicks(-20:20)
 const DUALMOT_LOG_MINOR_TICKS = sort!([Float64(multiplier) * 10.0^exponent
     for exponent in -20:20 for multiplier in 2:9])

@@ -68,7 +68,7 @@ end
 conditions_curve = vec([NamedTuple{keys_curve}(reverse(Tuple(values)))
     for values in Iterators.product(reverse(vals_curve)...)])
 if :loadcfg in keys_curve
-    order_loadcfg = (:SCS, :DCS, :DIS, :DDM)
+    order_loadcfg = (:SCS, :DCS, :DIS, :DDM, :SDS, :SIS)
     sort!(conditions_curve;
         by=condition -> findfirst(==(getproperty(condition, :loadcfg)), order_loadcfg),
         alg=Base.Sort.MergeSort)

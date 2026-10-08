@@ -22,6 +22,13 @@ that setting, and the analysis runners build their dataset paths from it.
 
 The main entry point is [`multidualmot_runner.jl`](multidualmot_runner.jl). It currently runs all analyses, regenerates the combined SVG/PNG table, and creates a new OneNote page.
 
+The `MOT loading 421 monofreq` runner processes the SDS/SIS curves in that
+dataset folder for the `161-163` and `162-163` pairs. It produces per-pair
+linear and logarithmic figures and workbook data, without isotope-pair
+comparisons. The combined figure table and OneNote page place this dataset as
+the first figure column after the isotope-pair row labels; the other pair rows
+remain empty for this column.
+
 ## `config.yaml` structure
 
 Each `config.yaml` is a top-level sequence of processing entries:
@@ -100,6 +107,7 @@ Examples:
 |---|---|
 | MOT/CMOT lifetime | `β_MOT`, `t_hold`, `loadcfg`, `istp` |
 | MOT loading 421 | `β_MOT`, `t_load`, `loadcfg`, `istp` |
+| MOT loading 421 monofreq | `β_MOT`, `t_load`, `loadcfg`, `istp` |
 | MOT loading 626 | `t_load`, `loadcfg`, `istp` |
 | MOT loading balance | `β_MOT`, `loadcfg`, `istp` |
 | ODT B field | `ib`, `loadcfg`, `istp` |

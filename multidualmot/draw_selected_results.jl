@@ -177,8 +177,8 @@ plot_num_evol = dualmot_lifetime_plot_spec("CMOT";
 axis_options_cmot_decay = merge(axis_options_decay,
     (xticks=0:0.5:1, xminorticks=IntervalsBetween(4),
         xminorticksvisible=true))
-limits_cmot_decay = (x=(0.0, 1.0), y=limits_decay.y)
-mask_cmot_fit = values -> (values .>= 0.0) .& (values .<= 1.05)
+limits_cmot_decay = (x=(0.0, 1.05), y=limits_decay.y)
+mask_cmot_fit = values -> (values .>= 0.0) .& (values .<= 1.0)
 plot_num_evol_target = panel_target(fig_result_decay, 2;
     scale=:log, axis_options=axis_options_cmot_decay, limits=limits_cmot_decay,
     mask_x=mask_cmot_fit,

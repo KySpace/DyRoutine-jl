@@ -13,6 +13,7 @@ const INKSCAPE_CANDIDATES = [
 
 # Only these folders are included, in this outer-grid order.
 const COLUMN_PARENT_NAMES = [
+    "MOT loading 421 monofreq",
     "MOT loading 421",
     "MOT loading 626",
     "MOT loading balance",
@@ -116,6 +117,12 @@ function collect_entries(parent_dirs::AbstractVector{<:AbstractString},
                 current_styles = Set(("lin", "log", "ratio.DIS-DCS", "ratio.DDM-DIS"))
                 filter!(entry -> entry.style_tag in current_styles &&
                     occursin('.', entry.subvariant_tag), cell_entries)
+            elseif parent_name in ("MOT lifetime", "CMOT lifetime")
+                current_styles = Set(("lin", "log", "fit.log", "size"))
+                filter!(entry -> entry.style_tag in current_styles, cell_entries)
+            elseif parent_name == "ODT BField"
+                current_styles = Set(("lin", "log", "fit.lin"))
+                filter!(entry -> entry.style_tag in current_styles, cell_entries)
             end
             isempty(cell_entries) || (entries[(parent_name, pair_name)] = cell_entries)
         end
@@ -131,7 +138,9 @@ function cell_layout(cell_entries::AbstractVector{SvgEntry}, parent_name::Abstra
             heights=Float64[], width=0.0, height=0.0)
     end
 
-    styles = if parent_name == "MOT loading 421"
+    styles = if parent_name == "MOT loading 421 monofreq"
+        ["lin", "log"]
+    elseif parent_name == "MOT loading 421"
         ["lin", "log", "ratio.DDM-DIS", "ratio.DIS-DCS"]
     elseif parent_name == "ODT BField"
         preferred = ["lin", "log", "fit.lin"]
@@ -381,6 +390,14 @@ function make_multi_dual_mot_table(root::AbstractString, output_path::AbstractSt
                     push!(occupied, position)
                     style_index = findfirst(==(entry.style_tag), layout.styles)
                     subvariant_index = findfirst(==(entry.subvariant_tag), layout.subvariants)
+                    isnothing(style_index) && throw(ArgumentError(
+                        "style $(entry.style_tag) has no column in $parent_name/$pair_name; " *
+                        "available styles: $(layout.styles)",
+                    ))
+                    isnothing(subvariant_index) && throw(ArgumentError(
+                        "subvariant $(entry.subvariant_tag) has no row in $parent_name/$pair_name; " *
+                        "available subvariants: $(layout.subvariants)",
+                    ))
                     slot_width = layout.widths[style_index]
                     slot_height = layout.heights[subvariant_index]
                     image_x = x_cell + style_offsets[style_index] +
