@@ -69,7 +69,8 @@ for (idx_row, isotope) in enumerate((162, 164)), (idx_col, type) in enumerate((:
     t = first.(decay) .* scale_t
     t_plot = range(minimum(t), maximum(t); length=400)
     ax = Axis(fig_decay[idx_row, idx_col];
-        title=string(label), xlabel="t_hold (sec)", ylabel="Atom number (×10⁷)",
+        title=string(label), xlabel="t_hold (sec)",
+        ylabel=rich("Atom number (×10", superscript("7"), ")"),
         limits=(nothing, (-0.02 * num_max_plot, 1.22 * num_max_plot)))
     scatter!(ax, t, last.(decay) ./ scale_num_plot; color=(clr_type[type], 0.55), markersize=7)
     lines!(ax, t_plot, model_cmot_decay(t_plot, fit.params) ./ scale_num_plot;

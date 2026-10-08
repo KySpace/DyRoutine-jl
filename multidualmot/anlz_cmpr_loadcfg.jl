@@ -57,7 +57,7 @@ axis_options_nums = dualmot_axis_kwargs(;
 !isnothing(plot_cmpr_loadcfg_target) &&
     (axis_options_nums = merge(axis_options_nums, plot_cmpr_loadcfg_target.axis_options))
 ax_nums = Axis(slot_nums; xlabel=plot_cmpr_loadcfg.xlabel,
-    ylabel=rich(plot_cmpr_loadcfg.ylabel_num, " (10⁷)"),
+    ylabel=rich(plot_cmpr_loadcfg.ylabel_num, " (10", superscript("7"), ")"),
     title=isnothing(plot_cmpr_loadcfg_target) ? title_plot : "",
     frame_options_nums...,
     axis_options_nums...)

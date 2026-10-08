@@ -32,7 +32,7 @@ axis_options_loading = merge(axis_options_numbers,
         xminorticks=setdiff(collect(0:1:20), collect(0:5:20)),
         xminorticksvisible=true))
 limits_loading = (x=nothing, y=(0.0, 11.5))
-limits_decay = (x=nothing, y=(2e6, 1e8))
+limits_decay = (x=nothing, y=(5e6, 1e8))
 axis_options_decay = merge(axis_options_ticks,
     (yticks=DUALMOT_LOG_MAJOR_TICKS,
         yminorticks=DUALMOT_LOG_MINOR_TICKS, yminorticksvisible=true))
@@ -62,7 +62,7 @@ plot_num_evol = dualmot_num_evol_plot_spec("MOT";
     transform_x=(values, condition, panel, idx_istp) -> values .* γ_active,
     legend_position=:rb,
     loadcfg_plot=(:DDM, :DIS, :DCS),
-    ylabel=rich("CMOT ", rich("N", subscript("i"); font=result_axis_font)))
+    ylabel=rich("𝑁", subscript("𝑖"), superscript("CMOT")))
 plot_num_evol_target = panel_target(fig_result_loading, 1;
     axis_options=axis_options_loading, limits=limits_loading,
     mask_x=mask_loading_421)
@@ -79,7 +79,7 @@ tag_head = "$(runinfo.folder) $(runinfo.tag)"
 plot_cmpr_loadcfg = (
     file_head="MOT.loading.626",
     xlabel="Effective loading time (s)",
-    ylabel_num=rich("CMOT ", rich("N", subscript("i"); font=result_axis_font)),
+    ylabel_num=rich("𝑁", subscript("𝑖"), superscript("CMOT")),
     γ_active,
     scale_num=1e7,
     formats=("svg", "png"),
@@ -114,8 +114,8 @@ axis_options_balance = merge(axis_options_ticks,
         xminorticks=IntervalsBetween(5), xminorticksvisible=true))
 plot_num_evol = merge(dualmot_num_evol_plot_spec("MOT";
     key_x=:β_MOT,
-    xlabel=_ -> rich("β", subscript("MOT")),
-    ylabel=rich("CMOT ", rich("N", subscript("i"); font=result_axis_font)),
+    xlabel=_ -> rich("𝛽", subscript("MOT")),
+    ylabel=rich("𝑁", subscript("𝑖"), superscript("CMOT")),
     file_head="MOT.loading.balance",
     loadcfg_plot=(:DDM, :DIS)),
     (key_panel=nothing,
@@ -173,13 +173,14 @@ plot_num_evol = dualmot_lifetime_plot_spec("CMOT";
     key_x=:t_hold,
     scale_x=1000,
     xlabel="CMOT holding time (s)",
-    ylabel=rich("CMOT ", rich("N", subscript("i"); font=result_axis_font)))
+    ylabel=rich("𝑁", subscript("𝑖"), superscript("CMOT")))
 axis_options_cmot_decay = merge(axis_options_decay,
-    (xticks=0:0.5:2, xminorticks=IntervalsBetween(4),
+    (xticks=0:0.5:1, xminorticks=IntervalsBetween(4),
         xminorticksvisible=true))
-mask_cmot_fit = values -> (values .>= 0.0) .& (values .<= 1.0)
+limits_cmot_decay = (x=(0.0, 1.0), y=limits_decay.y)
+mask_cmot_fit = values -> (values .>= 0.0) .& (values .<= 1.05)
 plot_num_evol_target = panel_target(fig_result_decay, 2;
-    scale=:log, axis_options=axis_options_cmot_decay, limits=limits_decay,
+    scale=:log, axis_options=axis_options_cmot_decay, limits=limits_cmot_decay,
     mask_x=mask_cmot_fit,
     fit=(kind=:decay, mode=:kappa, selector=mask_cmot_fit),
     fit_points_only=true)
@@ -198,7 +199,7 @@ plot_num_evol = dualmot_lifetime_plot_spec("MOT";
     key_x=:t_hold,
     scale_x=1000,
     xlabel="MOT holding time (s)",
-    ylabel=rich("CMOT ", rich("N", subscript("i"); font=result_axis_font)))
+    ylabel=rich("𝑁", subscript("𝑖"), superscript("CMOT")))
 axis_options_mot_decay = merge(axis_options_decay,
     (xticks=0:20:60, xminorticks=IntervalsBetween(4),
         xminorticksvisible=true))
@@ -227,7 +228,7 @@ plot_num_evol = merge(dualmot_num_evol_plot_spec("ODT";
         odt_bfield_values(values, :z),
     axis_options=odt_bfield_axis_options(
         reduce(vcat, [data.vars.ib for data in runinfo.data]), :z),
-    ylabel=rich("ODT ", rich("N", subscript("i"); font=result_axis_font)),
+    ylabel=rich("𝑁", subscript("𝑖"), superscript("ODT")),
     file_head="ODT.BField",
     loadcfg_plot=(:DDM, :DIS)),
     (key_panel=nothing,))

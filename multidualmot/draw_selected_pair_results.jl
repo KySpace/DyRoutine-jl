@@ -4,6 +4,9 @@ path_result_pairs = joinpath(path_root, "Result")
 mkpath(path_result_pairs)
 axis_label_fontsize = 7 / 0.75
 result_axis_font = "NewComputerModern Math"
+result_number_label() = rich("𝑁", subscript("𝑖"), superscript("CMOT"))
+result_ratio_label(quantity::AbstractString, qualifier::AbstractString) =
+    rich("𝑅", subscript("𝑖," * quantity), superscript(qualifier))
 fig_selected_pair_comparison = Figure(size=(640, 495), fontsize=8,
     figure_padding=3, rowgap=4, colgap=6)
 
@@ -26,7 +29,7 @@ end
 
 # MOT loading 421, 30-second t-balanced DDM/DIS atom numbers.
 ax_result_421_numbers = result_pair_axis(fig_selected_pair_comparison,
-    (1, 1); ylabel="CMOT N", log_y=true)
+    (1, 1); ylabel=result_number_label(), log_y=true)
 draw_pair_spans!(ax_result_421_numbers)
 for (idx_pair, pair) in enumerate(val_pair),
     loadcfg in (:DDM, ), istp in Symbol.(split(pair, "-"))
@@ -48,7 +51,8 @@ ylims!(ax_result_421_numbers, 0.8e6, 1.2e8)
 
 # MOT loading 421 DDM/DIS number ratio, t-balanced.
 ax_result_421_ratio = result_pair_axis(fig_selected_pair_comparison,
-    (1, 2); ylabel="CMOT N DDM—DIS ratio", yticks=0:0.2:1.2, ratio=true)
+    (1, 2); ylabel=result_ratio_label("𝑁", "load"),
+    yticks=0:0.2:1.2, ratio=true)
 draw_pair_spans!(ax_result_421_ratio)
 hlines!(ax_result_421_ratio, [0.9, 1.1]; color=RGBAf(0, 0, 0, 0.45),
     linestyle=:dash, linewidth=0.5)
@@ -76,7 +80,7 @@ ylims!(ax_result_421_ratio, 0.35, 1.25)
 
 # CMOT decay inverse-kappa ratio, with references at 1.0
 ax_result_cmot_ratio = result_pair_axis(fig_selected_pair_comparison,
-    (2, 1); ylabel="κ DDM—DIS ratio", yticks=0:0.2:1.2,
+    (2, 1); ylabel=result_ratio_label("𝜅", "CMOT"), yticks=0:0.2:1.2,
     ratio=true)
 draw_pair_spans!(ax_result_cmot_ratio)
 hlines!(ax_result_cmot_ratio, [1.0]; color=RGBAf(0, 0, 0, 0.45),
@@ -106,7 +110,7 @@ ylims!(ax_result_cmot_ratio, 0.35, 1.25)
 
 # DDM/DIS ratio of ODT-to-CMOT efficiencies; x/z directions are offset slightly.
 ax_result_odt_efficiency = result_pair_axis(fig_selected_pair_comparison,
-    (2, 2); ylabel="ODT loading efficiency \n DDM—DIS ratio", yticks=0:0.2:1.2,
+    (2, 2); ylabel=result_ratio_label("𝜂", "ODT"), yticks=0:0.2:1.2,
     ratio=true)
 draw_pair_spans!(ax_result_odt_efficiency)
 hlines!(ax_result_odt_efficiency, [0.9, 1.1]; color=RGBAf(0, 0, 0, 0.45),
@@ -130,7 +134,7 @@ ylims!(ax_result_odt_efficiency, 0.35, 1.25)
 
 # MOT loading 626 DCS/SCS CMOT-number ratio, at 30 seconds.
 ax_result_626_ratio = result_pair_axis(fig_selected_pair_comparison,
-    (3, 1); ylabel="CMOT N DCS—SCS ratio", yticks=0:0.2:1.2,
+    (3, 1); ylabel=result_ratio_label("𝑁", "626"), yticks=0:0.2:1.2,
     ratio=true)
 draw_pair_spans!(ax_result_626_ratio)
 hlines!(ax_result_626_ratio, [0.9, 1.1]; color=RGBAf(0, 0, 0, 0.45),
@@ -159,7 +163,7 @@ ylims!(ax_result_626_ratio, 0, 1.25)
 
 # MOT lifetime τ DDM/DIS ratio, using the n-balanced fit results.
 ax_result_mot_lifetime_ratio = result_pair_axis(fig_selected_pair_comparison,
-    (3, 2); ylabel=rich("τ", subscript("DDM"), " / τ", subscript("DIS")),
+    (3, 2); ylabel=result_ratio_label("𝜏", "CMOT"),
     yticks=0:0.2:1.2, ratio=true)
 draw_pair_spans!(ax_result_mot_lifetime_ratio)
 hlines!(ax_result_mot_lifetime_ratio, [0.9, 1.1];

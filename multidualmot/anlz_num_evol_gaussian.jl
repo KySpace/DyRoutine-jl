@@ -11,7 +11,7 @@ axis_options_gaussian = merge(
     plot_num_evol.axis_options)
 ax_gaussian = Axis(fig_gaussian[1, 1];
     xlabel=plot_num_evol.xlabel(nothing),
-    ylabel=rich(plot_num_evol.ylabel, " (10⁷)"),
+    ylabel=rich(plot_num_evol.ylabel, " (10", superscript("7"), ")"),
     title=plot_num_evol.title(tag_head, nothing, reps_used_gaussian),
     axis_options_gaussian...)
 scale_num_gaussian = plot_num_evol.scale_num_linear
