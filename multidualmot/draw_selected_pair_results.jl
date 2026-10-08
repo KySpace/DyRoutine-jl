@@ -3,6 +3,7 @@
 path_result_pairs = joinpath(path_root, "Result")
 mkpath(path_result_pairs)
 axis_label_fontsize = 7 / 0.75
+result_axis_font = "NewComputerModern Math"
 fig_selected_pair_comparison = Figure(size=(640, 495), fontsize=8,
     figure_padding=3, rowgap=4, colgap=6)
 
@@ -13,7 +14,11 @@ function result_pair_axis(fig::Figure, slot; ylabel, yticks=nothing,
     ratio && (kwargs = merge(kwargs, (; yminorticks=IntervalsBetween(2),
         yminorticksvisible=true)))
     kwargs = merge(kwargs, (; xlabelsize=axis_label_fontsize,
-        ylabelsize=axis_label_fontsize))
+        ylabelsize=axis_label_fontsize,
+        xlabelfont=result_axis_font,
+        ylabelfont=result_axis_font,
+        xticklabelfont=result_axis_font,
+        yticklabelfont=result_axis_font))
     Axis(fig[slot...]; xticks=(eachindex(val_pair), val_pair),
         xlabel="Isotope pair", ylabel,
         yscale=log_y ? log10 : identity, kwargs...)

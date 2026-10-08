@@ -10,13 +10,21 @@ num_max_num = 2e8
 # At 96 dpi, this gives a 178 mm wide exported figure.
 fig_width = round(Int, 178 / 25.4 * 96)
 fig_height = 240
+result_axis_font = "NewComputerModern Math"
+result_axis_font_options = (
+    xlabelfont=result_axis_font,
+    ylabelfont=result_axis_font,
+    xticklabelfont=result_axis_font,
+    yticklabelfont=result_axis_font,
+)
 fig_result_loading = Figure(size=(fig_width, fig_height), fontsize=8,
     figure_padding=4)
 fig_result_decay = Figure(size=(fig_width, fig_height), fontsize=8,
     figure_padding=4)
 axis_options_ticks = (xticksize=10 / 3, yticksize=10 / 3,
     xminorticksize=2, yminorticksize=2,
-    xlabelsize=7 / 0.75, ylabelsize=7 / 0.75)
+    xlabelsize=7 / 0.75, ylabelsize=7 / 0.75,
+    result_axis_font_options...)
 axis_options_numbers = merge(axis_options_ticks,
     (yticks=0:5:10, yminorticks=IntervalsBetween(5)))
 axis_options_loading = merge(axis_options_numbers,
@@ -54,7 +62,7 @@ plot_num_evol = dualmot_num_evol_plot_spec("MOT";
     transform_x=(values, condition, panel, idx_istp) -> values .* γ_active,
     legend_position=:rb,
     loadcfg_plot=(:DDM, :DIS, :DCS),
-    ylabel=rich("CMOT ", rich("N", subscript("i"); font=:italic)))
+    ylabel=rich("CMOT ", rich("N", subscript("i"); font=result_axis_font)))
 plot_num_evol_target = panel_target(fig_result_loading, 1;
     axis_options=axis_options_loading, limits=limits_loading,
     mask_x=mask_loading_421)
@@ -71,7 +79,7 @@ tag_head = "$(runinfo.folder) $(runinfo.tag)"
 plot_cmpr_loadcfg = (
     file_head="MOT.loading.626",
     xlabel="Effective loading time (s)",
-    ylabel_num=rich("CMOT ", rich("N", subscript("i"); font=:italic)),
+    ylabel_num=rich("CMOT ", rich("N", subscript("i"); font=result_axis_font)),
     γ_active,
     scale_num=1e7,
     formats=("svg", "png"),
@@ -107,7 +115,7 @@ axis_options_balance = merge(axis_options_ticks,
 plot_num_evol = merge(dualmot_num_evol_plot_spec("MOT";
     key_x=:β_MOT,
     xlabel=_ -> rich("β", subscript("MOT")),
-    ylabel=rich("CMOT ", rich("N", subscript("i"); font=:italic)),
+    ylabel=rich("CMOT ", rich("N", subscript("i"); font=result_axis_font)),
     file_head="MOT.loading.balance",
     loadcfg_plot=(:DDM, :DIS)),
     (key_panel=nothing,
@@ -165,7 +173,7 @@ plot_num_evol = dualmot_lifetime_plot_spec("CMOT";
     key_x=:t_hold,
     scale_x=1000,
     xlabel="CMOT holding time (s)",
-    ylabel=rich("CMOT ", rich("N", subscript("i"); font=:italic)))
+    ylabel=rich("CMOT ", rich("N", subscript("i"); font=result_axis_font)))
 axis_options_cmot_decay = merge(axis_options_decay,
     (xticks=0:0.5:2, xminorticks=IntervalsBetween(4),
         xminorticksvisible=true))
@@ -190,7 +198,7 @@ plot_num_evol = dualmot_lifetime_plot_spec("MOT";
     key_x=:t_hold,
     scale_x=1000,
     xlabel="MOT holding time (s)",
-    ylabel=rich("CMOT ", rich("N", subscript("i"); font=:italic)))
+    ylabel=rich("CMOT ", rich("N", subscript("i"); font=result_axis_font)))
 axis_options_mot_decay = merge(axis_options_decay,
     (xticks=0:20:60, xminorticks=IntervalsBetween(4),
         xminorticksvisible=true))
@@ -214,12 +222,12 @@ bounds_sigmax_num = (2e-4, 10e-4)
 bounds_sigmay_num = (1e-4, 5e-4)
 plot_num_evol = merge(dualmot_num_evol_plot_spec("ODT";
     key_x=:ib,
-    xlabel=_ -> odt_bfield_xlabel(:z),
+    xlabel=_ -> odt_bfield_xlabel(:z; font=result_axis_font),
     transform_x=(values, condition, panel, idx_istp) ->
         odt_bfield_values(values, :z),
     axis_options=odt_bfield_axis_options(
         reduce(vcat, [data.vars.ib for data in runinfo.data]), :z),
-    ylabel=rich("ODT ", rich("N", subscript("i"); font=:italic)),
+    ylabel=rich("ODT ", rich("N", subscript("i"); font=result_axis_font)),
     file_head="ODT.BField",
     loadcfg_plot=(:DDM, :DIS)),
     (key_panel=nothing,))

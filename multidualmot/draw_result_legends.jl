@@ -11,6 +11,7 @@ legend_versions = (
 
 # CairoMakie uses 0.75 points per fontsize unit; 8 units gives 6 pt.
 legend_fontsize = 6 / 0.75
+result_legend_font = "NewComputerModern Math"
 pos_y_legend = (1.20, 0.45)
 pos_x_start_legend = 1.75
 pos_x_step_legend = (5.25 - 1.75) / 3
@@ -49,12 +50,12 @@ function draw_result_legend(loadcfgs::Tuple, name::AbstractString)
     )
     for (x, loadcfg) in zip(pos_x, loadcfgs)
         text!(ax, x, 1.90; text=string(loadcfg),
-            align=(:center, :center), font=DUALMOT_FONT,
+            align=(:center, :center), font=result_legend_font,
             fontsize=legend_fontsize)
     end
     for (y, istp) in zip(pos_y_legend, val_istp_legend)
         text!(ax, 0.16, y; text=string(istp),
-            align=(:left, :center), font=DUALMOT_FONT,
+            align=(:left, :center), font=result_legend_font,
             fontsize=legend_fontsize)
         for (x, loadcfg) in zip(pos_x, loadcfgs)
             style = dualmot_curve_style((; loadcfg, istp))
@@ -105,12 +106,12 @@ function draw_result_isotope_loadcfg_legend()
     )
     for (x, istp) in zip(pos_x, isotopes)
         text!(ax, x, 1.90; text=string(istp),
-            align=(:center, :center), font=DUALMOT_FONT,
+            align=(:center, :center), font=result_legend_font,
             fontsize=legend_fontsize)
     end
     for (y, loadcfg) in zip(pos_y_legend, loadcfgs)
         text!(ax, 0.16, y; text=string(loadcfg),
-            align=(:left, :center), font=DUALMOT_FONT,
+            align=(:left, :center), font=result_legend_font,
             fontsize=legend_fontsize)
         for (x, istp) in zip(pos_x, isotopes)
             style = dualmot_curve_style((; loadcfg, istp))
@@ -158,7 +159,7 @@ function draw_result_isotope_ratio_legend()
     y_marker = 1.20
     for (x, istp) in zip(pos_x, isotopes)
         text!(ax, x, 1.90; text=string(istp),
-            align=(:center, :center), font=DUALMOT_FONT,
+            align=(:center, :center), font=result_legend_font,
             fontsize=legend_fontsize)
         style = dualmot_curve_style((; loadcfg=:DDM, istp))
         scatter!(ax, [x], [y_marker];
