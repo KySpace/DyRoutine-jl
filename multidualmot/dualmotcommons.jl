@@ -555,7 +555,7 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
         kind = first(keys(predicate_spec))
         predicate = getproperty(predicate_spec, kind)
         selector_values = kind == :value ? axis_values : eachindex(axis_values)
-        selected = predicate.(selector_values)
+        selected = map(value -> Base.invokelatest(predicate, value), selector_values)
         selected isa AbstractVector{Bool} && length(selected) == length(axis_values) ||
             throw(ArgumentError("$label selector for $key.$kind must return one Boolean per axis value"))
         idx_axis = findfirst(==(key), name)

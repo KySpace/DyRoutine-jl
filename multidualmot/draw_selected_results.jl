@@ -249,7 +249,7 @@ axis_options_mot_decay = merge(axis_options_decay,
 mask_mot_fit = values -> (values .>= 0.0) .& (values .<= 30.0)
 plot_num_evol_target = panel_target(fig_result_decay, 1;
     scale=:log, axis_options=axis_options_mot_decay,
-    limits=(x=(-2.0, 32.0), y=limits_decay.y),
+    limits=(x=(-2.0, 32.0), y=(8e6, 1e8)),
     mask_x=mask_mot_fit,
     fit=(kind=:decay, mode=:tau, selector=mask_mot_fit),
     fit_points_only=true)
