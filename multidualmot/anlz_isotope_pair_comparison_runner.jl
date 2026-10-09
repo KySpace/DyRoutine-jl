@@ -174,6 +174,8 @@ for pair in val_pair
     end
 end
 
+if get(ENV, "DUALMOT_SKIP_PAIR_COMPARISON_EXPORTS", "false") != "true"
+
 function draw_pair_ratio(points_by_pair::AbstractDict, numerator::Symbol, denominator::Symbol;
     ylabel, title, filename::AbstractString)
     fig = Figure(size=(320, 149), fontsize=8, figure_padding=1)
@@ -379,3 +381,5 @@ comparison_sheets_626 = Pair{String,Matrix{Any}}[
         numerator=:DCS, denominator=:SCS, quantity="MOT loading 626 ratio"),
 ]
 write_figure_workbook(joinpath(path_output, "MOT loading 626.xlsx"), comparison_sheets_626)
+
+end

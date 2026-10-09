@@ -175,9 +175,11 @@ function draw_comparison(; ratio::Bool)
         end
     end
     filename = ratio ? "[ODT.CMOT.comparison].[lin].[ratios]" : "[ODT.CMOT.comparison].[log].[numbers]"
-    for format in formats_output
-        save_options = format == "png" ? (; px_per_unit=3) : (;)
-        save(joinpath(path_output,"$filename.$format"), fig; save_options...)
+    if get(ENV, "DUALMOT_RESULTS_ONLY", "false") != "true"
+        for format in formats_output
+            save_options = format == "png" ? (; px_per_unit=3) : (;)
+            save(joinpath(path_output,"$filename.$format"), fig; save_options...)
+        end
     end
     fig
 end
@@ -225,9 +227,11 @@ function draw_efficiency_ratio()
     end
     ylims!(ax, 0, 1.25)
     filename = "[ODT.CMOT.comparison].[lin].[DDM-DIS-efficiency-ratio]"
-    for format in formats_output
-        save_options = format == "png" ? (; px_per_unit=3) : (;)
-        save(joinpath(path_output, "$filename.$format"), fig; save_options...)
+    if get(ENV, "DUALMOT_RESULTS_ONLY", "false") != "true"
+        for format in formats_output
+            save_options = format == "png" ? (; px_per_unit=3) : (;)
+            save(joinpath(path_output, "$filename.$format"), fig; save_options...)
+        end
     end
     fig
 end
@@ -289,6 +293,7 @@ ratio_matrix[1, :] .= ratio_headers
 for (idx, row) in enumerate(ratio_rows)
     ratio_matrix[idx + 1, :] .= row
 end
+if get(ENV, "DUALMOT_RESULTS_ONLY", "false") != "true"
 write_figure_workbook(joinpath(path_output, "ODT.xlsx"), [
     "numbers" => number_matrix,
     "ODT-CMOT ratio" => ratio_matrix,
@@ -304,4 +309,5 @@ write_figure_workbook(joinpath(path_output, "ODT.xlsx"), [
         matrix
     end,
 ])
+end
 println("Saved ODT/CMOT comparison figures to $path_output")

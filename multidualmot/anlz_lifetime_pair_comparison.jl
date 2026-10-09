@@ -89,9 +89,11 @@ function draw_pair_lifetime_values(points_by_pair::AbstractDict, value_key::Symb
         end
     end
     draw_number_style_key!(fig, (:DIS, :DDM))
-    for format in formats_output
-        save_options = format == "png" ? (; px_per_unit=4) : (;)
-        save(joinpath(path_output, "$filename.$format"), fig; save_options...)
+    if get(ENV, "DUALMOT_RESULTS_ONLY", "false") != "true"
+        for format in formats_output
+            save_options = format == "png" ? (; px_per_unit=4) : (;)
+            save(joinpath(path_output, "$filename.$format"), fig; save_options...)
+        end
     end
     fig
 end
@@ -153,9 +155,11 @@ function draw_pair_decay_ratio(points_by_pair::AbstractDict,
     ylims!(ax, 0, max(1.25, 1.08 * upper))
     ax.yminorticks = IntervalsBetween(2)
     draw_ratio_style_key!(fig)
-    for format in formats_output
-        save_options = format == "png" ? (; px_per_unit=4) : (;)
-        save(joinpath(path_output, "$filename.$format"), fig; save_options...)
+    if get(ENV, "DUALMOT_RESULTS_ONLY", "false") != "true"
+        for format in formats_output
+            save_options = format == "png" ? (; px_per_unit=4) : (;)
+            save(joinpath(path_output, "$filename.$format"), fig; save_options...)
+        end
     end
     fig
 end

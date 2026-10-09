@@ -23,15 +23,15 @@ function draw_result_legend(loadcfgs::Tuple, name::AbstractString)
         for idx in eachindex(loadcfgs)]
     x_max = last(pos_x) + 0.75
     # Preserve the same data-to-output scale and gaps as the four-column key.
-    fig_width = round(Int, (106 - 4) * x_max / 6 + 4)
+    legend_box_width = round(Int, (106 - 4) * x_max / 6 + 4)
     fig = Figure(size=(fig_width, fig_height_legend),
         fontsize=legend_fontsize, figure_padding=2)
     border_color = RGBAf(0.25, 0.25, 0.25, 0.45)
     ax = Axis(fig[1, 1];
-        width=fig_width - 4,
+        width=legend_box_width - 4,
         height=fig_height_legend - 4,
-        halign=0,
-        valign=0,
+        halign=:center,
+        valign=:center,
         tellwidth=false,
         tellheight=false,
         limits=(0.0, x_max, axis_limits_y_legend...),
@@ -80,14 +80,14 @@ function draw_result_isotope_loadcfg_legend()
     pos_x = [pos_x_start_legend + (idx - 1) * pos_x_step_legend
         for idx in eachindex(isotopes)]
     x_max = last(pos_x) + 0.75
-    fig_width = round(Int, (106 - 4) * x_max / 6 + 4)
+    legend_box_width = round(Int, (106 - 4) * x_max / 6 + 4)
     fig = Figure(size=(fig_width, fig_height_legend),
         fontsize=legend_fontsize, figure_padding=2)
     ax = Axis(fig[1, 1];
-        width=fig_width - 4,
+        width=legend_box_width - 4,
         height=fig_height_legend - 4,
-        halign=0,
-        valign=0,
+        halign=:center,
+        valign=:center,
         tellwidth=false,
         tellheight=false,
         limits=(0.0, x_max, axis_limits_y_legend...),
@@ -132,14 +132,14 @@ function draw_result_isotope_ratio_legend()
     pos_x = [pos_x_start_legend + (idx - 1) * pos_x_step_legend
         for idx in eachindex(isotopes)]
     x_max = last(pos_x) + 0.75
-    fig_width = round(Int, (106 - 4) * x_max / 6 + 4)
+    legend_box_width = round(Int, (106 - 4) * x_max / 6 + 4)
     fig = Figure(size=(fig_width, fig_height_legend),
         fontsize=legend_fontsize, figure_padding=2)
     ax = Axis(fig[1, 1];
-        width=fig_width - 4,
+        width=legend_box_width - 4,
         height=fig_height_legend - 4,
-        halign=0,
-        valign=0,
+        halign=:center,
+        valign=:center,
         tellwidth=false,
         tellheight=false,
         limits=(0.0, x_max, axis_limits_y_legend...),
