@@ -416,6 +416,7 @@ function num_evol_xlsx_sheet_name(runinfo::NamedTuple, key_panel, panel;
 end
 
 function write_figure_workbook(path::AbstractString, sheets)
+    get(ENV, "DUALMOT_RESULTS_ONLY", "false") == "true" && return nothing
     isempty(sheets) && return nothing
     mkpath(dirname(path))
         names_written = Set{String}()

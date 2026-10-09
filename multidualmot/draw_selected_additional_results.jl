@@ -90,7 +90,7 @@ fig_selected_mot_lifetime = Figure(size=(fig_width, 192), fontsize=8,
     figure_padding=3, colgap=6)
 points_selected_mot_lifetime = comparison_points_lifetime[:n_balanced].mot
 ax_selected_mot_lifetime = selected_result_pair_axis(fig_selected_mot_lifetime,
-    (1, 1); ylabel=rich("𝜏", subscript("𝑖"), superscript("CMOT"), " (s)"),
+    (1, 1); ylabel=rich("𝜏", subscript("𝑖"), superscript("MOT"), " (s)"),
     log_y=true)
 draw_pair_spans!(ax_selected_mot_lifetime)
 ylims!(ax_selected_mot_lifetime, 0.9, 55)
@@ -112,7 +112,7 @@ for (idx_pair, pair) in enumerate(val_pair), loadcfg in (:DIS, :DDM),
     end
 end
 ax_selected_mot_lifetime_ratio = selected_result_pair_axis(fig_selected_mot_lifetime,
-    (1, 2); ylabel=result_ratio_label("𝜏", "CMOT"), yticks=0:0.2:1.2,
+    (1, 2); ylabel=result_ratio_label("𝜏", "MOT"), yticks=0:0.2:1.2,
     ratio=true)
 plot_pair_ratio!(ax_selected_mot_lifetime_ratio, points_selected_mot_lifetime,
     :DDM, :DIS; value_key=:value, error_key=:std, marker_loadcfg=:DDM)
@@ -244,9 +244,25 @@ function latest_monofreq_isotope_run(pair::AbstractString, isotope::Symbol)
     (; runinfo, bias)
 end
 
+function latest_monofreq_zero_bias_pair(pair::AbstractString,
+    isotopes::Tuple{Vararg{Symbol}})
+    infos = read_num_evol_runinfos(joinpath(path_root, "MOT loading 421 monofreq"), pair;
+        var_specs=DUALMOT_LOADING_VAR_SPECS,
+        validate_vars=validate_result_monofreq)
+    candidates = filter(infos) do info
+        all(isotopes) do isotope
+            any(info.data) do data
+                isotope in data.vars.istp && 0.0 in data.vars.β_MOT
+            end
+        end
+    end
+    latest_num_evol_runinfo(candidates;
+        label="$pair MOT loading 421 monofreq at β_MOT=0 for all $isotopes")
+end
+
 function result_curve_axis(fig::Figure, slot; ylabel, log_y=false,
     xlabel, xlim, xticks, xminorticks=nothing, yticks=nothing,
-    aspect=AxisAspect(4 / 3))
+    yminorticks=nothing)
     options = dualmot_axis_kwargs(; log_y, text_size=8)
     options = merge(options, (; xlabelsize=result_additional_axis_label_size,
         ylabelsize=result_additional_axis_label_size,
@@ -254,16 +270,18 @@ function result_curve_axis(fig::Figure, slot; ylabel, log_y=false,
         ylabelfont=result_additional_axis_font,
         xticklabelfont=result_additional_axis_font,
         yticklabelfont=result_additional_axis_font,
-        xticks, xminorticks, xminorticksvisible=!isnothing(xminorticks)))
+        xticksize=10 / 3, yticksize=10 / 3,
+        xminorticksize=2, yminorticksize=2,
+        xticks, xminorticks, xminorticksvisible=!isnothing(xminorticks),
+        yminorticks, yminorticksvisible=!isnothing(yminorticks)))
+    options = merge(options, result_axis_spacing)
     isnothing(yticks) || (options = merge(options, (; yticks)))
     Axis(fig[slot...]; xlabel, ylabel, yscale=log_y ? log10 : identity,
-        limits=(xlim, nothing), aspect, options...)
+        limits=(xlim, nothing), result_axis_frame_options..., options...)
 end
 
 function plot_loading_result_panel!(ax::Axis, curve_data::NamedTuple,
-    pair_label::AbstractString, configs, isotopes; ylabel::Bool=false)
-    ax.title = pair_label
-    ax.titlesize = result_additional_axis_label_size
+    pair_label::AbstractString, configs, isotopes; y_limits=nothing)
     x_raw = hasproperty(curve_data, :x) ? curve_data.x : curve_data.val_t_load
     x_values = x_raw .* 0.43
     plotted_values = Float64[]
@@ -280,22 +298,38 @@ function plot_loading_result_panel!(ax::Axis, curve_data::NamedTuple,
         append!(plotted_values, y_values[valid])
     end
     isempty(plotted_values) && throw(ArgumentError("$pair_label: no finite loading data"))
-    ylims!(ax, 0, max(1.0, 1.08 * maximum(plotted_values)))
-    ylabel && (ax.ylabel = rich("𝑁", subscript("𝑖"), superscript("CMOT"),
-        " (10", superscript("7"), ")"))
+    isnothing(y_limits) ?
+        ylims!(ax, 0, max(1.0, 1.08 * maximum(plotted_values))) :
+        ylims!(ax, y_limits...)
+    ax.ylabel = rich("𝑁", subscript("𝑖"), superscript("CMOT"),
+        " (10", superscript("7"), ")")
     ax
 end
 
 # Four loading curves, with the fourth panel centered in the second row.
-fig_selected_loading_pairs = Figure(size=(fig_width, 424), fontsize=8,
-    figure_padding=4, rowgap=10, colgap=8)
+fig_selected_loading_pairs = result_three_col_figure(380; rowgap=10)
 selected_loading_axes = Axis[]
-loading_axis_options = (; xlabel="Effective loading time (s)", xlim=(0.0, 20.0),
-    xticks=0:5:20, xminorticks=setdiff(collect(0:1:20), collect(0:5:20)))
-for (slot, pair_label) in zip(((1, 1), (1, 2), (1, 3), (2, 2)),
+loading_axis_slots = zip(((1, 1), (1, 2), (1, 3), (2, 2)),
     ("162–163", "161–163", "163–164", "161–163"))
+loading_y_specs = Dict(
+    "162–163" => (; limits=(0.0, 3.4), major_ticks=0.0:1.0:3.0,
+        minor_step=0.2),
+    "161–163" => (; limits=(0.0, 2.6), major_ticks=0.0:1.0:2.0,
+        minor_step=0.2),
+    "163–164" => (; limits=(0.0, 11.0), major_ticks=0.0:5.0:10.0,
+        minor_step=1.0),
+)
+for (slot, pair_label) in loading_axis_slots
+    xlim = (-0.25, 18.0)
+    xminorticks = setdiff(collect(0:1:18), collect(0:5:15))
+    y_spec = loading_y_specs[pair_label]
+    y_limits = y_spec.limits
+    yticks = y_spec.major_ticks
+    yminorticks = collect(0.0:y_spec.minor_step:y_limits[2])
+    filter!(tick -> all(major -> !isapprox(tick, major), yticks), yminorticks)
     ax = result_curve_axis(fig_selected_loading_pairs, slot;
-        ylabel="", loading_axis_options...)
+        ylabel="", xlabel="Effective loading time (s)", xlim,
+        xticks=0:5:15, xminorticks, yticks, yminorticks)
     push!(selected_loading_axes, ax)
     if length(selected_loading_axes) == 1
         selection = latest_monofreq_isotope_run("162-163", Symbol("163"))
@@ -304,26 +338,15 @@ for (slot, pair_label) in zip(((1, 1), (1, 2), (1, 3), (2, 2)),
             bounds_sigmax_num=(4e-4, Inf), bounds_sigmay_num=(4e-4, Inf),
             num_max_num=2e8)
         plot_loading_result_panel!(ax, mono_data, pair_label, (:SIS, :SDS),
-            (Symbol("163"),); ylabel=true)
+            (Symbol("163"),); y_limits)
     elseif length(selected_loading_axes) == 2
-        mono_curves = Dict{Tuple{Symbol,Symbol},NamedTuple}()
-        mono_x = nothing
-        for isotope in (Symbol("161"), Symbol("163"))
-            selection = latest_monofreq_isotope_run("161-163", isotope)
-            mono_data = collect_result_curves(selection.runinfo, :t_load;
-                bias=selection.bias,
-                bounds_sigmax_num=(4e-4, Inf), bounds_sigmay_num=(4e-4, Inf),
-                num_max_num=2e8)
-            isnothing(mono_x) && (mono_x = mono_data.x)
-            mono_x == mono_data.x || throw(ArgumentError(
-                "161-163 monofrequency isotope curves have incompatible loading-time axes"))
-            for loadcfg in (:SIS, :SDS)
-                mono_curves[(loadcfg, isotope)] = mono_data.curves[(loadcfg, isotope)]
-            end
-        end
-        mono_data = (; x=mono_x, curves=mono_curves)
-        plot_loading_result_panel!(ax, mono_data, pair_label, (:SIS, :SDS),
+        mono_runinfo = latest_monofreq_zero_bias_pair("161-163",
             (Symbol("161"), Symbol("163")))
+        mono_data = collect_result_curves(mono_runinfo, :t_load; bias=0.0,
+            bounds_sigmax_num=(4e-4, Inf), bounds_sigmay_num=(4e-4, Inf),
+            num_max_num=2e8)
+        plot_loading_result_panel!(ax, mono_data, pair_label, (:SIS, :SDS),
+            (Symbol("161"), Symbol("163")); y_limits)
     elseif length(selected_loading_axes) == 3
         runinfo_626 = latest_num_evol_runinfo(runinfos_626["163-164"];
             label="163-164 MOT loading 626 Result")
@@ -331,7 +354,7 @@ for (slot, pair_label) in zip(((1, 1), (1, 2), (1, 3), (2, 2)),
             bounds_sigmax_num=(4e-4, Inf), bounds_sigmay_num=(4e-4, Inf),
             num_max_num=2e8)
         plot_loading_result_panel!(ax, data_626, pair_label, (:SCS, :DCS),
-            (Symbol("163"), Symbol("164")))
+            (Symbol("163"), Symbol("164")); y_limits)
     else
         runinfo_626 = latest_num_evol_runinfo(runinfos_626["161-163"];
             label="161-163 MOT loading 626 Result")
@@ -339,9 +362,10 @@ for (slot, pair_label) in zip(((1, 1), (1, 2), (1, 3), (2, 2)),
             bounds_sigmax_num=(4e-4, Inf), bounds_sigmay_num=(4e-4, Inf),
             num_max_num=2e8)
         plot_loading_result_panel!(ax, data_626, pair_label, (:SCS, :DCS),
-            (Symbol("161"), Symbol("163")))
+            (Symbol("161"), Symbol("163")); y_limits)
     end
 end
+set_result_three_col_widths!(fig_selected_loading_pairs)
 save_selected_result_formats(fig_selected_loading_pairs,
     "selected_isotope_pair_loading_curves")
 
@@ -364,13 +388,12 @@ function result_cmot_runinfo(pair::AbstractString, tag::AbstractString)
     only(matches)
 end
 
-fig_selected_cmot_curves = Figure(size=(fig_width, 240), fontsize=8,
-    figure_padding=4, colgap=8)
+fig_selected_cmot_curves = result_three_col_figure(240)
 selected_cmot_pairs = ("162-163", "163-164", "161-163")
-selected_cmot_ylims = Dict(
-    "162-163" => (1e6, 5e7),
-    "163-164" => (1e6, 4e6),
-    "161-163" => (7e5, 1e7),
+selected_cmot_y_specs = Dict(
+    "162-163" => (; limits=(0.0, 3.8), scale=1e7, minor_step=0.2),
+    "163-164" => (; limits=(0.8, 4.4), scale=1e6, minor_step=0.5),
+    "161-163" => (; limits=(0.0, 8.4), scale=1e6, minor_step=0.5),
 )
 for (idx_pair, pair) in enumerate(selected_cmot_pairs)
     isotope_values = Symbol.(split(pair, "-"))
@@ -382,31 +405,50 @@ for (idx_pair, pair) in enumerate(selected_cmot_pairs)
     data_cmot = collect_result_curves(runinfo_cmot, :t_hold; bias=fit_bias,
         bounds_sigmax_num=(4e-4, Inf), bounds_sigmay_num=(4e-4, Inf),
         num_max_num=2e8)
+    y_spec = selected_cmot_y_specs[pair]
+    major_ticks = ceil(Int, y_spec.limits[1]):floor(Int, y_spec.limits[2])
+    minor_step = y_spec.minor_step
+    minor_ticks = collect((ceil(y_spec.limits[1] / minor_step) * minor_step):
+        minor_step:(floor(y_spec.limits[2] / minor_step) * minor_step))
+    filter!(tick -> all(major -> !isapprox(tick, major), major_ticks), minor_ticks)
     ax = result_curve_axis(fig_selected_cmot_curves, (1, idx_pair);
-        ylabel=idx_pair == 1 ? rich("𝑁", subscript("𝑖"), superscript("CMOT")) : "",
-        xlabel="CMOT holding time (s)", xlim=(0.0, 1.05),
-        xticks=0:0.2:1.0, log_y=true)
-    ax.title = replace(pair, "-" => "–")
-    ax.titlesize = result_additional_axis_label_size
+        ylabel=rich("𝑁", subscript("𝑖"), superscript("CMOT"), " (10",
+            superscript(string(round(Int, log10(y_spec.scale)))), ")"),
+        xlabel="CMOT holding time (s)", xlim=(-0.025, 1.05),
+        xticks=0:0.2:1.0, xminorticks=0.1:0.2:0.9,
+        yticks=major_ticks, yminorticks=minor_ticks)
+    x_values = data_cmot.x ./ 1000
     for loadcfg in (:DIS, :DDM), isotope in isotope_values
         curve = get(data_cmot.curves, (loadcfg, isotope), nothing)
         isnothing(curve) && continue
-        x_values = data_cmot.x ./ 1000
-        mask = (x_values .>= 0) .& (x_values .<= 1.05) .&
+        mask = (x_values .>= 0) .& (x_values .<= 1.0) .&
             isfinite.(curve.nums) .& (curve.nums .> 0)
         any(mask) || continue
         style = dualmot_curve_style((; loadcfg, istp=isotope))
-        scatter!(ax, x_values[mask], curve.nums[mask];
-            marker_style(style; markersize=4)...)
         fit_record = result_decay_fit_record(pair, fit_bias, loadcfg, isotope)
-        fit_x = range(0.0, 1.05; length=250)
+        fit_x = range(0.0, 1.0; length=250)
         fit_y = model_num_decay_kappa(collect(fit_x), [fit_record.n0, fit_record.kappa])
-        lines!(ax, fit_x, fit_y; style.line_options...)
+        lines!(ax, fit_x, fit_y ./ y_spec.scale; style.line_options...)
     end
-    y_limits = selected_cmot_ylims[pair]
-    ylims!(ax, y_limits...)
-    ax.yticks = LogTicks(floor(Int, log10(first(y_limits))):
-        floor(Int, log10(last(y_limits))))
+    for loadcfg in (:DIS, :DDM), isotope in isotope_values
+        curve = get(data_cmot.curves, (loadcfg, isotope), nothing)
+        isnothing(curve) && continue
+        mask = (x_values .>= 0) .& (x_values .<= 1.0) .&
+            isfinite.(curve.nums) .& (curve.nums .> 0)
+        any(mask) || continue
+        style = dualmot_curve_style((; loadcfg, istp=isotope))
+        x_plot = x_values[mask]
+        y_plot = curve.nums[mask] ./ y_spec.scale
+        error_plot = curve.stds[mask] ./ y_spec.scale
+        error_mask = isfinite.(error_plot) .& (error_plot .>= 0)
+        any(error_mask) && marker_errorbars!(ax, x_plot[error_mask],
+            y_plot[error_mask], error_plot[error_mask];
+            marker_style(style; markersize=4)..., errorlinewidth=0.75)
+        any(.!error_mask) && scatter!(ax, x_plot[.!error_mask],
+            y_plot[.!error_mask]; marker_style(style; markersize=4)...)
+    end
+    ylims!(ax, y_spec.limits...)
 end
+set_result_three_col_widths!(fig_selected_cmot_curves)
 save_selected_result_formats(fig_selected_cmot_curves,
     "selected_isotope_pair_cmot_decay_curves")

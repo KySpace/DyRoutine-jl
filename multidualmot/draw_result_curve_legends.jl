@@ -4,8 +4,8 @@ path_result_curve_legends = joinpath(path_root, "Result")
 mkpath(path_result_curve_legends)
 legend_curve_fontsize = 6 / 0.75
 legend_curve_font = "NewComputerModern Math"
-legend_curve_x_start = 1.75
-legend_curve_x_step = 1.15
+legend_curve_x_start = 1.25
+legend_curve_x_step = 0.95
 legend_curve_y_step = 0.45
 
 function draw_selected_curve_legend(isotopes::Tuple, loadcfgs::Tuple,
@@ -59,6 +59,10 @@ draw_selected_curve_legend((Symbol("162"), Symbol("163")), (:SCS, :DCS),
     "result_legend_162-163_SCS-DCS.pdf")
 draw_selected_curve_legend((Symbol("161"), Symbol("163")), (:SCS, :DCS),
     "result_legend_161-163_SCS-DCS.pdf")
+draw_selected_curve_legend((Symbol("163"), Symbol("164")), (:DCS, :SCS),
+    "result_legend_163-164_DCS-SCS.pdf")
+draw_selected_curve_legend((Symbol("163"),), (:SIS, :SDS),
+    "result_legend_163_SIS-SDS.pdf")
 draw_selected_curve_legend((Symbol("162"), Symbol("163")), (:DIS, :DDM),
     "result_legend_162-163_DIS-DDM.pdf")
 draw_selected_curve_legend((Symbol("163"), Symbol("164")), (:DIS, :DDM),
@@ -66,4 +70,4 @@ draw_selected_curve_legend((Symbol("163"), Symbol("164")), (:DIS, :DDM),
 draw_selected_curve_legend((Symbol("161"), Symbol("163")), (:DIS, :DDM),
     "result_legend_161-163_DIS-DDM.pdf")
 
-println("Saved seven selected-curve Result legends to $path_result_curve_legends")
+println("Saved nine selected-curve Result legends to $path_result_curve_legends")

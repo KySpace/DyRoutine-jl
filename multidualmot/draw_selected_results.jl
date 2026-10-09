@@ -10,6 +10,49 @@ num_max_num = 2e8
 # At 96 dpi, this gives a 178 mm wide exported figure.
 fig_width = round(Int, 178 / 25.4 * 96)
 fig_height = 240
+result_three_col_side_padding = 0
+result_three_col_cell_width = div(fig_width, 3)
+result_axis_decoration_width = 50 # reserve the widest default y-label and tick-label protrusion
+result_three_col_layout = (
+    axis_width=result_three_col_cell_width - result_axis_decoration_width,
+    yticklabelspace=nothing, # nothing keeps Makie's default
+    ylabelpadding=nothing,
+    xlabelpadding=nothing,
+    xticklabelspace=nothing,
+    column_width=result_three_col_cell_width, # full cell, including the decoration allowance
+    column_gap=0,
+)
+result_axis_frame_options = (
+    width=result_three_col_layout.axis_width,
+    height=round(Int, 34.66 / 25.4 * 96),
+    halign=:right,
+    valign=:center,
+)
+function result_axis_spacing_options(config::NamedTuple)
+    pairs = Pair{Symbol, Any}[]
+    for (config_key, axis_key) in ((:yticklabelspace, :yticklabelpad),
+        (:ylabelpadding, :ylabelpadding), (:xlabelpadding, :xlabelpadding),
+        (:xticklabelspace, :xticklabelpad))
+        value = getproperty(config, config_key)
+        isnothing(value) || push!(pairs, axis_key => value)
+    end
+    (; pairs...)
+end
+result_axis_spacing = result_axis_spacing_options(result_three_col_layout)
+function result_three_col_figure(height::Integer; rowgap=0)
+    fig = Figure(size=(fig_width, height), fontsize=8,
+        figure_padding=result_three_col_side_padding,
+        rowgap=rowgap, colgap=result_three_col_layout.column_gap)
+    colgap!(fig.layout, result_three_col_layout.column_gap)
+    fig
+end
+function set_result_three_col_widths!(fig::Figure)
+    for col in 1:3
+        colsize!(fig.layout, col, Fixed(
+            result_three_col_layout.column_width - result_axis_decoration_width))
+    end
+    fig
+end
 result_axis_font = "NewComputerModern Math"
 result_axis_font_options = (
     xlabelfont=result_axis_font,
@@ -17,14 +60,13 @@ result_axis_font_options = (
     xticklabelfont=result_axis_font,
     yticklabelfont=result_axis_font,
 )
-fig_result_loading = Figure(size=(fig_width, fig_height), fontsize=8,
-    figure_padding=4)
-fig_result_decay = Figure(size=(fig_width, fig_height), fontsize=8,
-    figure_padding=4)
+fig_result_loading = result_three_col_figure(fig_height)
+fig_result_decay = result_three_col_figure(fig_height)
 axis_options_ticks = (xticksize=10 / 3, yticksize=10 / 3,
     xminorticksize=2, yminorticksize=2,
     xlabelsize=7 / 0.75, ylabelsize=7 / 0.75,
     result_axis_font_options...)
+axis_options_ticks = merge(axis_options_ticks, result_axis_spacing)
 axis_options_numbers = merge(axis_options_ticks,
     (yticks=0:5:10, yminorticks=IntervalsBetween(5)))
 axis_options_loading = merge(axis_options_numbers,
@@ -42,7 +84,8 @@ panel_target(fig, col; panel=0.0, scale=:lin, axis_options,
     limits=limits_loading, mask_x=values -> trues(length(values)),
     fit=nothing, fit_points_only=false) =
     (fig=fig, slot=fig[1, col], panel, scale, axis_options, limits,
-        show_legend=false, mask_x, fit, fit_points_only, compact_spacing=false)
+        show_legend=false, mask_x, fit, fit_points_only,
+        frame_options=result_axis_frame_options, compact_spacing=false)
 
 # MOT loading 421, zero-bias panel. Use the alternative 0712 dataset.
 path_dataset = joinpath(path_root, "MOT loading 421")
@@ -175,9 +218,9 @@ plot_num_evol = dualmot_lifetime_plot_spec("CMOT";
     xlabel="CMOT holding time (s)",
     ylabel=rich("𝑁", subscript("𝑖"), superscript("CMOT")))
 axis_options_cmot_decay = merge(axis_options_decay,
-    (xticks=0:0.5:1, xminorticks=IntervalsBetween(4),
+    (xticks=0:0.2:1, xminorticks=IntervalsBetween(2),
         xminorticksvisible=true))
-limits_cmot_decay = (x=(0.0, 1.05), y=limits_decay.y)
+limits_cmot_decay = (x=(-0.025, 1.05), y=limits_decay.y)
 mask_cmot_fit = values -> (values .>= 0.0) .& (values .<= 1.0)
 plot_num_evol_target = panel_target(fig_result_decay, 2;
     scale=:log, axis_options=axis_options_cmot_decay, limits=limits_cmot_decay,
@@ -187,7 +230,7 @@ plot_num_evol_target = panel_target(fig_result_decay, 2;
 include(joinpath(@__DIR__, "anlz_num_evol.jl"))
 include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 
-# MOT decay, zero-bias panel; retain the inclusive 0–20 s fit range.
+# MOT decay, zero-bias panel; retain the inclusive 0–30 s fit range.
 path_dataset = joinpath(path_root, "MOT lifetime")
 runinfo = only(filter(info -> length(info.data) == 1 &&
     0.0 in only(info.data).vars.β_MOT,
@@ -201,11 +244,12 @@ plot_num_evol = dualmot_lifetime_plot_spec("MOT";
     xlabel="MOT holding time (s)",
     ylabel=rich("𝑁", subscript("𝑖"), superscript("CMOT")))
 axis_options_mot_decay = merge(axis_options_decay,
-    (xticks=0:20:60, xminorticks=IntervalsBetween(4),
+    (xticks=0:10:30, xminorticks=IntervalsBetween(4),
         xminorticksvisible=true))
-mask_mot_fit = values -> (values .>= 0.0) .& (values .<= 20.0)
+mask_mot_fit = values -> (values .>= 0.0) .& (values .<= 30.0)
 plot_num_evol_target = panel_target(fig_result_decay, 1;
-    scale=:log, axis_options=axis_options_mot_decay, limits=limits_decay,
+    scale=:log, axis_options=axis_options_mot_decay,
+    limits=(x=(-2.0, 32.0), y=limits_decay.y),
     mask_x=mask_mot_fit,
     fit=(kind=:decay, mode=:tau, selector=mask_mot_fit),
     fit_points_only=true)
@@ -238,6 +282,8 @@ plot_num_evol_target = panel_target(fig_result_decay, 3;
 include(joinpath(@__DIR__, "anlz_num_evol.jl"))
 include(joinpath(@__DIR__, "anlz_num_evol_output.jl"))
 
+set_result_three_col_widths!(fig_result_loading)
+set_result_three_col_widths!(fig_result_decay)
 mkpath(path_result)
 for (name, fig) in (("selected_162-164_loading", fig_result_loading),
     ("selected_162-164_decay", fig_result_decay)), format in ("svg", "png", "pdf")
