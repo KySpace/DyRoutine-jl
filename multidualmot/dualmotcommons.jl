@@ -549,8 +549,9 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
     num_fmt = fmt_from_flat(num_data_masked)
     sigmax_fmt = fmt_from_flat(sigmax_masked)
     sigmay_fmt = fmt_from_flat(sigmay_masked)
-    for key in keys(runinfo_data.selector)
+    indices_selected = map(name) do key
         axis_values = getproperty(vars, key)
+        key in keys(runinfo_data.selector) || return collect(eachindex(axis_values))
         predicate_spec = getproperty(runinfo_data.selector, key)
         kind = first(keys(predicate_spec))
         predicate = getproperty(predicate_spec, kind)
@@ -558,11 +559,17 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
         selected = map(value -> Base.invokelatest(predicate, value), selector_values)
         selected isa AbstractVector{Bool} && length(selected) == length(axis_values) ||
             throw(ArgumentError("$label selector for $key.$kind must return one Boolean per axis value"))
-        idx_axis = findfirst(==(key), name)
-        for fmt in (num_fmt, sigmax_fmt, sigmay_fmt), idx in eachindex(selected)
-            selected[idx] || (selectdim(fmt, idx_axis, idx) .= missing)
-        end
+        any(selected) || throw(ArgumentError("$label selector for $key.$kind selects no axis values"))
+        findall(selected)
     end
+    num_fmt = num_fmt[indices_selected...]
+    sigmax_fmt = sigmax_fmt[indices_selected...]
+    sigmay_fmt = sigmay_fmt[indices_selected...]
+    n_rep_acquired = n_rep
+    vars = NamedTuple{name}(map(name, indices_selected) do key, indices
+        key == :rep ? (1:length(indices)) : getproperty(vars, key)[indices]
+    end)
+    n_rep = length(vars.rep)
     idx_rep_axis = findfirst(==(:rep), name)
     num_stat = dropdims(mapslices(num_fmt; dims=idx_rep_axis) do values
         valid = collect(skipmissing(vec(values)))
@@ -581,7 +588,7 @@ function calc_num_evol_block(runinfo_data::NamedTuple;
     n_masked_num_low = count(!, mask_num_low)
     n_masked_num_high = count(!, mask_num_high)
     n_masked_total = count(!, mask_valid)
-    println("$label: $len_data samples / $n_variation variations = $n_rep repetitions; " *
+    println("$label: $len_data samples / $n_variation variations = $n_rep_acquired acquired repetitions, $n_rep selected; " *
         "$n_masked_total rejected ($n_masked_size by size: $n_masked_sigmax sigmax, " *
         "$n_masked_sigmay sigmay; $n_masked_num_low below zero, " *
         "$n_masked_num_high above $num_max_num)")
@@ -611,34 +618,47 @@ function combine_num_evol_blocks(blocks::AbstractVector{<:NamedTuple};
         end
     end
 
-    n_rep = sum(block.n_rep for block in blocks)
     values_combined = map(name) do key
-        key == :rep && return 1:n_rep
+        key == :rep && return 1:0
         values = unique(vcat((collect(getproperty(block.vars, key)) for block in blocks)...))
         key in (:t_load, :t_hold, :ib) && sort!(values)
         values
     end
     vars = NamedTuple{name}(values_combined)
-    size_combined = Tuple(length.(values_combined))
+    name_stat = Tuple(key for key in name if key != :rep)
+    n_rep_stat = zeros(Int, Tuple(length(getproperty(vars, key)) for key in name_stat))
+    placements = map(enumerate(blocks)) do (idx_block, block)
+        positions_stat = map(name_stat) do key
+            positions = indexin(getproperty(block.vars, key), getproperty(vars, key))
+            all(!isnothing, positions) ||
+                error("$label data[$idx_block]: failed to align $key values")
+            Int.(positions)
+        end
+        # Append only within the same condition; rejected shots still occupy slots.
+        map(CartesianIndices(Tuple(length.(positions_stat)))) do idx_condition
+            idx_output = CartesianIndex(map((positions, idx) -> positions[idx],
+                positions_stat, Tuple(idx_condition)))
+            pos_rep = n_rep_stat[idx_output]
+            n_rep_block = length(block.vars.rep)
+            n_rep_stat[idx_output] += n_rep_block
+            indices_input = NamedTuple{name_stat}(Tuple(idx_condition))
+            indices_output = NamedTuple{name_stat}(Tuple(idx_output))
+            source = map(key -> key == :rep ? Colon() : getproperty(indices_input, key), name)
+            target = map(key -> key == :rep ? ((pos_rep + 1):(pos_rep + n_rep_block)) :
+                getproperty(indices_output, key), name)
+            (; source, target)
+        end
+    end
+    n_rep = maximum(n_rep_stat; init=0)
+    vars = merge(vars, (; rep=1:n_rep))
+    size_combined = Tuple(length.(values(vars)))
     combine_fmt(field) = begin
         output = Array{Union{Missing, Float64}}(undef, size_combined)
         fill!(output, missing)
-        pos_rep = 0
-        for (idx_block, block) in enumerate(blocks)
-            indices = map(name) do key
-                if key == :rep
-                    (pos_rep + 1):(pos_rep + block.n_rep)
-                else
-                    values_axis = getproperty(block.vars, key)
-                    values_axis_combined = getproperty(vars, key)
-                    positions = indexin(values_axis, values_axis_combined)
-                    all(!isnothing, positions) ||
-                        error("$label data[$idx_block]: failed to align $key values")
-                    Int.(positions)
-                end
+        for (block, placements_block) in zip(blocks, placements)
+            for (; source, target) in placements_block
+                @views output[target...] .= getproperty(block, field)[source...]
             end
-            @views output[indices...] .= getproperty(block, field)
-            pos_rep += block.n_rep
         end
         output
     end

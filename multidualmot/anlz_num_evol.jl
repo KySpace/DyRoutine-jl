@@ -1,5 +1,5 @@
 # Included by a dataset-specific runner. Sources are aligned by their configured
-# variable values and appended along rep; opted-in scans may pad a truncated tail.
+# selected variable values, with rep normalized; opted-in scans may pad a truncated tail.
 blocks_num_evol = map(enumerate(runinfo.data)) do (idx_data, runinfo_data)
     calc_num_evol_block(runinfo_data;
         label="$tag_head data[$idx_data]",
@@ -48,7 +48,7 @@ end; dims=idx_rep_axis)
 name_stat = Tuple(key for key in name if key != :rep)
 n_rep == 1 && @warn "$tag_head: one repetition; sample standard deviations are undefined (NaN)"
 length(blocks_num_evol) > 1 && println("$tag_head: combined $(length(blocks_num_evol)) data blocks " *
-    "into $(size(num_fmt)) with $n_rep total repetition slots")
+    "into $(size(num_fmt)) with $n_rep repetition slots")
 
 key_x = plot_num_evol.key_x
 key_panel = plot_num_evol.key_panel

@@ -93,7 +93,11 @@ data:
     source: ["liferes 0827 run55.mat"]
 ```
 
-are each reshaped and analyzed independently first. Their multidimensional arrays are then aligned by variable values and appended along the repetition axis. Combinations absent from one block remain `missing`.
+are each reshaped, selected, and analyzed independently first. Their arrays are
+aligned by the union of retained variable values, with repetitions numbered
+from one within each block. Disjoint conditions share repetition slots;
+overlapping conditions append repetitions to preserve all measurements.
+Unavailable combinations remain `missing`.
 
 Use separate `data` entries when runs have different rectangular variable coverage.
 
@@ -155,8 +159,8 @@ The reader handles `cres` stored as:
 
 ### Selectors
 
-A `data` entry may include a `selector` sequence to mark complete repetitions
-or variable conditions as missing after its sources have been combined and
+A `data` entry may include a `selector` sequence to slice complete repetitions
+or variable conditions after its sources have been combined and
 reshaped, but before separate `data` entries are combined. Each selector maps
 one configured variable to either a `value` or `index` predicate. Predicates
 are Julia functions written as strings, for example:
@@ -168,8 +172,12 @@ selector:
 ```
 
 `value` receives the configured axis values; `index` receives their 1-based
-positions. Samples outside the predicate remain present as `missing`, keeping
-all acquisition axes aligned.
+positions before selection. Each selector slices the axis values and all three
+arrays (`num_fmt`, `sigmax_fmt`, `sigmay_fmt`) together. Excluded values do not
+enter the combined axis union. A selector that retains no values raises an
+error. Retained `rep` values are normalized to `1:n`: selecting `[3, 5, 8, 10]`
+produces four repetitions numbered `[1, 2, 3, 4]`. Individual rejected shots
+remain `missing` within those selected slots; they do not shorten the rep axis.
 
 Other shot rejection is determined from:
 
@@ -238,15 +246,25 @@ With fewer than two valid repetitions, the sample deviation is `NaN`.
 
 `combine_num_evol_blocks`:
 
-1. Verifies that every block has the same set of axes.
-2. Builds an ordered union of each non-repetition axis's values.
-3. Sums the repetition counts.
-4. Allocates a combined `Union{Missing,Float64}` array.
-5. Aligns each block by its configured variable values.
-6. Places each block into a separate range on the combined repetition axis.
-7. Leaves unavailable combinations as `missing`.
+1. Verifies that every block has the same axes in the same order.
+2. Builds a union of each selected non-repetition axis's values, preserving
+   first appearance except for sorted `t_load`, `t_hold`, and `ib` axes.
+3. Counts selected repetition slots at each non-repetition condition. Blocks
+   sharing that condition contribute consecutive slots in block order, including
+   rejected shots; disjoint conditions start at repetition one independently.
+4. Uses the largest per-condition count as the combined `rep = 1:n` axis.
+5. Allocates the minimal combined `Union{Missing,Float64}` rectangle and aligns
+   number and fitted-size arrays using the same placements.
+6. Leaves unavailable combinations and shorter repetition tails as `missing`.
 
-This permits, for example, one source to contain both t- and n-balanced panels while another contains only the n-balanced panel.
+For MOT loading 421 / 161–164, the zero-bias block has ten acquired repetitions
+and selects repetitions 3–5; the −0.9 block retains all four repetitions.
+The combined shape is `(4, 2, 15, 3, 2)`, with a missing fourth repetition at
+zero bias. For overlapping conditions such as 162–164 / `0728-pre-ODT`, both
+blocks' measurements are retained rather than overwritten.
+
+Run synthetic selector, alignment, and overlap regression checks with
+`julia --project=. multidualmot/test_num_evol_blocks.jl`.
 
 ## Shared number-evolution pipeline
 
