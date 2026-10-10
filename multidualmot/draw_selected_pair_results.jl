@@ -8,11 +8,12 @@ result_axis_font = "Times New Roman"
 result_pair_axis_width = round(Int, 75 / 25.4 * 96)
 result_pair_axis_height = round(Int, result_pair_axis_width / (320 / 149))
 result_pair_tick_labels = replace.(val_pair, "-" => "–")
-result_number_label() = rich(result_math_italic("N"),
-    subscript(result_math_italic("i")), superscript("CMOT"))
+result_number_label() = rich(result_math_glyph("𝑁"),
+    result_math_subscript("𝑖"), result_math_superscript("CMOT"))
 result_ratio_label(quantity::AbstractString, qualifier::AbstractString) =
-    rich(result_math_italic("R"),
-        subscript(result_math_italic("i," * quantity)), superscript(qualifier))
+    rich(result_math_glyph("𝑅"),
+        result_math_subscript("𝑖," * quantity),
+        result_math_superscript(qualifier))
 fig_selected_pair_comparison = Figure(size=(fig_width, 322), fontsize=8 / 0.75,
     figure_padding=1, rowgap=4, colgap=2)
 
@@ -61,7 +62,7 @@ ylims!(ax_result_421_numbers, 0.8e6, 1.2e8)
 
 # MOT loading 421 DDM/DIS number ratio, t-balanced.
 ax_result_421_ratio = result_pair_axis(fig_selected_pair_comparison,
-    (1, 2); ylabel=result_ratio_label("N", "load"),
+    (1, 2); ylabel=result_ratio_label("𝑁", "load"),
     yticks=0:0.2:1.2, ratio=true)
 draw_pair_spans!(ax_result_421_ratio)
 hlines!(ax_result_421_ratio, [0.9, 1.1]; color=RGBAf(0, 0, 0, 0.45),
@@ -90,7 +91,7 @@ ylims!(ax_result_421_ratio, 0.35, 1.25)
 
 # CMOT decay inverse-kappa ratio, with references at 1.0
 ax_result_cmot_ratio = result_pair_axis(fig_selected_pair_comparison,
-    (2, 1); ylabel=result_ratio_label("κ", "CMOT"), yticks=0:0.2:1.2,
+    (2, 1); ylabel=result_ratio_label("𝜅", "CMOT"), yticks=0:0.2:1.2,
     ratio=true)
 draw_pair_spans!(ax_result_cmot_ratio)
 hlines!(ax_result_cmot_ratio, [1.0]; color=RGBAf(0, 0, 0, 0.45),
@@ -120,7 +121,7 @@ ylims!(ax_result_cmot_ratio, 0.35, 1.25)
 
 # DDM/DIS ratio of ODT-to-CMOT efficiencies; x/z directions are offset slightly.
 ax_result_odt_efficiency = result_pair_axis(fig_selected_pair_comparison,
-    (2, 2); ylabel=result_ratio_label("η", "ODT"), yticks=0:0.2:1.2,
+    (2, 2); ylabel=result_ratio_label("𝜂", "ODT"), yticks=0:0.2:1.2,
     ratio=true)
 draw_pair_spans!(ax_result_odt_efficiency)
 hlines!(ax_result_odt_efficiency, [0.9, 1.1]; color=RGBAf(0, 0, 0, 0.45),

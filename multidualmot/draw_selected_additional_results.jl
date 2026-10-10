@@ -77,12 +77,12 @@ end
 fig_selected_number_ratios = Figure(size=(fig_width, 192), fontsize=8 / 0.75,
     figure_padding=1, colgap=2)
 ax_selected_626_ratio = selected_result_pair_axis(fig_selected_number_ratios,
-    (1, 1); ylabel=result_ratio_label("N", "626"), yticks=0:0.2:1.2,
+    (1, 1); ylabel=result_ratio_label("𝑁", "626"), yticks=0:0.2:1.2,
     ratio=true)
 plot_pair_ratio!(ax_selected_626_ratio, points_626, :DCS, :SCS;
     value_key=:num, error_key=:std, marker_loadcfg=:DCS)
 ax_selected_intr_ratio = selected_result_pair_axis(fig_selected_number_ratios,
-    (1, 2); ylabel=result_ratio_label("N", "intr"), yticks=0:0.2:1.2,
+    (1, 2); ylabel=result_ratio_label("𝑁", "intr"), yticks=0:0.2:1.2,
     ratio=true)
 plot_pair_ratio!(ax_selected_intr_ratio, points_421[:t_balanced], :DIS, :DCS;
     value_key=:num, error_key=:std, marker_loadcfg=:DIS)
@@ -94,7 +94,9 @@ fig_selected_mot_lifetime = Figure(size=(fig_width, 192), fontsize=8 / 0.75,
     figure_padding=1, colgap=2)
 points_selected_mot_lifetime = comparison_points_lifetime[:n_balanced].mot
 ax_selected_mot_lifetime = selected_result_pair_axis(fig_selected_mot_lifetime,
-    (1, 1); ylabel=rich(result_math_italic("τ"), subscript(result_math_italic("i")), superscript("MOT"), " (s)"),
+    (1, 1); ylabel=rich(result_math_glyph("𝜏"),
+        result_math_subscript("𝑖"), result_math_superscript("MOT"),
+        result_plain_text(" (s)")),
     log_y=true)
 draw_pair_spans!(ax_selected_mot_lifetime)
 ylims!(ax_selected_mot_lifetime, 0.9, 55)
@@ -116,7 +118,7 @@ for (idx_pair, pair) in enumerate(val_pair), loadcfg in (:DIS, :DDM),
     end
 end
 ax_selected_mot_lifetime_ratio = selected_result_pair_axis(fig_selected_mot_lifetime,
-    (1, 2); ylabel=result_ratio_label("τ", "MOT"), yticks=0:0.2:1.2,
+    (1, 2); ylabel=result_ratio_label("𝜏", "MOT"), yticks=0:0.2:1.2,
     ratio=true)
 plot_pair_ratio!(ax_selected_mot_lifetime_ratio, points_selected_mot_lifetime,
     :DDM, :DIS; value_key=:value, error_key=:std, marker_loadcfg=:DDM)
@@ -130,7 +132,7 @@ odt_efficiency_axis_width = result_pair_axis_width
 odt_efficiency_axis_height = round(Int, odt_efficiency_axis_width / (320 / 149))
 ax_selected_odt_efficiency = Axis(fig_selected_odt_efficiency[1, 1];
     xticks=(eachindex(val_pair), result_pair_tick_labels), xlabel="Isotope pair",
-    ylabel=result_math_italic("η"), yticks=0:0.1:0.5,
+    ylabel=result_math_glyph("𝜂"), yticks=0:0.1:0.5,
     xlabelsize=result_additional_axis_label_size,
     ylabelsize=result_additional_axis_label_size,
     xticklabelsize=result_additional_axis_ticklabel_size,
@@ -309,8 +311,9 @@ function plot_loading_result_panel!(ax::Axis, curve_data::NamedTuple,
     isnothing(y_limits) ?
         ylims!(ax, 0, max(1.0, 1.08 * maximum(plotted_values))) :
         ylims!(ax, y_limits...)
-    ax.ylabel = rich(result_math_italic("N"), subscript(result_math_italic("i")), superscript("CMOT"),
-        " (10", superscript("7"), ")")
+    ax.ylabel = rich(result_math_glyph("𝑁"), result_math_subscript("𝑖"),
+        result_math_superscript("CMOT"), result_plain_text(" (10"),
+        result_math_superscript("7"), result_plain_text(")"))
     ax
 end
 
@@ -420,8 +423,10 @@ for (idx_pair, pair) in enumerate(selected_cmot_pairs)
         minor_step:(floor(y_spec.limits[2] / minor_step) * minor_step))
     filter!(tick -> all(major -> !isapprox(tick, major), major_ticks), minor_ticks)
     ax = result_curve_axis(fig_selected_cmot_curves, (1, idx_pair);
-        ylabel=rich(result_math_italic("N"), subscript(result_math_italic("i")), superscript("CMOT"), " (10",
-            superscript(string(round(Int, log10(y_spec.scale)))), ")"),
+        ylabel=rich(result_math_glyph("𝑁"), result_math_subscript("𝑖"),
+            result_math_superscript("CMOT"), result_plain_text(" (10"),
+            result_math_superscript(string(round(Int, log10(y_spec.scale)))),
+            result_plain_text(")")),
         xlabel="CMOT holding time (s)", xlim=(-0.025, 1.05),
         xticks=0:0.2:1.0, xminorticks=0.1:0.2:0.9,
         yticks=major_ticks, yminorticks=minor_ticks)

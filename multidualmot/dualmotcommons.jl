@@ -113,12 +113,14 @@ function odt_bfield_values(current::AbstractVector{<:Real}, direction::Symbol)
     calibration.Q .* current .- calibration.B0
 end
 
-function odt_bfield_xlabel(direction::Symbol; italic_font=:italic)
+function odt_bfield_xlabel(direction::Symbol; math_font=:italic,
+    unit_font=nothing)
     haskey(ODT_BFIELD_CALIBRATION, direction) ||
         throw(ArgumentError("ODT B-field direction must be :x or :z, got $direction"))
-    direction_label = string(direction)
-    rich(rich("B"; font=italic_font),
-        subscript(rich(direction_label; font=italic_font)), " (G)")
+    direction_label = direction == :x ? "𝑥" : "𝑧"
+    unit_label = isnothing(unit_font) ? " (G)" : rich(" (G)"; font=unit_font)
+    rich(rich("𝐵"; font=math_font),
+        subscript(rich(direction_label; font=math_font)), unit_label)
 end
 
 function odt_bfield_axis_options(current::AbstractVector{<:Real}, direction::Symbol)
