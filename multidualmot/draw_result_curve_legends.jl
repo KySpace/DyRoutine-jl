@@ -2,8 +2,8 @@
 
 path_result_curve_legends = joinpath(path_root, "Result")
 mkpath(path_result_curve_legends)
-legend_curve_fontsize = 6 / 0.75
-legend_curve_font = "NewComputerModern Math"
+legend_curve_fontsize = 7 / 0.75
+legend_curve_font = "Times New Roman"
 legend_curve_x_start = 1.25
 legend_curve_x_step = 0.95
 legend_curve_y_step = 0.45

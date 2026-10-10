@@ -9,9 +9,9 @@ legend_versions = (
     (name="DIS-DDM", loadcfgs=(:DIS, :DDM)),
 )
 
-# CairoMakie uses 0.75 points per fontsize unit; 8 units gives 6 pt.
-legend_fontsize = 6 / 0.75
-result_legend_font = "NewComputerModern Math"
+# CairoMakie uses 0.75 points per fontsize unit.
+legend_fontsize = 7 / 0.75
+result_legend_font = "Times New Roman"
 pos_y_legend = (1.20, 0.45)
 pos_x_start_legend = 1.75
 pos_x_step_legend = (5.25 - 1.75) / 3

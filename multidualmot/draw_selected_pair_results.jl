@@ -2,29 +2,38 @@
 
 path_result_pairs = joinpath(path_root, "Result")
 mkpath(path_result_pairs)
-axis_label_fontsize = 7 / 0.75
-result_axis_font = "NewComputerModern Math"
-result_number_label() = rich("𝑁", subscript("𝑖"), superscript("CMOT"))
+axis_ticklabel_fontsize = 7 / 0.75
+axis_label_fontsize = 8 / 0.75
+result_axis_font = "Times New Roman"
+result_pair_axis_width = round(Int, 75 / 25.4 * 96)
+result_pair_axis_height = round(Int, result_pair_axis_width / (320 / 149))
+result_pair_tick_labels = replace.(val_pair, "-" => "–")
+result_number_label() = rich(result_math_italic("N"),
+    subscript(result_math_italic("i")), superscript("CMOT"))
 result_ratio_label(quantity::AbstractString, qualifier::AbstractString) =
-    rich("𝑅", subscript("𝑖," * quantity), superscript(qualifier))
-fig_selected_pair_comparison = Figure(size=(fig_width, 322), fontsize=8,
-    figure_padding=3, rowgap=4, colgap=6)
+    rich(result_math_italic("R"),
+        subscript(result_math_italic("i," * quantity)), superscript(qualifier))
+fig_selected_pair_comparison = Figure(size=(fig_width, 322), fontsize=8 / 0.75,
+    figure_padding=1, rowgap=4, colgap=2)
 
 function result_pair_axis(fig::Figure, slot; ylabel, yticks=nothing,
     log_y::Bool=false, ratio::Bool=false)
-    kwargs = dualmot_axis_kwargs(; log_y, text_size=8)
+    kwargs = dualmot_axis_kwargs(; log_y, text_size=axis_ticklabel_fontsize)
     isnothing(yticks) || (kwargs = merge(kwargs, (; yticks)))
     ratio && (kwargs = merge(kwargs, (; yminorticks=IntervalsBetween(2),
         yminorticksvisible=true)))
     kwargs = merge(kwargs, (; xlabelsize=axis_label_fontsize,
         ylabelsize=axis_label_fontsize,
+        xticklabelsize=axis_ticklabel_fontsize,
+        yticklabelsize=axis_ticklabel_fontsize,
         xlabelfont=result_axis_font,
         ylabelfont=result_axis_font,
         xticklabelfont=result_axis_font,
         yticklabelfont=result_axis_font))
-    Axis(fig[slot...]; xticks=(eachindex(val_pair), val_pair),
+    Axis(fig[slot...]; xticks=(eachindex(val_pair), result_pair_tick_labels),
         xlabel="Isotope pair", ylabel,
         yscale=log_y ? log10 : identity,
+        width=result_pair_axis_width, height=result_pair_axis_height,
         aspect=AxisAspect(320 / 149), kwargs...)
 end
 
@@ -52,7 +61,7 @@ ylims!(ax_result_421_numbers, 0.8e6, 1.2e8)
 
 # MOT loading 421 DDM/DIS number ratio, t-balanced.
 ax_result_421_ratio = result_pair_axis(fig_selected_pair_comparison,
-    (1, 2); ylabel=result_ratio_label("𝑁", "load"),
+    (1, 2); ylabel=result_ratio_label("N", "load"),
     yticks=0:0.2:1.2, ratio=true)
 draw_pair_spans!(ax_result_421_ratio)
 hlines!(ax_result_421_ratio, [0.9, 1.1]; color=RGBAf(0, 0, 0, 0.45),
@@ -81,7 +90,7 @@ ylims!(ax_result_421_ratio, 0.35, 1.25)
 
 # CMOT decay inverse-kappa ratio, with references at 1.0
 ax_result_cmot_ratio = result_pair_axis(fig_selected_pair_comparison,
-    (2, 1); ylabel=result_ratio_label("𝜅", "CMOT"), yticks=0:0.2:1.2,
+    (2, 1); ylabel=result_ratio_label("κ", "CMOT"), yticks=0:0.2:1.2,
     ratio=true)
 draw_pair_spans!(ax_result_cmot_ratio)
 hlines!(ax_result_cmot_ratio, [1.0]; color=RGBAf(0, 0, 0, 0.45),
@@ -111,7 +120,7 @@ ylims!(ax_result_cmot_ratio, 0.35, 1.25)
 
 # DDM/DIS ratio of ODT-to-CMOT efficiencies; x/z directions are offset slightly.
 ax_result_odt_efficiency = result_pair_axis(fig_selected_pair_comparison,
-    (2, 2); ylabel=result_ratio_label("𝜂", "ODT"), yticks=0:0.2:1.2,
+    (2, 2); ylabel=result_ratio_label("η", "ODT"), yticks=0:0.2:1.2,
     ratio=true)
 draw_pair_spans!(ax_result_odt_efficiency)
 hlines!(ax_result_odt_efficiency, [0.9, 1.1]; color=RGBAf(0, 0, 0, 0.45),

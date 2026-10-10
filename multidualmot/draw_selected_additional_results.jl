@@ -2,8 +2,9 @@
 
 path_result_additional = joinpath(path_root, "Result")
 mkpath(path_result_additional)
-result_additional_axis_font = "NewComputerModern Math"
-result_additional_axis_label_size = 7 / 0.75
+result_additional_axis_font = "Times New Roman"
+result_additional_axis_label_size = 8 / 0.75
+result_additional_axis_ticklabel_size = 7 / 0.75
 result_additional_formats = ("svg", "png", "pdf")
 
 function save_selected_result_formats(fig::Figure, basename::AbstractString)
@@ -17,18 +18,21 @@ end
 
 function selected_result_pair_axis(fig::Figure, slot; ylabel,
     log_y::Bool=false, ratio::Bool=false, yticks=nothing)
-    kwargs = dualmot_axis_kwargs(; log_y, text_size=8)
+    kwargs = dualmot_axis_kwargs(; log_y, text_size=result_additional_axis_ticklabel_size)
     isnothing(yticks) || (kwargs = merge(kwargs, (; yticks)))
     ratio && (kwargs = merge(kwargs, (; yminorticks=IntervalsBetween(2),
         yminorticksvisible=true)))
     kwargs = merge(kwargs, (; xlabelsize=result_additional_axis_label_size,
         ylabelsize=result_additional_axis_label_size,
+        xticklabelsize=result_additional_axis_ticklabel_size,
+        yticklabelsize=result_additional_axis_ticklabel_size,
         xlabelfont=result_additional_axis_font,
         ylabelfont=result_additional_axis_font,
         xticklabelfont=result_additional_axis_font,
         yticklabelfont=result_additional_axis_font))
-    Axis(fig[slot...]; xticks=(eachindex(val_pair), val_pair),
+    Axis(fig[slot...]; xticks=(eachindex(val_pair), result_pair_tick_labels),
         xlabel="Isotope pair", ylabel, yscale=log_y ? log10 : identity,
+        width=result_pair_axis_width, height=result_pair_axis_height,
         aspect=AxisAspect(320 / 149), kwargs...)
 end
 
@@ -70,15 +74,15 @@ function plot_pair_ratio!(ax::Axis, points_by_pair::AbstractDict,
 end
 
 # MOT 626 DCS/SCS ratio and 421 interrupt DIS/DCS ratio.
-fig_selected_number_ratios = Figure(size=(fig_width, 192), fontsize=8,
-    figure_padding=3, colgap=6)
+fig_selected_number_ratios = Figure(size=(fig_width, 192), fontsize=8 / 0.75,
+    figure_padding=1, colgap=2)
 ax_selected_626_ratio = selected_result_pair_axis(fig_selected_number_ratios,
-    (1, 1); ylabel=result_ratio_label("𝑁", "626"), yticks=0:0.2:1.2,
+    (1, 1); ylabel=result_ratio_label("N", "626"), yticks=0:0.2:1.2,
     ratio=true)
 plot_pair_ratio!(ax_selected_626_ratio, points_626, :DCS, :SCS;
     value_key=:num, error_key=:std, marker_loadcfg=:DCS)
 ax_selected_intr_ratio = selected_result_pair_axis(fig_selected_number_ratios,
-    (1, 2); ylabel=result_ratio_label("𝑁", "intr"), yticks=0:0.2:1.2,
+    (1, 2); ylabel=result_ratio_label("N", "intr"), yticks=0:0.2:1.2,
     ratio=true)
 plot_pair_ratio!(ax_selected_intr_ratio, points_421[:t_balanced], :DIS, :DCS;
     value_key=:num, error_key=:std, marker_loadcfg=:DIS)
@@ -86,11 +90,11 @@ save_selected_result_formats(fig_selected_number_ratios,
     "selected_isotope_pair_number_ratios")
 
 # N-balanced MOT lifetime values and DDM/DIS ratios.
-fig_selected_mot_lifetime = Figure(size=(fig_width, 192), fontsize=8,
-    figure_padding=3, colgap=6)
+fig_selected_mot_lifetime = Figure(size=(fig_width, 192), fontsize=8 / 0.75,
+    figure_padding=1, colgap=2)
 points_selected_mot_lifetime = comparison_points_lifetime[:n_balanced].mot
 ax_selected_mot_lifetime = selected_result_pair_axis(fig_selected_mot_lifetime,
-    (1, 1); ylabel=rich("𝜏", subscript("𝑖"), superscript("MOT"), " (s)"),
+    (1, 1); ylabel=rich(result_math_italic("τ"), subscript(result_math_italic("i")), superscript("MOT"), " (s)"),
     log_y=true)
 draw_pair_spans!(ax_selected_mot_lifetime)
 ylims!(ax_selected_mot_lifetime, 0.9, 55)
@@ -112,7 +116,7 @@ for (idx_pair, pair) in enumerate(val_pair), loadcfg in (:DIS, :DDM),
     end
 end
 ax_selected_mot_lifetime_ratio = selected_result_pair_axis(fig_selected_mot_lifetime,
-    (1, 2); ylabel=result_ratio_label("𝜏", "MOT"), yticks=0:0.2:1.2,
+    (1, 2); ylabel=result_ratio_label("τ", "MOT"), yticks=0:0.2:1.2,
     ratio=true)
 plot_pair_ratio!(ax_selected_mot_lifetime_ratio, points_selected_mot_lifetime,
     :DDM, :DIS; value_key=:value, error_key=:std, marker_loadcfg=:DDM)
@@ -120,22 +124,24 @@ save_selected_result_formats(fig_selected_mot_lifetime,
     "selected_isotope_pair_mot_lifetime")
 
 # ODT/CMOT atom-number efficiency, keeping the better of the x/z scans.
-fig_selected_odt_efficiency = Figure(size=(fig_width, 340), fontsize=8,
+fig_selected_odt_efficiency = Figure(size=(fig_width, 340), fontsize=8 / 0.75,
     figure_padding=4)
-odt_efficiency_axis_width = round(Int, 120 / 25.4 * 96)
+odt_efficiency_axis_width = result_pair_axis_width
 odt_efficiency_axis_height = round(Int, odt_efficiency_axis_width / (320 / 149))
 ax_selected_odt_efficiency = Axis(fig_selected_odt_efficiency[1, 1];
-    xticks=(eachindex(val_pair), val_pair), xlabel="Isotope pair",
-    ylabel=rich("𝜂"), yticks=0:0.1:0.5,
+    xticks=(eachindex(val_pair), result_pair_tick_labels), xlabel="Isotope pair",
+    ylabel=result_math_italic("η"), yticks=0:0.1:0.5,
     xlabelsize=result_additional_axis_label_size,
     ylabelsize=result_additional_axis_label_size,
+    xticklabelsize=result_additional_axis_ticklabel_size,
+    yticklabelsize=result_additional_axis_ticklabel_size,
     xlabelfont=result_additional_axis_font,
     ylabelfont=result_additional_axis_font,
     xticklabelfont=result_additional_axis_font,
     yticklabelfont=result_additional_axis_font,
     width=odt_efficiency_axis_width, height=odt_efficiency_axis_height,
     halign=:center, valign=:center, tellwidth=false, tellheight=false,
-    dualmot_axis_kwargs(; text_size=8)...)
+    dualmot_axis_kwargs(; text_size=result_additional_axis_ticklabel_size)...)
 draw_pair_spans!(ax_selected_odt_efficiency)
 for (idx_pair, pair) in enumerate(val_pair), loadcfg in (:DDM, :DIS),
     istp in Symbol.(split(pair, "-"))
@@ -263,9 +269,11 @@ end
 function result_curve_axis(fig::Figure, slot; ylabel, log_y=false,
     xlabel, xlim, xticks, xminorticks=nothing, yticks=nothing,
     yminorticks=nothing)
-    options = dualmot_axis_kwargs(; log_y, text_size=8)
+    options = dualmot_axis_kwargs(; log_y, text_size=result_additional_axis_ticklabel_size)
     options = merge(options, (; xlabelsize=result_additional_axis_label_size,
         ylabelsize=result_additional_axis_label_size,
+        xticklabelsize=result_additional_axis_ticklabel_size,
+        yticklabelsize=result_additional_axis_ticklabel_size,
         xlabelfont=result_additional_axis_font,
         ylabelfont=result_additional_axis_font,
         xticklabelfont=result_additional_axis_font,
@@ -301,7 +309,7 @@ function plot_loading_result_panel!(ax::Axis, curve_data::NamedTuple,
     isnothing(y_limits) ?
         ylims!(ax, 0, max(1.0, 1.08 * maximum(plotted_values))) :
         ylims!(ax, y_limits...)
-    ax.ylabel = rich("𝑁", subscript("𝑖"), superscript("CMOT"),
+    ax.ylabel = rich(result_math_italic("N"), subscript(result_math_italic("i")), superscript("CMOT"),
         " (10", superscript("7"), ")")
     ax
 end
@@ -412,7 +420,7 @@ for (idx_pair, pair) in enumerate(selected_cmot_pairs)
         minor_step:(floor(y_spec.limits[2] / minor_step) * minor_step))
     filter!(tick -> all(major -> !isapprox(tick, major), major_ticks), minor_ticks)
     ax = result_curve_axis(fig_selected_cmot_curves, (1, idx_pair);
-        ylabel=rich("𝑁", subscript("𝑖"), superscript("CMOT"), " (10",
+        ylabel=rich(result_math_italic("N"), subscript(result_math_italic("i")), superscript("CMOT"), " (10",
             superscript(string(round(Int, log10(y_spec.scale)))), ")"),
         xlabel="CMOT holding time (s)", xlim=(-0.025, 1.05),
         xticks=0:0.2:1.0, xminorticks=0.1:0.2:0.9,
