@@ -4,15 +4,19 @@ reps_gaussian = vec(n_rep_stat)
 reps_min_gaussian, reps_max_gaussian = extrema(reps_gaussian)
 reps_used_gaussian = reps_min_gaussian == reps_max_gaussian ?
     string(reps_min_gaussian) : "$(reps_min_gaussian)–$(reps_max_gaussian)"
-fig_gaussian = Figure(size=plot_num_evol.size, fontsize=plot_num_evol.fontsize,
+fig_gaussian = Figure(size=plot_num_evol.fit_size, fontsize=plot_num_evol.fit_fontsize,
     figure_padding=1)
+labels_fit = fig_gaussian[1, 2] = GridLayout()
+axis_size = (; width=plot_num_evol.frame_size[1],
+    height=plot_num_evol.frame_size[2])
 axis_options_gaussian = merge(
-    dualmot_axis_kwargs(; text_size=plot_num_evol.fontsize),
+    dualmot_axis_kwargs(; text_size=plot_num_evol.fit_fontsize),
     plot_num_evol.axis_options)
 ax_gaussian = Axis(fig_gaussian[1, 1];
     xlabel=plot_num_evol.xlabel(nothing),
     ylabel=rich(plot_num_evol.ylabel, " (10", superscript("7"), ")"),
     title=plot_num_evol.title(tag_head, nothing, reps_used_gaussian),
+    axis_size...,
     axis_options_gaussian...)
 scale_num_gaussian = plot_num_evol.scale_num_linear
 records_gaussian = NamedTuple[]
@@ -57,22 +61,19 @@ for condition in conditions_curve
             style.marker_options..., marker=style.marker, label)
     end
 
-    baseline, amplitude, center, sigma = fit_result.params
-    err_baseline, err_amplitude, err_center, err_sigma = fit_result.errors
+    peak, center, sigma = fit_result.params
     source = figure_xlsx_source(runinfo, condition)
     record = (
         pair=runinfo.folder,
         tag=runinfo.tag,
         loadcfg=condition.loadcfg,
         istp=condition.istp,
-        baseline,
-        std_baseline=err_baseline,
-        amplitude,
-        std_amplitude=err_amplitude,
+        peak,
+        std_peak=fit_result.errors[1],
         center_G=center,
-        std_center_G=err_center,
+        std_center_G=fit_result.errors[2],
         sigma_G=sigma,
-        std_sigma_G=err_sigma,
+        std_sigma_G=fit_result.errors[3],
         at_bound=fit_result.at_bound,
         n_points=fit_result.n_points,
         residual_sse=fit_result.residual_sse,
@@ -81,14 +82,26 @@ for condition in conditions_curve
     )
     push!(records_gaussian, record)
     push!(rows_gaussian, Any[record.tag, string(record.loadcfg), string(record.istp),
-        record.baseline, record.std_baseline, record.amplitude, record.std_amplitude,
+        record.peak, record.std_peak,
         record.center_G, record.std_center_G, record.sigma_G, record.std_sigma_G,
         record.at_bound, record.n_points, record.residual_sse, record.residual_rms,
         record.source])
+    number_unit = plot_num_evol.field_num == "pixsum" ? "pixsum" : "atom"
+    label_fit = label_num_gaussian(fit_result; number_unit)
+    println("$tag_head / $label: ", replace(label_fit, '\n' => "; "))
+    sse_label = @sprintf("SSE = %.3g %s²", fit_result.residual_sse, number_unit)
+    text_fit = "$label\n$label_fit\n$sse_label"
+    Label(labels_fit[length(records_gaussian), 1], text_fit;
+        color=style.color, fontsize=plot_num_evol.fit_fontsize,
+        halign=:left, justification=:left)
 end
 
+Label(labels_fit[length(records_gaussian) + 1, 1],
+    "± approximate 1σ fit errors\n* parameter at bound; errors are local";
+    fontsize=7, halign=:left, justification=:left)
 axislegend(ax_gaussian; position=plot_num_evol.legend_position,
     DUALMOT_LEGEND_OPTIONS...)
+resize_to_layout!(fig_gaussian)
 filename_gaussian = replace(plot_num_evol.filename(:lin, nothing),
     "].[lin]." => "].[fit.lin].")
 for format in plot_num_evol.formats
@@ -97,8 +110,8 @@ for format in plot_num_evol.formats
         save_options...)
 end
 
-headers_gaussian = Any["tag", "loadcfg", "istp", "baseline", "std baseline",
-    "amplitude", "std amplitude", "center (G)", "std center (G)", "sigma (G)",
+headers_gaussian = Any["tag", "loadcfg", "istp", "peak", "std peak",
+    "center (G)", "std center (G)", "sigma (G)",
     "std sigma (G)", "at bound", "n points", "residual SSE", "residual RMS", "source"]
 matrix_gaussian = Matrix{Any}(undef, length(rows_gaussian) + 1, length(headers_gaussian))
 matrix_gaussian[1, :] .= headers_gaussian

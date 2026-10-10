@@ -9,9 +9,16 @@ result_additional_formats = ("svg", "png", "pdf")
 
 function save_selected_result_formats(fig::Figure, basename::AbstractString)
     for format in result_additional_formats
+        path = joinpath(path_result_additional, "$basename.$format")
         save_options = format == "png" ? (; px_per_unit=4) : (;)
-        save(joinpath(path_result_additional, "$basename.$format"), fig;
-            save_options...)
+        try
+            save(path, fig; save_options...)
+        catch err
+            message = lowercase(sprint(showerror, err))
+            (err isa Base.IOError || err isa Base.SystemError) &&
+                occursin("permission denied", message) || rethrow()
+            @warn "Could not replace locked Result figure; continuing with other exports" path exception=err
+        end
     end
     fig
 end
@@ -125,7 +132,7 @@ plot_pair_ratio!(ax_selected_mot_lifetime_ratio, points_selected_mot_lifetime,
 save_selected_result_formats(fig_selected_mot_lifetime,
     "selected_isotope_pair_mot_lifetime")
 
-# ODT/CMOT atom-number efficiency, keeping the better of the x/z scans.
+# ODT/CMOT atom-number efficiency, using the cached z-scan Gaussian peak.
 fig_selected_odt_efficiency = Figure(size=(fig_width, 340), fontsize=8 / 0.75,
     figure_padding=4)
 odt_efficiency_axis_width = result_pair_axis_width
@@ -150,15 +157,10 @@ for (idx_pair, pair) in enumerate(val_pair), loadcfg in (:DDM, :DIS),
     mot_point = get(points_cmot[pair], (loadcfg, istp), nothing)
     isnothing(mot_point) && continue
     mot_point.num > 0 && isfinite(mot_point.num) || continue
-    direction_points = filter(point -> !isnothing(point) &&
-        isfinite(point.num) && point.num >= 0, [
-        get(points_odt[pair], (direction, loadcfg, istp), nothing)
-        for direction in (:x, :z)])
-    isempty(direction_points) && continue
-    ratios = [point.num / mot_point.num for point in direction_points]
-    idx_best = findmax(ratios)[2]
-    odt_point = direction_points[idx_best]
-    value = ratios[idx_best]
+    odt_point = odt_fit_point(pair, loadcfg, istp)
+    isnothing(odt_point) && continue
+    isfinite(odt_point.num) && odt_point.num >= 0 || continue
+    value = odt_point.num / mot_point.num
     isfinite(value) || continue
     error = isfinite(odt_point.std) && isfinite(mot_point.std) ?
         sqrt((odt_point.std / mot_point.num)^2 +
@@ -176,7 +178,43 @@ for (idx_pair, pair) in enumerate(val_pair), loadcfg in (:DDM, :DIS),
 end
 ylims!(ax_selected_odt_efficiency, 0, 0.56)
 save_selected_result_formats(fig_selected_odt_efficiency,
-    "selected_isotope_pair_odt_efficiency")
+    "selected_isotope_pair_odt_cmot_efficiency")
+
+# Compare each z-scan Gaussian at the midpoint between the two isotope peaks.
+fig_selected_odt_zfit_midpoint = Figure(size=(fig_width, 340),
+    fontsize=8 / 0.75, figure_padding=4)
+ax_selected_odt_zfit_midpoint = selected_result_pair_axis(
+    fig_selected_odt_zfit_midpoint, (1, 1);
+    ylabel=rich(result_math_glyph("𝑁"), result_math_subscript("𝑖"),
+        result_math_superscript("fit"), result_plain_text(" (midpoint) / peak")),
+    ratio=true, yticks=0:0.2:1.2)
+draw_pair_spans!(ax_selected_odt_zfit_midpoint)
+for (idx_pair, pair) in enumerate(val_pair), loadcfg in (:DIS, :DDM)
+    isotopes = Symbol.(split(pair, "-"))
+    direction = odt_pair_fit_direction(pair, loadcfg)
+    isnothing(direction) && continue
+    records = [odt_fit_point(pair, loadcfg, istp; direction) for istp in isotopes]
+    any(isnothing, records) && continue
+    all(record -> isfinite(record.center_G), records) || continue
+    midpoint_G = sum(record.center_G for record in records) / length(records)
+    for (istp, record) in zip(isotopes, records)
+        peak = record.num
+        sigma = record.sigma_G
+        isfinite(peak) && peak > 0 && isfinite(sigma) && sigma > 0 || continue
+        fit_value = model_num_gaussian([midpoint_G],
+            [peak, record.center_G, sigma])[1]
+        value = fit_value / peak
+        isfinite(value) || continue
+        style = dualmot_curve_style((; loadcfg, istp))
+        x = pair_istp_position(idx_pair, pair, istp) +
+            (loadcfg == :DDM ? -0.025 : 0.025)
+        scatter!(ax_selected_odt_zfit_midpoint, [x], [value];
+            marker_style(style; markersize=6)...)
+    end
+end
+ylims!(ax_selected_odt_zfit_midpoint, 0, 1.25)
+save_selected_result_formats(fig_selected_odt_zfit_midpoint,
+    "selected_isotope_pair_odt_zfit_midpoint")
 
 function collect_result_curves(runinfo::NamedTuple, x_key::Symbol;
     bias::Union{Nothing,Real}=nothing,

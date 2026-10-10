@@ -303,6 +303,14 @@ set_result_three_col_widths!(fig_result_decay)
 mkpath(path_result)
 for (name, fig) in (("selected_162-164_loading", fig_result_loading),
     ("selected_162-164_decay", fig_result_decay)), format in ("svg", "png", "pdf")
-    save(joinpath(path_result, "$name.$format"), fig)
+    path = joinpath(path_result, "$name.$format")
+    try
+        save(path, fig)
+    catch err
+        message = lowercase(sprint(showerror, err))
+        (err isa Base.IOError || err isa Base.SystemError) &&
+            occursin("permission denied", message) || rethrow()
+        @warn "Could not replace locked Result figure; continuing with other exports" path exception=err
+    end
 end
 println("Saved selected 162-164 figures to $path_result")

@@ -127,10 +127,8 @@ draw_pair_spans!(ax_result_odt_efficiency)
 hlines!(ax_result_odt_efficiency, [0.9, 1.1]; color=RGBAf(0, 0, 0, 0.45),
     linestyle=:dash, linewidth=0.5)
 for (idx_pair, pair) in enumerate(val_pair), istp in Symbol.(split(pair, "-"))
-    direction_results = filter(result -> !isnothing(result), [
-        odt_cmot_efficiency_ratio(direction, pair, istp) for direction in (:x, :z)])
-    isempty(direction_results) && continue
-    result = direction_results[argmax(getproperty.(direction_results, :value))]
+    result = odt_cmot_fit_efficiency_ratio(pair, istp)
+    isnothing(result) && continue
     style = dualmot_curve_style((; loadcfg=:DDM, istp))
     options = merge(marker_style(style; markersize=6), (; marker=:hexagon))
     x = pair_istp_position(idx_pair, pair, istp)
@@ -144,8 +142,15 @@ end
 ylims!(ax_result_odt_efficiency, 0.35, 1.25)
 
 for format in ("svg", "png", "pdf")
+    path = joinpath(path_result_pairs, "selected_isotope_pair_comparison.$format")
     save_options = format == "png" ? (; px_per_unit=4) : (;)
-    save(joinpath(path_result_pairs, "selected_isotope_pair_comparison.$format"),
-        fig_selected_pair_comparison; save_options...)
+    try
+        save(path, fig_selected_pair_comparison; save_options...)
+    catch err
+        message = lowercase(sprint(showerror, err))
+        (err isa Base.IOError || err isa Base.SystemError) &&
+            occursin("permission denied", message) || rethrow()
+        @warn "Could not replace locked Result figure; continuing with other exports" path exception=err
+    end
 end
 println("Saved selected isotope-pair comparison figure to $path_result_pairs")

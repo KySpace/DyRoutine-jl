@@ -61,8 +61,11 @@ function draw_marker_point!(ax, x, y, err; marker_options, label=nothing,
     nothing
 end
 
-odt_runinfos = Dict(pair => read_num_evol_runinfos(path_root_odt, pair;
-    var_specs=DUALMOT_ODT_BFIELD_VAR_SPECS, validate_vars=validate_odt_bfield_vars) for pair in val_pair)
+results_only = get(ENV, "DUALMOT_RESULTS_ONLY", "false") == "true"
+odt_runinfos = results_only ? Dict(pair => NamedTuple[] for pair in val_pair) :
+    Dict(pair => read_num_evol_runinfos(path_root_odt, pair;
+        var_specs=DUALMOT_ODT_BFIELD_VAR_SPECS,
+        validate_vars=validate_odt_bfield_vars) for pair in val_pair)
 mot_runinfos = Dict(pair => read_num_evol_runinfos(path_root_421, pair;
     var_specs=DUALMOT_LOADING_VAR_SPECS, validate_vars=validate_dualmot_vars) for pair in val_pair)
 source_lines = readlines(joinpath(path_root_odt, "source table.txt"))
@@ -70,6 +73,50 @@ source_lines = readlines(joinpath(path_root_odt, "source table.txt"))
 points_odt = Dict{String, Dict{Tuple{Symbol,Symbol,Symbol},NamedTuple}}()
 points_cmot = Dict{String, Dict{Tuple{Symbol,Symbol},NamedTuple}}()
 conditions = Dict{String,NamedTuple}()
+
+# Result η figures use cached z-scan Gaussian fits only.
+# The fit peak is a direct parameter; no ODT scans are refit in this Results stage.
+path_fit_results_odt = joinpath(path_root_odt, "Fit results")
+fit_paths_odt = filter(path -> isfile(path) &&
+    startswith(basename(path), "[ODT.BField.gaussian.fit].") && endswith(path, ".jld2"),
+    readdir(path_fit_results_odt; join=true))
+isempty(fit_paths_odt) && throw(ArgumentError(
+    "no cached ODT Gaussian-fit JLD2 files in $path_fit_results_odt"))
+path_fit_odt = sort(fit_paths_odt; by=mtime, rev=true)[1]
+payload_fit_odt = JLD2.load(path_fit_odt)
+get(payload_fit_odt, "schema_version", nothing) in (1, 2) ||
+    throw(ArgumentError("unsupported ODT Gaussian-fit schema in $path_fit_odt"))
+records_fit_odt = get(payload_fit_odt, "records", nothing)
+records_fit_odt isa AbstractVector || throw(ArgumentError(
+    "missing ODT Gaussian-fit records in $path_fit_odt"))
+odt_fit_records = Dict{Tuple{String,Symbol,Symbol,Symbol},NamedTuple}()
+for record in records_fit_odt
+    direction = Symbol(record.tag)
+    direction in (:x, :z) || continue
+    key = (String(record.pair), direction, Symbol(record.loadcfg), Symbol(record.istp))
+    haskey(odt_fit_records, key) && throw(ArgumentError(
+        "duplicate cached $direction-scan Gaussian fit for $key in $path_fit_odt"))
+    odt_fit_records[key] = record
+end
+
+function odt_fit_point(pair::AbstractString, loadcfg::Symbol, istp::Symbol;
+    direction::Symbol=:z)
+    direction == :z || throw(ArgumentError("Result η fits must use z scans, got $direction"))
+    record = get(odt_fit_records, (String(pair), :z, loadcfg, istp), nothing)
+    isnothing(record) && return nothing
+    peak = hasproperty(record, :peak) ? record.peak : record.baseline + record.amplitude
+    peak_std = hasproperty(record, :std_peak) ? record.std_peak : record.std_amplitude
+    (; num=peak, std=peak_std, center_G=record.center_G,
+        std_center_G=record.std_center_G, sigma_G=record.sigma_G,
+        direction=Symbol(record.tag), source=record.source)
+end
+
+function odt_pair_fit_direction(pair::AbstractString, loadcfg::Symbol)
+    isotopes = Symbol.(split(pair, "-"))
+    all(istp -> haskey(odt_fit_records,
+        (String(pair), :z, loadcfg, istp)), isotopes) ? :z : nothing
+end
+
 for pair in val_pair
     source_pair_lines = filter(line -> startswith(strip(line), pair * " "), source_lines)
     isempty(source_pair_lines) && throw(ArgumentError("$pair: no source table rows"))
@@ -188,6 +235,22 @@ function odt_cmot_efficiency_ratio(direction::Symbol, pair::AbstractString,
     istp::Symbol)
     odt_ddm = get(points_odt[pair], (direction, :DDM, istp), nothing)
     odt_dis = get(points_odt[pair], (direction, :DIS, istp), nothing)
+    cmot_ddm = points_cmot[pair][(:DDM, istp)]
+    cmot_dis = points_cmot[pair][(:DIS, istp)]
+    all(point -> !isnothing(point) && isfinite(point.num) && point.num > 0,
+        (odt_ddm, odt_dis, cmot_ddm, cmot_dis)) || return nothing
+    value = (odt_ddm.num / cmot_ddm.num) / (odt_dis.num / cmot_dis.num)
+    relvar = sum((point.std / point.num)^2 for point in
+        (odt_ddm, cmot_ddm, odt_dis, cmot_dis) if isfinite(point.std))
+    n_valid_errors = count(point -> isfinite(point.std),
+        (odt_ddm, cmot_ddm, odt_dis, cmot_dis))
+    error = n_valid_errors == 4 ? value * sqrt(relvar) : NaN
+    (; value, error, odt_ddm, cmot_ddm, odt_dis, cmot_dis)
+end
+
+function odt_cmot_fit_efficiency_ratio(pair::AbstractString, istp::Symbol)
+    odt_ddm = odt_fit_point(pair, :DDM, istp)
+    odt_dis = odt_fit_point(pair, :DIS, istp)
     cmot_ddm = points_cmot[pair][(:DDM, istp)]
     cmot_dis = points_cmot[pair][(:DIS, istp)]
     all(point -> !isnothing(point) && isfinite(point.num) && point.num > 0,

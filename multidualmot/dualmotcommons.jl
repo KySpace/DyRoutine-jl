@@ -956,13 +956,13 @@ function fit_num_decay(t::AbstractVector{<:Real}, nums::AbstractVector{<:Real};
         mask_selected=collect(mask_selected))
 end
 
-"""Gaussian profile with a constant baseline and positive amplitude."""
+"""Baseline-free Gaussian profile with a positive peak number."""
 function model_num_gaussian(x::AbstractVector, p::AbstractVector)
-    baseline, amplitude, center, sigma = p
-    @. baseline + amplitude * exp(-0.5 * ((x - center) / sigma)^2)
+    peak, center, sigma = p
+    @. peak * exp(-0.5 * ((x - center) / sigma)^2)
 end
 
-"""Bounded, unweighted Gaussian fit, scaled internally for stable ODT scans."""
+"""Bounded, unweighted baseline-free Gaussian fit, scaled internally for ODT scans."""
 function fit_num_gaussian(x::AbstractVector{<:Real}, nums::AbstractVector{<:Real})
     length(x) == length(nums) || throw(DimensionMismatch(
         "Gaussian-fit x and number lengths differ"))
@@ -978,15 +978,13 @@ function fit_num_gaussian(x::AbstractVector{<:Real}, nums::AbstractVector{<:Real
     y_scale = max(maximum(ys), 1.0)
     x_scaled = (xs .- x_center) ./ x_scale
     y_scaled = ys ./ y_scale
-    lower = [0.0, 0.0, -0.5, 0.01]
-    upper = [1.5, 2.0, 0.5, 1.0]
+    lower = [0.0, -0.5, 0.01]
+    upper = [2.0, 0.5, 1.0]
     peak_x = x_scaled[argmax(y_scaled)]
-    baseline_start = clamp(minimum(y_scaled), lower[1], upper[1])
-    amplitude_start = clamp(maximum(y_scaled) - baseline_start, 1e-6, upper[2])
+    peak_start = clamp(maximum(y_scaled), 1e-6, upper[1])
     fitted = []
     for center_shift in (0.0, -0.05, 0.05), sigma_start in (0.12, 0.2, 0.32, 0.5)
-        start = clamp.([baseline_start, amplitude_start,
-            peak_x + center_shift, sigma_start], lower, upper)
+        start = clamp.([peak_start, peak_x + center_shift, sigma_start], lower, upper)
         try
             result = curve_fit((values, p) -> model_num_gaussian(values, p),
                 x_scaled, y_scaled, start; lower, upper, maxIter=1000)
@@ -997,16 +995,16 @@ function fit_num_gaussian(x::AbstractVector{<:Real}, nums::AbstractVector{<:Real
     isempty(fitted) && error("Gaussian fit did not converge for any initial guess")
     fit = fitted[argmin([sum(abs2, result.resid) for result in fitted])]
     params_scaled = fit.param
-    params = [params_scaled[1] * y_scale, params_scaled[2] * y_scale,
-        x_center + params_scaled[3] * x_scale, params_scaled[4] * x_scale]
+    params = [params_scaled[1] * y_scale,
+        x_center + params_scaled[2] * x_scale, params_scaled[3] * x_scale]
     errors_scaled = try
         stderror(fit)
     catch err
         @warn "Gaussian parameter covariance unavailable" exception=err
         fill(NaN, length(params_scaled))
     end
-    errors = [errors_scaled[1] * y_scale, errors_scaled[2] * y_scale,
-        errors_scaled[3] * x_scale, errors_scaled[4] * x_scale]
+    errors = [errors_scaled[1] * y_scale,
+        errors_scaled[2] * x_scale, errors_scaled[3] * x_scale]
     at_bound = any(isapprox.(params_scaled, lower; atol=1e-7, rtol=1e-4) .|
         isapprox.(params_scaled, upper; atol=1e-7, rtol=1e-4))
     residual_sse = sum(abs2, ys .- model_num_gaussian(xs, params))
@@ -1025,7 +1023,7 @@ function save_odt_gaussian_results(path_dataset::AbstractString,
         lpad(string(Dates.millisecond(created_at)), 3, '0')
     path = joinpath(path_results, "[ODT.BField.gaussian.fit].[$stamp].jld2")
     JLD2.jldsave(path;
-        schema_version=1,
+        schema_version=2,
         dataset="ODT BField",
         fit_mode=:gaussian,
         created_at=string(created_at),
@@ -1080,6 +1078,14 @@ function label_num_decay(result; number_unit::AbstractString="atom")
         label_n0, format_fit_scientific(p[2], e[2]), number_unit, suffix)
     @sprintf("N₀ = %s\nτ = (%.3g ± %.2g) s%s",
         label_n0, p[2], e[2], suffix)
+end
+
+function label_num_gaussian(result; number_unit::AbstractString="atom")
+    p, e = result.params, result.errors
+    suffix = result.at_bound ? " *" : ""
+    @sprintf("N_peak = %s %s\nB₀ = (%.4f ± %.2g) G\nσ = (%.3g ± %.2g) G%s",
+        format_fit_scientific(p[1], e[1]), number_unit,
+        p[2], e[2], p[3], e[3], suffix)
 end
 
 function save_num_decay_results(path_root::AbstractString, dataset::AbstractString,
