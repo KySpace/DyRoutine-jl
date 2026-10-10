@@ -136,7 +136,7 @@ save_selected_result_formats(fig_selected_mot_lifetime,
 fig_selected_odt_efficiency = Figure(size=(fig_width, 340), fontsize=8 / 0.75,
     figure_padding=4)
 odt_efficiency_axis_width = result_pair_axis_width
-odt_efficiency_axis_height = round(Int, odt_efficiency_axis_width / (320 / 149))
+odt_efficiency_axis_height = result_pair_axis_height
 ax_selected_odt_efficiency = Axis(fig_selected_odt_efficiency[1, 1];
     xticks=(eachindex(val_pair), result_pair_tick_labels), xlabel="Isotope pair",
     ylabel=result_math_glyph("𝜂"), yticks=0:0.1:0.5,

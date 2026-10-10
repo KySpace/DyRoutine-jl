@@ -5,8 +5,8 @@ mkpath(path_result_pairs)
 axis_ticklabel_fontsize = 7 / 0.75
 axis_label_fontsize = 8 / 0.75
 result_axis_font = "Times New Roman"
-result_pair_axis_width = round(Int, 75 / 25.4 * 96)
-result_pair_axis_height = round(Int, result_pair_axis_width / (320 / 149))
+result_pair_axis_width = 75 / 25.4 * 96
+result_pair_axis_height = result_pair_axis_width * 149 / 320
 result_pair_tick_labels = replace.(val_pair, "-" => "–")
 result_number_label() = rich(result_math_glyph("𝑁"),
     result_math_subscript("𝑖"), result_math_superscript("CMOT"))
@@ -14,7 +14,7 @@ result_ratio_label(quantity::AbstractString, qualifier::AbstractString) =
     rich(result_math_glyph("𝑅"),
         result_math_subscript("𝑖," * quantity),
         result_math_superscript(qualifier))
-fig_selected_pair_comparison = Figure(size=(fig_width, 322), fontsize=8 / 0.75,
+fig_selected_pair_comparison = Figure(size=(fig_width, 370), fontsize=8 / 0.75,
     figure_padding=1, rowgap=4, colgap=2)
 
 function result_pair_axis(fig::Figure, slot; ylabel, yticks=nothing,
@@ -35,7 +35,7 @@ function result_pair_axis(fig::Figure, slot; ylabel, yticks=nothing,
         xlabel="Isotope pair", ylabel,
         yscale=log_y ? log10 : identity,
         width=result_pair_axis_width, height=result_pair_axis_height,
-        aspect=AxisAspect(320 / 149), kwargs...)
+        kwargs...)
 end
 
 # MOT loading 421, 30-second t-balanced DDM/DIS atom numbers.
