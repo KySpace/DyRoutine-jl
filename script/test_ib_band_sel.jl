@@ -16,16 +16,17 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "corr.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 
-# Select one extraction folder and one tag. Both real-data and simulation caches
-# have the same *_essn_extr.jld2 / *_corr.jld2 layout.
-# path_output = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations\Anlz.20.Simu-05.[2026.09.04].Cache"
+# Select the extraction and correlation folders for one tag. SVGs use path_output.
+# For simulation caches, path_essn and path_corr may point to the same folder.
+path_essn = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\AnlzRoutine\[07.24].100.Extr"
+path_corr = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\AnlzRoutine\[07.24].103.PrflProc.NumberMask.[←100]"
 path_output = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\AnlzRoutine\[07.24].100.Extr"
 tag = "CFNM"
 initial_property = "nvlp-size-axial"
 initial_IB = nothing # Use the middle IB when nothing.
 
-function load_ib_band_data(path_output::AbstractString, tag::AbstractString)
-    path_extr = joinpath(path_output, "$(tag)_essn_extr.jld2")
+function load_ib_band_data(path_essn::AbstractString, path_corr::AbstractString, tag::AbstractString)
+    path_extr = joinpath(path_essn, "$(tag)_essn_extr.jld2")
     isfile(path_extr) || throw(ArgumentError("extraction cache does not exist: $path_extr"))
     meta_extr, extr_fmt, extr_stacked_over_rep = JLD2.jldopen(path_extr, "r") do file
         file["meta_extr"], file["extr_fmt"], file["extr_stacked_over_rep"]
@@ -42,13 +43,42 @@ function load_ib_band_data(path_output::AbstractString, tag::AbstractString)
     n_t >= 2 || throw(ArgumentError("at least two t_hold points are required"))
     issorted(val_vars.t_hold) || throw(ArgumentError("t_hold must be sorted for the range slider"))
 
-    path_corr = joinpath(path_output, "$(tag)_corr.jld2")
-    config_corr = if isfile(path_corr)
-        JLD2.jldopen(file -> file["meta_corr"].config_corr, path_corr, "r")
-    else
-        nothing
+    path_corr_file = joinpath(path_corr, "$(tag)_corr.jld2")
+    isfile(path_corr_file) || throw(ArgumentError("correlation cache does not exist: $path_corr_file"))
+    meta_corr = JLD2.jldopen(file -> file["meta_corr"], path_corr_file, "r")
+    for key in (:IB, :rep, :t_hold, :istp)
+        getproperty(meta_corr.val_vars, key) == getproperty(val_vars, key) ||
+            throw(DimensionMismatch("$key values differ between $path_extr and $path_corr_file"))
     end
-    return (; meta_extr, extr_fmt, extr_stacked_over_rep, config_corr)
+    config_corr = hasproperty(meta_corr, :config_corr) ? meta_corr.config_corr : nothing
+    return (; meta_extr, extr_fmt, extr_stacked_over_rep, config_corr, path_corr_file)
+end
+
+function profile_kind(spec, variant)
+    spec.name == "number" && return :axial
+    if spec.name == "nvlp-center"
+        return variant.name == "fit-cent-x" ? :radial : :axial
+    end
+    startswith(spec.name, "nvlp-size-") &&
+        return endswith(spec.name, "radial") ? :radial_norm : :axial_norm
+    return :modl
+end
+
+function load_profile_evolution(path_corr_file::AbstractString, kind::Symbol,
+    n_ib::Integer, n_rep::Integer, n_istp::Integer)
+    prefix = kind === :modl ? "prfl_evol" : "prfl_$(replace(string(kind), "_norm" => ""))_evol"
+    key_rep = kind in (:axial_norm, :radial_norm) ? "$(prefix)_norm" : prefix
+    key_stack = "$(key_rep)_stacked"
+    reps, stack = JLD2.jldopen(path_corr_file, "r") do file
+        haskey(file, key_rep) || throw(ArgumentError("$path_corr_file is missing $key_rep"))
+        haskey(file, key_stack) || throw(ArgumentError("$path_corr_file is missing $key_stack"))
+        file[key_rep], file[key_stack]
+    end
+    size(reps) == (n_ib, n_rep, n_istp) || throw(DimensionMismatch(
+        "$key_rep size $(size(reps)) must be $((n_ib, n_rep, n_istp))"))
+    size(stack) == (n_ib, n_istp) || throw(DimensionMismatch(
+        "$key_stack size $(size(stack)) must be $((n_ib, n_istp))"))
+    return (; reps, stack)
 end
 
 function spectrum_selector_key(spec)
@@ -161,8 +191,10 @@ function color_ib_band_phase(weight::AbstractMatrix{<:Real}, phase::AbstractMatr
     ] |> colors -> reshape(colors, size(weight))
 end
 
-function run_ib_band_sel(path_output::AbstractString=path_output, tag::AbstractString=tag)
-    cache = load_ib_band_data(path_output, tag)
+function run_ib_band_sel(; path_essn::AbstractString=path_essn,
+    path_corr::AbstractString=path_corr, path_output::AbstractString=path_output,
+    tag::AbstractString=tag)
+    cache = load_ib_band_data(path_essn, path_corr, tag)
     meta = cache.meta_extr
     val_ib = Float64.(meta.val_vars.IB)
     val_t = Float64.(meta.val_vars.t_hold)
@@ -171,6 +203,15 @@ function run_ib_band_sel(path_output::AbstractString=path_output, tag::AbstractS
     specs = [(spec, variant) for spec in meta.trend_property_specs for variant in spec.variants]
     isempty(specs) && throw(ArgumentError("extraction metadata contains no property variants"))
     n_rep = size(cache.extr_fmt, 2)
+    n_ib = length(val_ib)
+    n_istp = length(val_istp)
+    pos_axial = ((-meta.smwh_core[2]):meta.smwh_core[2]) .* meta.px_in_um
+    pos_radial = ((-meta.smwh_core[1]):meta.smwh_core[1]) .* meta.px_in_um
+    pos_by_kind = Dict(
+        :axial => pos_axial, :radial => pos_radial,
+        :axial_norm => pos_axial, :radial_norm => pos_radial,
+        :modl => meta.y_modl,
+    )
     idx_property = findfirst(pair -> pair[1].name == initial_property, specs)
     idx_property = isnothing(idx_property) ? 1 : idx_property
     idx_ib = isnothing(initial_IB) ? cld(length(val_ib), 2) : findfirst(==(initial_IB), val_ib)
@@ -184,6 +225,14 @@ function run_ib_band_sel(path_output::AbstractString=path_output, tag::AbstractS
     )
     evol_cache = Dict{String,Any}()
     evol_axis_cache = Dict{String,Any}()
+    profile_cache = Dict{Symbol,Any}()
+    function get_profile(idx::Int)
+        kind = profile_kind(specs[idx]...)
+        data = get!(profile_cache, kind) do
+            load_profile_evolution(cache.path_corr_file, kind, n_ib, n_rep, n_istp)
+        end
+        return kind, data, pos_by_kind[kind]
+    end
     function get_data(idx::Int)
         spec, variant = specs[idx]
         get!(evol_cache, "$(spec.name)/$(variant.name)") do
@@ -205,7 +254,7 @@ function run_ib_band_sel(path_output::AbstractString=path_output, tag::AbstractS
         end
     end
     function get_evolution(data, c::Int, r::Int, i::Int)
-        r == n_rep + 1 ? copy(@view(data.evol_stack[c, :, i])) : copy(@view(data.evol_rep[c, r, :, i]))
+        r > n_rep ? copy(@view(data.evol_stack[c, :, i])) : copy(@view(data.evol_rep[c, r, :, i]))
     end
 
     time_range = ranges_by_property[specs[idx_property][1].name]
@@ -218,13 +267,14 @@ function run_ib_band_sel(path_output::AbstractString=path_output, tag::AbstractS
     obs_time_range = Observable(Float64.(time_range) |> Tuple)
     data_now = get_data(idx_property)
     obs_evol = [Observable(get_evolution(data_now, idx_ib, idx_rep, i)) for i in 1:2]
+    obs_evol_reps = [Observable(get_evolution(data_now, idx_ib, r, i)) for r in 1:n_rep, i in 1:2]
     query_weight_kwargs = isnothing(cache.config_corr) ? NamedTuple() :
         (hasproperty(cache.config_corr, :query_weight_kwargs) ? cache.config_corr.query_weight_kwargs : NamedTuple())
     band_now = calc_ib_band(data_now, val_t, freq_query, obs_time_range[], band_modes[idx_band_mode]; query_weight_kwargs)
     obs_band_weight = [Observable(band_now.weight[:, :, i]) for i in 1:2]
     obs_band_phase_color = [Observable(color_ib_band_phase(band_now.weight[:, :, i], band_now.phase[:, :, i])) for i in 1:2]
 
-    fig = Figure(size=(1080, 760))
+    fig = Figure(size=(1080, 1030))
     ctrl = GridLayout(fig[1, 1:2])
     property_controls = GridLayout(ctrl[1, 1:2])
     Button(property_controls[1, 1]; label="←", width=36, tellwidth=false).clicks |> clicks -> on(clicks) do _
@@ -263,28 +313,44 @@ function run_ib_band_sel(path_output::AbstractString=path_output, tag::AbstractS
         obs_ib[] = mod1(obs_ib[] + 1, length(val_ib))
     end
     Button(upper_controls[1, 4]; label="←", width=36, tellwidth=false).clicks |> clicks -> on(clicks) do _
-        obs_rep[] = mod1(obs_rep[] - 1, n_rep + 1)
+        obs_rep[] = mod1(obs_rep[] - 1, n_rep + 2)
     end
-    Label(upper_controls[1, 5], lift(i -> "rep\n" * (i == n_rep + 1 ? "stack" : "$i"), obs_rep);
+    Label(upper_controls[1, 5], lift(i -> "rep\n" *
+        (i == n_rep + 1 ? "stack" : i == n_rep + 2 ? "all" : "$i"), obs_rep);
         width=90, tellwidth=false, halign=:center)
     Button(upper_controls[1, 6]; label="→", width=36, tellwidth=false).clicks |> clicks -> on(clicks) do _
-        obs_rep[] = mod1(obs_rep[] + 1, n_rep + 1)
+        obs_rep[] = mod1(obs_rep[] + 1, n_rep + 2)
     end
     for (col, width) in enumerate((36, 150, 36, 36, 90, 36))
         colsize!(upper_controls, col, Fixed(width))
     end
-    ax_evol = Axis(upper[2, 1]; xlabel="t hold (ms)", ylabel=specs[idx_property][1].ylabel,
+    axs_profile = [Axis(upper[i+1, 1]; ylabel="istp=$(val_istp[i])", xticklabelsvisible=false,
+        xticksvisible=false, xlabelvisible=false) for i in 1:2]
+    ax_evol = Axis(upper[4, 1]; xlabel="t hold (ms)", ylabel=specs[idx_property][1].ylabel,
         title="per-solo fitted property")
     colsize!(upper, 1, Relative(1))
+    rowsize!(upper, 2, Fixed(108))
+    rowsize!(upper, 3, Fixed(108))
+    linkxaxes!(axs_profile..., ax_evol)
+    linkyaxes!(axs_profile...)
+    profile_plots = Any[nothing, nothing]
     span_lo = lift(r -> r[1], obs_time_range)
     span_hi = lift(r -> r[2], obs_time_range)
     vspan!(ax_evol, span_lo, span_hi; color=(:lightgray, 0.35))
     for i in 1:2
         clr = Oklch(0.52, 0.14, hue_theme_istp[val_istp[i]])
-        lines!(ax_evol, val_t, obs_evol[i]; color=clr, linewidth=2.5, label=val_istp[i])
-        scatter!(ax_evol, val_t, obs_evol[i]; color=clr, markersize=4)
+        lines!(ax_evol, val_t, obs_evol[i]; color=clr, linewidth=1.4,
+            visible=lift(r -> r != n_rep + 2, obs_rep))
+        scatter!(ax_evol, val_t, obs_evol[i]; color=clr, markersize=3,
+            visible=lift(r -> r != n_rep + 2, obs_rep))
+        for r in 1:n_rep
+            lines!(ax_evol, val_t, obs_evol_reps[r, i]; color=(clr, 0.65), linewidth=1.0,
+                visible=lift(mode -> mode == n_rep + 2, obs_rep))
+        end
     end
-    axislegend(ax_evol; position=:rt, framevisible=false)
+    axislegend(ax_evol,
+        [LineElement(color=Oklch(0.52, 0.14, hue_theme_istp[val_istp[i]]), linewidth=1.4) for i in 1:2],
+        val_istp; position=:rt, framevisible=false)
     set_trend_tick_grid!(Dict("evol-property" => ax_evol))
 
     lower = GridLayout(fig[3, 1:2])
@@ -365,6 +431,9 @@ function run_ib_band_sel(path_output::AbstractString=path_output, tag::AbstractS
         data = get_data(obs_property[])
         for i in 1:2
             obs_evol[i][] = get_evolution(data, obs_ib[], obs_rep[], i)
+            for r in 1:n_rep
+                obs_evol_reps[r, i][] = get_evolution(data, obs_ib[], r, i)
+            end
         end
         spec, variant = specs[obs_property[]]
         ax_evol.ylabel = spec.ylabel
@@ -372,6 +441,27 @@ function run_ib_band_sel(path_output::AbstractString=path_output, tag::AbstractS
         axis_settings = get_evolution_axis(obs_property[])
         ax_evol.yticks = axis_settings.ticks
         ylims!(ax_evol, axis_settings.limits...)
+    end
+    function update_profile!()
+        kind, data, pos = get_profile(obs_property[])
+        name_profile = Dict(
+            :axial => "axial core (μm)", :radial => "radial core (μm)",
+            :axial_norm => "axial core norm (μm)", :radial_norm => "radial core norm (μm)",
+            :modl => "modl (μm⁻¹)",
+        )[kind]
+        limits = kind === :modl && !isnothing(cache.config_corr) &&
+            hasproperty(cache.config_corr, :vis_evol_prfl_modl) ?
+            cache.config_corr.vis_evol_prfl_modl.ylims : extrema(pos)
+        for i in 1:2
+            axs_profile[i].ylabel = "$(val_istp[i]) $name_profile"
+            profile = obs_rep[] <= n_rep ? data.reps[obs_ib[], obs_rep[], i] : data.stack[obs_ib[], i]
+            size(profile) == (length(pos), length(val_t)) || throw(DimensionMismatch(
+                "$(kind) profile size $(size(profile)) must be $((length(pos), length(val_t)))"))
+            isnothing(profile_plots[i]) || delete!(axs_profile[i], profile_plots[i])
+            profile_plots[i] = heatmap!(axs_profile[i], val_t, pos, profile';
+                colormap=gen_clrmap_solo(hue_theme_istp[val_istp[i]]))
+        end
+        ylims!(first(axs_profile), limits...)
     end
     function update_band!()
         data = get_data(obs_property[])
@@ -383,13 +473,15 @@ function run_ib_band_sel(path_output::AbstractString=path_output, tag::AbstractS
     end
     onany(obs_property, obs_ib, obs_rep) do _...
         update_evolution!()
+        update_profile!()
     end
     onany(obs_property, obs_time_range, obs_band_mode) do _...
         update_band!()
     end
     update_evolution!()
-    rowsize!(fig.layout, 2, Relative(0.39))
-    rowsize!(fig.layout, 3, Relative(0.51))
+    update_profile!()
+    xlims!(ax_evol, first(val_t), last(val_t))
+    rowsize!(fig.layout, 2, Fixed(535))
     display(fig)
     return fig
 end
