@@ -181,21 +181,6 @@ clr_marker_face_istp = [
     colorant"#9bb5dd",
 ]
 
-function gen_clrmap_parabola(hue, light_maxchroma, chroma_max, light_min; thres_alpha=0.0, alpha_base=1.0, light_max=1.0, chroma_lightmax=0, hue_range=(0, 0), prescale=(t -> t))
-    clrmap = [
-        begin
-            t = prescale(t)
-            l = (1 - t) * (light_max - light_min) + light_min
-            c = (chroma_lightmax - chroma_max) / (light_max - light_maxchroma)^2 * (l - light_maxchroma)^2 + chroma_max
-            h = hue + (t - 0.5) * (hue_range[2] - hue_range[1])
-            alpha = thres_alpha <= 0 || abs(t) > thres_alpha ?
-                    1.0 :
-                    clamp(abs(t) / thres_alpha * (1 - alpha_base) + alpha_base, 0, 1)
-            Oklch(clamp(l, 0, 1), clamp(c, 0, 1), clamp(h, 0, 360)) |> c -> RGBAf(c, alpha)
-        end
-        for t in range(0, 1; length=256)]
-    return clrmap
-end
 function gen_clrfn(istp; thres_alpha=0.0, alpha_base=1.0)
     hue = hue_theme_istp[istp]
     clrfn = t ->

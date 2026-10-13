@@ -99,6 +99,47 @@ function query_weight(evol, mask, t_vec, freq_query; scaling::Real=1000.0, weigh
     return isfinite(spct_max) && spct_max > 0 ? spct ./ spct_max : zeros(eltype(spct), size(spct))
 end
 
+"""Return Fourier coefficients normalized to unit maximum spectral power."""
+function query_spectrum_complex(
+    evol::AbstractVector{<:Real},
+    mask::Union{Colon,AbstractVector{Bool}},
+    t_vec::AbstractVector{<:Real},
+    freq_query::AbstractVector{<:Real};
+    scaling::Real=1000.0,
+    weight::Union{Nothing,AbstractVector{<:Real}}=nothing,
+)
+    length(evol) == length(t_vec) || throw(DimensionMismatch(
+        "evolution length $(length(evol)) must match time length $(length(t_vec))"
+    ))
+    mask isa Colon || length(mask) == length(t_vec) || throw(DimensionMismatch(
+        "selection mask length $(length(mask)) must match time length $(length(t_vec))"
+    ))
+    isnothing(weight) || length(weight) == length(t_vec) || throw(DimensionMismatch(
+        "weight length $(length(weight)) must match time length $(length(t_vec))"
+    ))
+    scaling > 0 || throw(ArgumentError("scaling=$scaling must be positive"))
+    isempty(freq_query) && throw(ArgumentError("freq_query must not be empty"))
+    mask_use = mask isa Colon ? trues(length(t_vec)) : mask
+    any(mask_use) || throw(ArgumentError("selection mask contains no time points"))
+    evol_sel = evol[mask_use]
+    t_sel = t_vec[mask_use]
+    if isnothing(weight)
+        weight_sel = ones(Float64, length(evol_sel))
+        evol_centered = evol_sel .- mean(evol_sel)
+    else
+        weight_sel = Float64.(weight[mask_use])
+        sum_weight = sum(weight_sel)
+        mean_weighted = sum_weight > 0 ? sum(evol_sel .* weight_sel) / sum_weight : mean(evol_sel)
+        evol_centered = evol_sel .- mean_weighted
+    end
+    coeff = ComplexF64[
+        sum(@. weight_sel * evol_centered * exp(-2im * pi * freq * t_sel / scaling))
+        for freq in freq_query
+    ]
+    power_max = maximum(abs2, coeff)
+    return isfinite(power_max) && power_max > 0 ? coeff ./ sqrt(power_max) : zeros(ComplexF64, length(coeff))
+end
+
 function get_hint_value(hints::NamedTuple, name::Symbol, fallback)
     return haskey(hints, name) ? getproperty(hints, name) : fallback
 end

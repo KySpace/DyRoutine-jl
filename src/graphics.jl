@@ -18,6 +18,23 @@ function gen_clrmap_solo(hue; thres_alpha=0.0, alpha_base=1.0)
     return clrmap
 end
 
+function clr_parabola(t, hue, light_maxchroma, chroma_max, light_min;
+    thres_alpha=0.0, alpha_base=1.0, light_max=1.0, chroma_lightmax=0,
+    hue_range=(0, 0), prescale=(t -> t))
+    t = prescale(t)
+    l = (1 - t) * (light_max - light_min) + light_min
+    c = (chroma_lightmax - chroma_max) / (light_max - light_maxchroma)^2 * (l - light_maxchroma)^2 + chroma_max
+    h = hue + (t - 0.5) * (hue_range[2] - hue_range[1])
+    alpha = thres_alpha <= 0 || abs(t) > thres_alpha ?
+        1.0 : clamp(abs(t) / thres_alpha * (1 - alpha_base) + alpha_base, 0, 1)
+    return RGBAf(Oklch(clamp(l, 0, 1), clamp(c, 0, 1), clamp(h, 0, 360)), alpha)
+end
+
+function gen_clrmap_parabola(hue, light_maxchroma, chroma_max, light_min; kwargs...)
+    return [clr_parabola(t, hue, light_maxchroma, chroma_max, light_min; kwargs...)
+        for t in range(0, 1; length=256)]
+end
+
 function gen_clrmap_posneg_nonlin(hue_pos, hue_neg; thres_alpha=0.6, alpha_base=0.2)
     return [
         begin
