@@ -309,6 +309,7 @@ function run_ib_band_sel(path_output::AbstractString=path_output, tag::AbstractS
         obs_color_mode[] = mod1(obs_color_mode[] + 1, 2)
     end
     label_save = Label(lower_controls[1, 7], "○"; width=26, tellwidth=false, halign=:center, color=:gray50)
+    button_reset_band = Button(lower_controls[1, 8]; label="Reset axes", width=100, tellwidth=false)
     Button(lower_controls[1, 6]; label="Save SVG").clicks |> clicks -> on(clicks) do _
         spec, variant = specs[obs_property[]]
         name = "$(tag)_ib_band_$(spec.name)_$(variant.name)_$(Dates.format(now(), "yyyymmdd_HHMMSS")).svg"
@@ -326,7 +327,7 @@ function run_ib_band_sel(path_output::AbstractString=path_output, tag::AbstractS
             println(stderr, "SVG save failed: $(sprint(showerror, err))")
         end
     end
-    for (col, width) in enumerate((36, 220, 36, 125, 140, 100, 26))
+    for (col, width) in enumerate((36, 220, 36, 125, 140, 100, 26, 100))
         colsize!(lower_controls, col, Fixed(width))
     end
     band_layout = GridLayout(lower[2, 1])
@@ -342,15 +343,22 @@ function run_ib_band_sel(path_output::AbstractString=path_output, tag::AbstractS
             visible=lift(mode -> mode == 2, obs_color_mode))
         vlines!(axs_band[i], lift(idx -> [val_ib[idx]], obs_ib);
             color=:black, linestyle=:dash, linewidth=1.5, visible=obs_show_ib_marker)
-        set_trend_tick_grid!(Dict("spct-property" => axs_band[i]))
     end
     x_pad_left = length(val_ib) > 1 ? (val_ib[2] - val_ib[1]) / 2 : 0.5
     x_pad_right = length(val_ib) > 1 ? (val_ib[end] - val_ib[end-1]) / 2 : 0.5
     y_pad_low = length(freq_query) > 1 ? (freq_query[2] - freq_query[1]) / 2 : 0.5
     y_pad_high = length(freq_query) > 1 ? (freq_query[end] - freq_query[end-1]) / 2 : 0.5
+    limits_ib_band = (first(val_ib) - x_pad_left, last(val_ib) + x_pad_right)
+    limits_freq_band = (first(freq_query) - y_pad_low, last(freq_query) + y_pad_high)
     for ax in axs_band
-        xlims!(ax, first(val_ib) - x_pad_left, last(val_ib) + x_pad_right)
-        ylims!(ax, first(freq_query) - y_pad_low, last(freq_query) + y_pad_high)
+        ax.xticks = WilkinsonTicks(5; k_min=3)
+    end
+    linkaxes!(axs_band...)
+    xlims!(first(axs_band), limits_ib_band...)
+    ylims!(first(axs_band), limits_freq_band...)
+    on(button_reset_band.clicks) do _
+        xlims!(first(axs_band), limits_ib_band...)
+        ylims!(first(axs_band), limits_freq_band...)
     end
 
     function update_evolution!()
