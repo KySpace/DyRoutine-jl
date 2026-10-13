@@ -18,12 +18,18 @@ include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 
 # Select the extraction and correlation folders for one tag. SVGs use path_output.
 # For simulation caches, path_essn and path_corr may point to the same folder.
-path_essn = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\AnlzRoutine\[07.24].100.Extr"
-path_corr = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\AnlzRoutine\[07.24].103.PrflProc.NumberMask.[←100]"
-path_output = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\AnlzRoutine\[07.24].100.Extr"
-tag = "CFNM"
+# path_essn = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\AnlzRoutine\[07.24].100.Extr"
+# path_corr = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\AnlzRoutine\[07.24].103.PrflProc.NumberMask.[←100]"
+path_essn = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations\Anlz.20.Simu-05.[2026.09.04].Cache"                      
+path_corr = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\Simulations\Anlz.20.Simu-05.[2026.09.04].Cache"
+path_output = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\AnlzRoutine\[10.13].104.DynRangeSel.[←100,103]"
+tag = "SIMU-NTRC"
 initial_property = "nvlp-size-axial"
 initial_IB = nothing # Use the middle IB when nothing.
+ylim_property_overrides = (
+    nvlp_size_axial=(3.0, 12.0),  # Example: (4.0, 9.0) for a fixed range in μm.
+    nvlp_size_radial=(1.0, 4.0),
+)
 
 function load_ib_band_data(path_essn::AbstractString, path_corr::AbstractString, tag::AbstractString)
     path_extr = joinpath(path_essn, "$(tag)_essn_extr.jld2")
@@ -191,9 +197,28 @@ function color_ib_band_phase(weight::AbstractMatrix{<:Real}, phase::AbstractMatr
     ] |> colors -> reshape(colors, size(weight))
 end
 
+function save_svg_preserve_axis_limits(path::AbstractString, fig::Figure, axs::AbstractVector{<:Axis})
+    limits_saved = [ax.limits[] for ax in axs]
+    targets_saved = [ax.targetlimits[] for ax in axs]
+    try
+        for (ax, target) in zip(axs, targets_saved)
+            lo, hi = minimum(target), maximum(target)
+            ax.limits[] = ((lo[1], hi[1]), (lo[2], hi[2]))
+        end
+        CairoMakie.save(path, fig; backend=CairoMakie)
+    finally
+        for (ax, limits) in zip(axs, limits_saved)
+            ax.limits[] = limits
+        end
+        for (ax, target) in zip(axs, targets_saved)
+            ax.targetlimits[] = target
+        end
+    end
+end
+
 function run_ib_band_sel(; path_essn::AbstractString=path_essn,
     path_corr::AbstractString=path_corr, path_output::AbstractString=path_output,
-    tag::AbstractString=tag)
+    tag::AbstractString=tag, ylim_property_overrides::NamedTuple=ylim_property_overrides)
     cache = load_ib_band_data(path_essn, path_corr, tag)
     meta = cache.meta_extr
     val_ib = Float64.(meta.val_vars.IB)
@@ -248,7 +273,18 @@ function run_ib_band_sel(; path_essn::AbstractString=path_essn,
             lo_data, hi_data = extrema(values)
             pad = max(0.05 * (hi_data - lo_data), 1e-6)
             lo_ref, hi_ref = isnothing(spec.ylim) ? (lo_data, hi_data) : spec.ylim
-            limits = (min(lo_ref, lo_data - pad), max(hi_ref, hi_data + pad))
+            key = Symbol(replace(spec.name, "-" => "_"))
+            override = hasproperty(ylim_property_overrides, key) ? getproperty(ylim_property_overrides, key) : nothing
+            limits = if isnothing(override)
+                (min(lo_ref, lo_data - pad), max(hi_ref, hi_data + pad))
+            else
+                override isa Tuple{<:Real,<:Real} || throw(ArgumentError(
+                    "ylim_property_overrides.$key must be nothing or a pair of real limits, got $override"))
+                lo, hi = Float64.(override)
+                isfinite(lo) && isfinite(hi) && lo < hi || throw(ArgumentError(
+                    "ylim_property_overrides.$key must be finite and increasing, got $override"))
+                (lo, hi)
+            end
             ticks = GLMakie.Makie.get_tickvalues(WilkinsonTicks(5; k_min=4), limits...)
             (; limits, ticks)
         end
@@ -283,7 +319,7 @@ function run_ib_band_sel(; path_essn::AbstractString=path_essn,
     Label(property_controls[1, 2], lift(i -> begin
         spec, variant = specs[i]
         "property\n$(spec.name) / $(variant.label)  ($i/$(length(specs)))"
-    end, obs_property); width=350, tellwidth=false, halign=:center)
+    end, obs_property); tellwidth=false, halign=:center, justification=:center)
     Button(property_controls[1, 3]; label="→", width=36, tellwidth=false).clicks |> clicks -> on(clicks) do _
         obs_property[] = mod1(obs_property[] + 1, length(specs))
     end
@@ -308,7 +344,7 @@ function run_ib_band_sel(; path_essn::AbstractString=path_essn,
         obs_ib[] = mod1(obs_ib[] - 1, length(val_ib))
     end
     Label(upper_controls[1, 2], lift(i -> @sprintf("IB\n%.4g A  (%d/%d)", val_ib[i], i, length(val_ib)), obs_ib);
-        width=150, tellwidth=false, halign=:center)
+        tellwidth=false, halign=:center, justification=:center)
     Button(upper_controls[1, 3]; label="→", width=36, tellwidth=false).clicks |> clicks -> on(clicks) do _
         obs_ib[] = mod1(obs_ib[] + 1, length(val_ib))
     end
@@ -317,18 +353,20 @@ function run_ib_band_sel(; path_essn::AbstractString=path_essn,
     end
     Label(upper_controls[1, 5], lift(i -> "rep\n" *
         (i == n_rep + 1 ? "stack" : i == n_rep + 2 ? "all" : "$i"), obs_rep);
-        width=90, tellwidth=false, halign=:center)
+        tellwidth=false, halign=:center, justification=:center)
     Button(upper_controls[1, 6]; label="→", width=36, tellwidth=false).clicks |> clicks -> on(clicks) do _
         obs_rep[] = mod1(obs_rep[] + 1, n_rep + 2)
     end
     for (col, width) in enumerate((36, 150, 36, 36, 90, 36))
         colsize!(upper_controls, col, Fixed(width))
     end
-    axs_profile = [Axis(upper[i+1, 1]; ylabel="istp=$(val_istp[i])", xticklabelsvisible=false,
+    obs_profile_ylabel = Observable("")
+    Label(upper[2:3, 0], obs_profile_ylabel; rotation=π/2, tellheight=false)
+    axs_profile = [Axis(upper[i+1, 1]; ylabel=val_istp[i], xticklabelsvisible=false,
         xticksvisible=false, xlabelvisible=false) for i in 1:2]
     ax_evol = Axis(upper[4, 1]; xlabel="t hold (ms)", ylabel=specs[idx_property][1].ylabel,
         title="per-solo fitted property")
-    colsize!(upper, 1, Relative(1))
+    colsize!(upper, 1, Relative(0.88))
     rowsize!(upper, 2, Fixed(108))
     rowsize!(upper, 3, Fixed(108))
     linkxaxes!(axs_profile..., ax_evol)
@@ -354,13 +392,13 @@ function run_ib_band_sel(; path_essn::AbstractString=path_essn,
     set_trend_tick_grid!(Dict("evol-property" => ax_evol))
 
     lower = GridLayout(fig[3, 1:2])
-    lower_controls = GridLayout(lower[1, 1])
+    lower_controls = GridLayout(lower[2, 1])
     Button(lower_controls[1, 1]; label="←", width=36, tellwidth=false).clicks |> clicks -> on(clicks) do _
         obs_band_mode[] = mod1(obs_band_mode[] - 1, length(band_modes))
     end
     Label(lower_controls[1, 2], lift(i -> "spectrum mode\n" *
         (i == 1 ? "Processed after stacked" : "Mean of rep spectra"), obs_band_mode);
-        width=220, tellwidth=false, halign=:center)
+        tellwidth=false, halign=:center, justification=:center)
     Button(lower_controls[1, 3]; label="→", width=36, tellwidth=false).clicks |> clicks -> on(clicks) do _
         obs_band_mode[] = mod1(obs_band_mode[] + 1, length(band_modes))
     end
@@ -383,7 +421,7 @@ function run_ib_band_sel(; path_essn::AbstractString=path_essn,
         label_save.text = "…"
         label_save.color = :gray50
         try
-            CairoMakie.save(path_save, fig; backend=CairoMakie)
+            save_svg_preserve_axis_limits(path_save, fig, Axis[axs_profile..., ax_evol, axs_band...])
             label_save.text = "✓"
             label_save.color = :green4
             println("Saved $path_save")
@@ -396,7 +434,7 @@ function run_ib_band_sel(; path_essn::AbstractString=path_essn,
     for (col, width) in enumerate((36, 220, 36, 125, 140, 100, 26, 100))
         colsize!(lower_controls, col, Fixed(width))
     end
-    band_layout = GridLayout(lower[2, 1])
+    band_layout = GridLayout(lower[1, 1])
     axs_band = [Axis(band_layout[1, i]; xlabel="IB (A)", ylabel=i == 1 ? "freq (Hz)" : "",
         title="istp=$(val_istp[i])") for i in 1:2]
     colorrange = hasproperty(meta, :trend_spectrum_IB_plot_kwargs) ?
@@ -449,11 +487,11 @@ function run_ib_band_sel(; path_essn::AbstractString=path_essn,
             :axial_norm => "axial core norm (μm)", :radial_norm => "radial core norm (μm)",
             :modl => "modl (μm⁻¹)",
         )[kind]
+        obs_profile_ylabel[] = name_profile
         limits = kind === :modl && !isnothing(cache.config_corr) &&
             hasproperty(cache.config_corr, :vis_evol_prfl_modl) ?
             cache.config_corr.vis_evol_prfl_modl.ylims : extrema(pos)
         for i in 1:2
-            axs_profile[i].ylabel = "$(val_istp[i]) $name_profile"
             profile = obs_rep[] <= n_rep ? data.reps[obs_ib[], obs_rep[], i] : data.stack[obs_ib[], i]
             size(profile) == (length(pos), length(val_t)) || throw(DimensionMismatch(
                 "$(kind) profile size $(size(profile)) must be $((length(pos), length(val_t)))"))
