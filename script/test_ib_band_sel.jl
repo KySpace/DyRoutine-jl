@@ -16,7 +16,7 @@ include(joinpath(@__DIR__, "..", "src", "graphics.jl"))
 include(joinpath(@__DIR__, "..", "src", "corr.jl"))
 include(joinpath(@__DIR__, "..", "src", "viscorr.jl"))
 
-# Select the extraction and correlation folders for one tag. SVGs use path_output.
+# Select the extraction and correlation folders for one tag. Exports use path_output.
 # For simulation caches, path_essn and path_corr may point to the same folder.
 # path_essn = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\AnlzRoutine\[07.24].100.Extr"
 # path_corr = raw"C:\Users\ky\OneDrive\Source Shared\DyGist\Data\Excitations\AnlzRoutine\[07.24].103.PrflProc.NumberMask.[←100]"
@@ -197,7 +197,8 @@ function color_ib_band_phase(weight::AbstractMatrix{<:Real}, phase::AbstractMatr
     ] |> colors -> reshape(colors, size(weight))
 end
 
-function save_svg_preserve_axis_limits(path::AbstractString, fig::Figure, axs::AbstractVector{<:Axis})
+function save_figure_preserve_axis_limits(paths::AbstractVector{<:AbstractString}, fig::Figure,
+    axs::AbstractVector{<:Axis})
     limits_saved = [ax.limits[] for ax in axs]
     targets_saved = [ax.targetlimits[] for ax in axs]
     try
@@ -205,7 +206,9 @@ function save_svg_preserve_axis_limits(path::AbstractString, fig::Figure, axs::A
             lo, hi = minimum(target), maximum(target)
             ax.limits[] = ((lo[1], hi[1]), (lo[2], hi[2]))
         end
-        CairoMakie.save(path, fig; backend=CairoMakie)
+        for path in paths
+            CairoMakie.save(path, fig; backend=CairoMakie)
+        end
     finally
         for (ax, limits) in zip(axs, limits_saved)
             ax.limits[] = limits
@@ -230,8 +233,10 @@ function run_ib_band_sel(; path_essn::AbstractString=path_essn,
     n_rep = size(cache.extr_fmt, 2)
     n_ib = length(val_ib)
     n_istp = length(val_istp)
-    pos_axial = ((-meta.smwh_core[2]):meta.smwh_core[2]) .* meta.px_in_um
-    pos_radial = ((-meta.smwh_core[1]):meta.smwh_core[1]) .* meta.px_in_um
+    step_posi = meta.px_in_um isa Real ? (meta.px_in_um, meta.px_in_um) : meta.px_in_um
+    length(step_posi) == 2 || throw(ArgumentError("px_in_um must be scalar or radial/axial pair, got $(meta.px_in_um)"))
+    pos_axial = ((-meta.smwh_core[2]):meta.smwh_core[2]) .* step_posi[2]
+    pos_radial = ((-meta.smwh_core[1]):meta.smwh_core[1]) .* step_posi[1]
     pos_by_kind = Dict(
         :axial => pos_axial, :radial => pos_radial,
         :axial_norm => pos_axial, :radial_norm => pos_radial,
@@ -414,24 +419,24 @@ function run_ib_band_sel(; path_essn::AbstractString=path_essn,
     end
     label_save = Label(lower_controls[1, 7], "○"; width=26, tellwidth=false, halign=:center, color=:gray50)
     button_reset_band = Button(lower_controls[1, 8]; label="Reset axes", width=100, tellwidth=false)
-    Button(lower_controls[1, 6]; label="Save SVG").clicks |> clicks -> on(clicks) do _
+    Button(lower_controls[1, 6]; label="Save SVG/PNG", width=115, tellwidth=false).clicks |> clicks -> on(clicks) do _
         spec, variant = specs[obs_property[]]
-        name = "$(tag)_ib_band_$(spec.name)_$(variant.name)_$(Dates.format(now(), "yyyymmdd_HHMMSS")).svg"
-        path_save = joinpath(path_output, name)
+        stem = "$(tag)_ib_band_$(spec.name)_$(variant.name)_$(Dates.format(now(), "yyyymmdd_HHMMSS"))"
+        paths_save = [joinpath(path_output, "$stem.$format") for format in ("svg", "png")]
         label_save.text = "…"
         label_save.color = :gray50
         try
-            save_svg_preserve_axis_limits(path_save, fig, Axis[axs_profile..., ax_evol, axs_band...])
+            save_figure_preserve_axis_limits(paths_save, fig, Axis[axs_profile..., ax_evol, axs_band...])
             label_save.text = "✓"
             label_save.color = :green4
-            println("Saved $path_save")
+            println("Saved $(join(paths_save, ", "))")
         catch err
             label_save.text = "✕"
             label_save.color = :firebrick3
-            println(stderr, "SVG save failed: $(sprint(showerror, err))")
+            println(stderr, "Figure save failed: $(sprint(showerror, err))")
         end
     end
-    for (col, width) in enumerate((36, 220, 36, 125, 140, 100, 26, 100))
+    for (col, width) in enumerate((36, 220, 36, 125, 140, 115, 26, 100))
         colsize!(lower_controls, col, Fixed(width))
     end
     band_layout = GridLayout(lower[1, 1])
