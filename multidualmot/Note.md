@@ -495,6 +495,29 @@ retaining markers.
 
 ## Plotting conventions
 
+### In-situ sample images
+
+[`make_insitu_samples.jl`](make_insitu_samples.jl) reads the configured processing
+entries in the `162-164` in-situ sample folder. Each entry has its own tag and
+rectangular image source; the matching `allimg MMDD runXX.mat` file is loaded
+from the `liferes` source name. The script writes one isotope-grid SVG and one
+miscibility SVG per tag, named `<tag> samples.svg` and
+`<tag> samples miscibility.svg`. An optional second command-line argument
+selects the output folder. Every image gets a horizontal scale marker based on
+`liferes → cres[1] → ep.cam.xscale` (meters per pixel): 5 mm for MOT and 1 mm
+for CMOT. It also writes a selected sample SVG per tag for
+`f_626_MZM = 481.625`, `rep = 1`; this selected view blurs both isotope images
+with a Gaussian kernel, adds a vertical black center line, and rasterizes the
+heatmap for output. The blur sigma is tunable in
+pixels as the third command-line argument and defaults to 1.0 px; use `0` to
+disable blur:
+
+```powershell
+julia --project=. multidualmot/make_insitu_samples.jl [path_folder] [path_output] [blur_sigma_px]
+```
+
+`make_mot_samples.jl` remains as a backward-compatible entry point.
+
 The shared style encodes:
 
 - isotope by color;

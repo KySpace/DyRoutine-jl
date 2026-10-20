@@ -6,13 +6,13 @@ using LaTeXStrings
 hue_theme_istp = Dict("162" => 11.0, "164" => 250.0)
 GLMakie.activate!()
 
-function gen_clrmap_solo(hue; thres_alpha=0.0, alpha_base=1.0)
+function gen_clrmap_solo(hue; thres_alpha=0.0, alpha_base=1.0, chroma_max=0.24)
     clrmap = [
         begin
             alpha = thres_alpha <= 0 || abs(t) > thres_alpha ?
                     1.0 :
                     clamp(abs(t) / thres_alpha * (1 - alpha_base) + alpha_base, 0, 1)
-            Oklch(1 - 0.8 * t, 0.24 * t, hue) |> c -> RGBAf(c, alpha)
+            Oklch(1 - 0.8 * t, chroma_max * t, hue) |> c -> RGBAf(c, alpha)
         end
         for t in range(0, 1; length=256)]
     return clrmap
