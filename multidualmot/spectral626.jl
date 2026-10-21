@@ -1,5 +1,6 @@
 using CSV
 using CairoMakie
+using Colors
 using DataFrames
 using JLD2
 
@@ -238,6 +239,92 @@ function write_ch1_periods_csv(
     return nothing
 end
 
+function find_first_uphill_zero_crossing(
+    y::AbstractVector{<:Real},
+    time_s::AbstractVector{<:Real},
+    idx_start::Int,
+    idx_end::Int,
+)::Float64
+    idx_start < idx_end || throw(ArgumentError("A period must contain at least two samples"))
+    for idx in idx_start:(idx_end - 1)
+        val = y[idx]
+        val_next = y[idx + 1]
+        iszero(val) && return Float64(time_s[idx])
+        if val < 0 && val_next >= 0
+            frac = -val / (val_next - val)
+            return Float64(time_s[idx] + frac * (time_s[idx + 1] - time_s[idx]))
+        end
+    end
+    throw(ArgumentError("No rising CH1 zero-crossing found in period samples $idx_start:$idx_end"))
+end
+
+function oklch_to_rgb(h_deg::Real, l::Real, c::Real)::RGB{Float64}
+    angle = deg2rad(h_deg)
+    a = c * cos(angle)
+    b = c * sin(angle)
+    l_ = l + 0.3963377774 * a + 0.2158037573 * b
+    m_ = l - 0.1055613458 * a - 0.0638541728 * b
+    s_ = l - 0.0894841775 * a - 1.2914855480 * b
+    l_cubed, m_cubed, s_cubed = l_^3, m_^3, s_^3
+
+    red_linear = 4.0767416621 * l_cubed - 3.3077115913 * m_cubed + 0.2309699292 * s_cubed
+    green_linear = -1.2684380046 * l_cubed + 2.6097574011 * m_cubed - 0.3413193965 * s_cubed
+    blue_linear = -0.0041960863 * l_cubed - 0.7034186147 * m_cubed + 1.7076147010 * s_cubed
+    to_srgb(channel) = clamp(channel <= 0.0031308 ? 12.92 * channel : 1.055 * channel^(1 / 2.4) - 0.055, 0, 1)
+    return RGB(to_srgb(red_linear), to_srgb(green_linear), to_srgb(blue_linear))
+end
+
+function plot_ch2_aligned_periods(
+    path_png::AbstractString,
+    time_s::AbstractVector{<:Real},
+    ch1_v::AbstractVector{<:Real},
+    ch2_v::AbstractVector{<:Real},
+    idx_minima::AbstractVector{<:Integer},
+)::Nothing
+    length(time_s) == length(ch1_v) == length(ch2_v) ||
+        throw(DimensionMismatch("Time, CH1, and CH2 arrays must have equal lengths"))
+    n_periods = length(idx_minima) - 1
+    n_periods > 0 || throw(ArgumentError("At least two CH1 minima are needed to align periods"))
+    n_periods <= 6 || throw(ArgumentError("Expected at most six completed periods for the 1–6 rep palette; found $n_periods"))
+
+    val_offset_per_rep_v = 0.5
+    val_hue_deg_rep = [24, 80, 136, 192, 248, 304]
+    val_lightness_rep = [0.52, 0.58, 0.64, 0.70, 0.76, 0.82]
+    colors_rep = [oklch_to_rgb(val_hue_deg_rep[idx], val_lightness_rep[idx], 0.15) for idx in 1:n_periods]
+
+    px_width = 3840
+    px_height = 2160
+    fig = Figure(size=(px_width, px_height), fontsize=28)
+    ax = Axis(fig[1, 1];
+        title="SDS00014 — CH2 aligned to CH1 periods",
+        xlabel="Time from first rising CH1 zero-crossing (s)",
+        ylabel="CH2 voltage (V), offset by 0.5 V per period",
+        titlesize=36,
+        xlabelsize=32,
+        ylabelsize=32,
+        xticklabelsize=26,
+        yticklabelsize=26,
+    )
+
+    for idx_rep in 1:n_periods
+        idx_start = idx_minima[idx_rep]
+        idx_end = idx_minima[idx_rep + 1]
+        time_zero = find_first_uphill_zero_crossing(ch1_v, time_s, idx_start, idx_end)
+        time_period = @view time_s[idx_start:idx_end]
+        ch2_period = @view ch2_v[idx_start:idx_end]
+        x_plot, y_plot = calc_minmax_envelope(time_period, ch2_period, 2 * px_width)
+        x_plot .-= time_zero
+        y_plot .+= (idx_rep - 1) * val_offset_per_rep_v
+        lines!(ax, x_plot, y_plot; color=colors_rep[idx_rep], linewidth=1.5, label="Rep $idx_rep")
+        println("Rep $idx_rep: CH1 rising zero-crossing at $(round(time_zero; digits=6)) s; CH2 offset $((idx_rep - 1) * val_offset_per_rep_v) V")
+    end
+
+    axislegend(ax; position=:rt, framevisible=false, labelsize=24)
+    save(path_png, fig; px_per_unit=1)
+    println("Saved $(px_width)×$(px_height) aligned CH2 PNG to $path_png")
+    return nothing
+end
+
 function parse_scope_metadata_value(metadata_lines::AbstractVector{<:AbstractString}, field::AbstractString)::String
     idx_field = findfirst(line -> startswith(line, "$field,"), metadata_lines)
     isnothing(idx_field) && throw(ArgumentError("CSV metadata is missing '$field'"))
@@ -256,10 +343,16 @@ function calc_time_axis(metadata_lines::AbstractVector{<:AbstractString}, n_samp
     return range(-half_span_s, stop=half_span_s, length=n_samples)
 end
 
-function plot_ch1_spectrum(path_jld2::AbstractString, path_png::AbstractString, path_period_csv::AbstractString)::Nothing
+function plot_ch1_spectrum(
+    path_jld2::AbstractString,
+    path_png::AbstractString,
+    path_period_csv::AbstractString,
+    path_ch2_png::AbstractString,
+)::Nothing
     payload = JLD2.load(path_jld2)
     metadata_lines = payload["metadata_lines"]
     ch1_v = payload["ch1_v"]
+    ch2_v = payload["ch2_v"]
     time_key = haskey(payload, "time_s") ? "time_s" : "time_us"
     time_data = payload[time_key]
     length(time_data) == length(ch1_v) ||
@@ -300,18 +393,20 @@ function plot_ch1_spectrum(path_jld2::AbstractString, path_png::AbstractString, 
     println("Minimum separation: $(length(time_minima) > 1 ? minimum(diff(time_minima)) : NaN) s minima; $(length(time_maxima) > 1 ? minimum(diff(time_maxima)) : NaN) s maxima")
     println("Saved $(px_width)×$(px_height) PNG to $path_png")
     write_ch1_periods_csv(path_period_csv, time_s, ch1_v, idx_minima, idx_maxima)
+    plot_ch2_aligned_periods(path_ch2_png, time_s, ch1_v, ch2_v, idx_minima)
     return nothing
 end
 
-length(ARGS) <= 4 || throw(ArgumentError("Usage: julia --project=. multidualmot/spectral626.jl [input.csv] [output.jld2] [output.png] [periods.csv]"))
+length(ARGS) <= 5 || throw(ArgumentError("Usage: julia --project=. multidualmot/spectral626.jl [input.csv] [output.jld2] [output.png] [periods.csv] [ch2.png]"))
 path_csv = isempty(ARGS) ? path_csv_default : abspath(ARGS[1])
 path_jld2 = length(ARGS) < 2 ? splitext(path_csv)[1] * ".jld2" : abspath(ARGS[2])
 path_png = length(ARGS) < 3 ? splitext(path_jld2)[1] * "_CH1_vs_time.png" : abspath(ARGS[3])
 path_period_csv = length(ARGS) < 4 ? splitext(path_jld2)[1] * "_CH1_periods.csv" : abspath(ARGS[4])
+path_ch2_png = length(ARGS) < 5 ? splitext(path_jld2)[1] * "_CH2_aligned_periods.png" : abspath(ARGS[5])
 
 if isfile(path_jld2)
     println("Using existing JLD2 file: $path_jld2")
 else
     convert_scope_csv_to_jld2(path_csv, path_jld2)
 end
-plot_ch1_spectrum(path_jld2, path_png, path_period_csv)
+plot_ch1_spectrum(path_jld2, path_png, path_period_csv, path_ch2_png)
