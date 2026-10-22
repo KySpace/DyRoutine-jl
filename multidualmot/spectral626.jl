@@ -278,6 +278,22 @@ function find_first_uphill_zero_crossing(
     throw(ArgumentError("No rising CH1 zero-crossing found in period samples $idx_start:$idx_end"))
 end
 
+function find_ch1_alignment_zero_crossing(
+    ch1_v::AbstractVector{<:Real},
+    time_s::AbstractVector{<:Real},
+    dead_time_s::Real=2.0,
+)::Float64
+    length(ch1_v) == length(time_s) || throw(DimensionMismatch("CH1 and time arrays must have equal lengths"))
+    idx_minima = find_windowed_extrema(ch1_v, time_s, true, dead_time_s)
+    length(idx_minima) >= 2 || throw(ArgumentError("At least two CH1 minima are required to align one period"))
+    idx_period = findfirst(1:(length(idx_minima) - 1)) do idx
+        time_s[idx_minima[idx]] <= 0 <= time_s[idx_minima[idx + 1]]
+    end
+    isnothing(idx_period) && throw(ArgumentError("No completed CH1 period spans raw t = 0"))
+    return find_first_uphill_zero_crossing(
+        ch1_v, time_s, idx_minima[idx_period], idx_minima[idx_period + 1])
+end
+
 function oklch_to_rgb(h_deg::Real, l::Real, c::Real)::RGB{Float64}
     angle = deg2rad(h_deg)
     a = c * cos(angle)
@@ -396,7 +412,7 @@ function plot_ch2_periods_spanning_zero(
                 text=string(round(time_peak; digits=3)),
                 color=colors_ch2[idx_file], fontsize=16,
                 rotation=π / 2, align=(:center, :bottom),
-                strokecolor=:white, strokewidth=2)
+                strokecolor=:white, strokewidth=0.4)
         end
         println("$name_file: selected period $(round(time_s[idx_start]; digits=6)) to $(round(time_s[idx_end]; digits=6)) s; rising zero-crossing $(round(time_zero; digits=6)) s; CH2 offset $val_offset_v V; trimmed CH2 baseline $(round(val_ch2_baseline_v; digits=4)) V; annotated $(length(idx_peaks_ch2)) peaks (>$val_min_peak_prominence_v V above baseline, $(val_peak_dead_time_s) s dead-time)")
         GC.gc()
@@ -427,6 +443,66 @@ function find_local_peak_near_time(
     return idx_peaks[argmax(y[idx_peaks])]
 end
 
+function calc_frequency_from_time(val_p::AbstractVector{<:Real}, u_s::Real)::Float64
+    return val_p[1] * u_s + val_p[2] * u_s^2 + val_p[3] * u_s^3 + val_p[4] * u_s^4
+end
+
+function fit_time_zero_from_references(
+    val_p::AbstractVector{<:Real},
+    time_peak_s::AbstractVector{<:Real},
+    freq_mhz::AbstractVector{<:Real},
+    u_calibration_range_s::Tuple{<:Real,<:Real},
+)
+    length(time_peak_s) == length(freq_mhz) ||
+        throw(DimensionMismatch("Reference times and frequencies must have equal lengths"))
+    length(time_peak_s) >= 2 || throw(ArgumentError("At least two references are needed to fit t₀"))
+    u_calibration_range_s[1] < u_calibration_range_s[2] ||
+        throw(ArgumentError("Calibration time range must be increasing"))
+    time_zero_lower_s = maximum(time_peak_s .- u_calibration_range_s[2])
+    time_zero_upper_s = minimum(time_peak_s .- u_calibration_range_s[1])
+    time_zero_lower_s < time_zero_upper_s ||
+        throw(ArgumentError("No t₀ keeps all reference peaks inside the calibrated time range"))
+
+    function calc_sum_squared_frequency_error(time_zero_s::Real)::Float64
+        val_error_sum_mhz2 = 0.0
+        for idx in eachindex(time_peak_s)
+            freq_fit_mhz = calc_frequency_from_time(val_p, time_peak_s[idx] - time_zero_s)
+            val_error_sum_mhz2 += (freq_fit_mhz - freq_mhz[idx])^2
+        end
+        return val_error_sum_mhz2
+    end
+
+    # Keep every reference within the time domain supported by the calibration.
+    # Within that domain, explicitly minimize the per-entry sum of squared errors.
+    val_t_zero_grid_s = range(time_zero_lower_s, time_zero_upper_s; length=1001)
+    pos_best = argmin(calc_sum_squared_frequency_error.(val_t_zero_grid_s))
+    pos_best == firstindex(val_t_zero_grid_s) && return first(val_t_zero_grid_s)
+    pos_best == lastindex(val_t_zero_grid_s) && return last(val_t_zero_grid_s)
+    time_left_s = val_t_zero_grid_s[pos_best - 1]
+    time_right_s = val_t_zero_grid_s[pos_best + 1]
+    val_golden = (sqrt(5) - 1) / 2
+    time_x1_s = time_right_s - val_golden * (time_right_s - time_left_s)
+    time_x2_s = time_left_s + val_golden * (time_right_s - time_left_s)
+    val_error_x1 = calc_sum_squared_frequency_error(time_x1_s)
+    val_error_x2 = calc_sum_squared_frequency_error(time_x2_s)
+    for _ in 1:100
+        if val_error_x1 <= val_error_x2
+            time_right_s = time_x2_s
+            time_x2_s = time_x1_s
+            val_error_x2 = val_error_x1
+            time_x1_s = time_right_s - val_golden * (time_right_s - time_left_s)
+            val_error_x1 = calc_sum_squared_frequency_error(time_x1_s)
+        else
+            time_left_s = time_x1_s
+            time_x1_s = time_x2_s
+            val_error_x1 = val_error_x2
+            time_x2_s = time_left_s + val_golden * (time_right_s - time_left_s)
+            val_error_x2 = calc_sum_squared_frequency_error(time_x2_s)
+        end
+    end
+    return (time_left_s + time_right_s) / 2
+end
+
 function plot_spectrum_frequency_calibration(
     path_data::AbstractString,
     path_png::AbstractString,
@@ -445,18 +521,22 @@ function plot_spectrum_frequency_calibration(
         path_jld2 = joinpath(path_data, "$name_file.jld2")
         isfile(path_jld2) || throw(ArgumentError("JLD2 cache does not exist: $path_jld2"))
         payload = JLD2.load(path_jld2)
+        ch1_v = payload["ch1_v"]
         ch2_v = payload["ch2_v"]
         time_s = calc_time_axis(payload["metadata_lines"], length(ch2_v))
+        time_alignment_zero_s = find_ch1_alignment_zero_crossing(ch1_v, time_s)
+        time_aligned_s = time_s .- time_alignment_zero_s
         val_baseline_v = calc_mean_excluding_top_fraction(ch2_v, 0.01)
 
         for peak_config in entry["peaks"]
             freq_mhz = Float64(peak_config["freq"])
             time_config_s = Float64(peak_config["time"])
-            idx_peak = find_local_peak_near_time(ch2_v, time_s, time_config_s, time_uncertainty_s)
-            time_peak_s = Float64(time_s[idx_peak])
-            push!(points_reference, (; id_file, freq_mhz, time_config_s, time_peak_s))
+            idx_peak = find_local_peak_near_time(ch2_v, time_aligned_s, time_config_s, time_uncertainty_s)
+            time_peak_s = Float64(time_aligned_s[idx_peak])
+            time_peak_raw_s = Float64(time_s[idx_peak])
+            push!(points_reference, (; id_file, freq_mhz, time_config_s, time_peak_s, time_peak_raw_s))
             val_prominence_v = ch2_v[idx_peak] - val_baseline_v
-            println("$name_file: config $(time_config_s) s, $(freq_mhz) MHz → detected peak at $(round(time_peak_s; digits=6)) s; CH2=$(round(ch2_v[idx_peak]; sigdigits=6)) V, prominence over trimmed mean=$(round(val_prominence_v; sigdigits=5)) V")
+            println("$name_file: config aligned $(time_config_s) s, $(freq_mhz) MHz → detected at aligned $(round(time_peak_s; digits=6)) s (raw $(round(time_peak_raw_s; digits=6)) s; CH1 zero $(round(time_alignment_zero_s; digits=6)) s); CH2=$(round(ch2_v[idx_peak]; sigdigits=6)) V, prominence over trimmed mean=$(round(val_prominence_v; sigdigits=5)) V")
         end
         GC.gc()
     end
@@ -515,6 +595,7 @@ function plot_spectrum_frequency_calibration(
         isnothing(idx_file) && throw(ArgumentError("No matching spectrum hue configured for index $id_file"))
         return oklch_to_rgb(val_hue_deg_file[idx_file], 0.60, 0.15)
     end
+    marker_by_file = Dict(14 => :utriangle, 19 => :circle)
 
     fig = Figure(fontsize=24)
     ax = Axis(fig[1, 1];
@@ -538,17 +619,19 @@ function plot_spectrum_frequency_calibration(
     lines!(ax, u_model, freq_model;
         color=:black, linewidth=3, label="Shared quartic model")
 
-    for id_file in ids_file
+    for (idx_group, id_file) in enumerate(ids_file)
         ref_file = filter(point -> point.id_file == id_file, points_reference)
         t_zero_s = time_zero_by_file[id_file]
         color_file = color_for_file(id_file)
-        idx_group = idx_group_by_file[id_file]
+        marker = get(marker_by_file, id_file, :circle)
         offset_label_x_s = (idx_group - (length(ids_file) + 1) / 2) * 0.14
         offset_label_y_mhz = (idx_group - (length(ids_file) + 1) / 2) * 70
         scatter!(ax,
             [point.time_peak_s - t_zero_s for point in ref_file],
             [point.freq_mhz for point in ref_file];
-            color=color_file, markersize=18, strokecolor=:black, strokewidth=1)
+            color=color_file, marker, markersize=24,
+            strokecolor=:white, strokewidth=0.4,
+            label="SDS$(lpad(string(id_file), 5, '0'))")
         for point in ref_file
             time_relative_s = point.time_peak_s - t_zero_s
             freq_model_mhz = val_p[1] * time_relative_s + val_p[2] * time_relative_s^2 +
@@ -558,24 +641,24 @@ function plot_spectrum_frequency_calibration(
             str_error = "Δf=$(str_sign)$(round(freq_error_mhz; digits=1)) MHz"
             text!(ax, time_relative_s + offset_label_x_s, point.freq_mhz + offset_label_y_mhz;
                 text=str_error, color=color_file, fontsize=15,
-                align=(:center, :center), strokecolor=:white, strokewidth=3)
+                align=(:center, :center), strokecolor=:white, strokewidth=0.4)
             println("SDS$(lpad(string(id_file), 5, '0')) $(point.freq_mhz) MHz: Δf = $(round(freq_error_mhz; digits=3)) MHz")
         end
     end
-    axislegend(ax; position=:lb, framevisible=false, labelsize=20)
-
     gl_text = GridLayout()
     fig[1, 2] = gl_text
     str_coefficients = "Shared polynomial coefficients\n" * join(
         ["p$idx = $(round(val_p[idx]; sigdigits=7)) MHz/s^$idx" for idx in 1:4], "\n")
     Label(gl_text[1, 1], str_coefficients;
         color=:black, fontsize=22, halign=:left, valign=:top)
-    Label(gl_text[2, 1], "Fitted zero-frequency times";
+    Label(gl_text[2, 1], "Zero-frequency time offsets";
         color=:black, fontsize=22, halign=:left, valign=:top)
     for (idx_file, id_file) in enumerate(ids_file)
         Label(gl_text[idx_file + 2, 1], "t₀[$id_file] = $(round(time_zero_by_file[id_file]; digits=6)) s";
             color=color_for_file(id_file), fontsize=22, halign=:left, valign=:top)
     end
+    Legend(gl_text[length(ids_file) + 3, 1], ax;
+        framevisible=false, labelsize=20, patchsize=(36, 24))
     resize_to_layout!(fig)
     mkpath(dirname(abspath(path_png)))
     save(path_png, fig; px_per_unit=2)
@@ -598,9 +681,9 @@ function plot_calibrated_spectrum_results(
 
     freq_min_mhz, freq_max_mhz = -750.0, 750.0
     time_uncertainty_s = 0.001
-    axis_width_px = 720 # 54 / 25.4 * 96
-    axis_height_px = 480 # 34 / 25.4 * 96
-    fig = Figure(fontsize=9.333)
+    axis_width_px = 1440 # 54 / 25.4 * 96
+    axis_height_px = 960 # 34 / 25.4 * 96
+    fig = Figure(fontsize=14)
     ax = Axis(fig[1, 1];
         width=axis_width_px,
         height=axis_height_px,
@@ -616,19 +699,47 @@ function plot_calibrated_spectrum_results(
     for entry in entries_result
         id_file = Int(entry["index"])
         name_file = "SDS$(lpad(string(id_file), 5, '0'))"
+        tag = String(entry["tag"])
         path_jld2 = joinpath(path_data, "$name_file.jld2")
         isfile(path_jld2) || throw(ArgumentError("JLD2 cache does not exist: $path_jld2"))
-        points_zero = filter(peak -> iszero(Float64(peak["freq"])), entry["peaks"])
-        length(points_zero) == 1 || throw(ArgumentError(
-            "Expected exactly one 0 MHz result reference for $name_file; found $(length(points_zero))"))
-        time_config_s = Float64(only(points_zero)["time"])
-
         payload = JLD2.load(path_jld2)
+        ch1_v = payload["ch1_v"]
         ch2_v = payload["ch2_v"]
         time_s = calc_time_axis(payload["metadata_lines"], length(ch2_v))
-        idx_peak_zero = find_local_peak_near_time(ch2_v, time_s, time_config_s, time_uncertainty_s)
-        time_zero_s = Float64(time_s[idx_peak_zero])
-        time_relative_s = time_s .- time_zero_s
+        time_alignment_zero_s = find_ch1_alignment_zero_crossing(ch1_v, time_s)
+        time_aligned_s = time_s .- time_alignment_zero_s
+        points_result = NamedTuple[]
+        for peak_config in entry["peaks"]
+            freq_mhz = Float64(peak_config["freq"])
+            time_config_s = Float64(peak_config["time"])
+            idx_peak = find_local_peak_near_time(ch2_v, time_aligned_s, time_config_s, time_uncertainty_s)
+            push!(points_result, (; freq_mhz, time_config_s, idx_peak,
+                time_peak_s=Float64(time_aligned_s[idx_peak]),
+                time_peak_raw_s=Float64(time_s[idx_peak])))
+        end
+        points_zero = filter(point -> iszero(point.freq_mhz), points_result)
+        if length(points_zero) > 1
+            throw(ArgumentError("Expected at most one 0 MHz result reference for $name_file; found $(length(points_zero))"))
+        elseif isempty(points_zero)
+            time_zero_s = fit_time_zero_from_references(val_p,
+                [point.time_peak_s for point in points_result],
+                [point.freq_mhz for point in points_result],
+                u_calibration_range_s)
+            println("$name_file ($tag): fitted t₀=$(round(time_zero_s; digits=6)) s from $(length(points_result)) nonzero-frequency references")
+        else
+            time_zero_s = only(points_zero).time_peak_s
+            println("$name_file ($tag): detected aligned 0 MHz peak at $(round(time_zero_s; digits=6)) s " *
+                "(raw $(round(only(points_zero).time_peak_raw_s; digits=6)) s; CH1 zero $(round(time_alignment_zero_s; digits=6)) s)")
+        end
+        for point in points_result
+            freq_calibrated_mhz = calc_frequency_from_time(val_p, point.time_peak_s - time_zero_s)
+            println("$name_file ($tag): reference $(point.freq_mhz) MHz at aligned t=" *
+                "$(round(point.time_peak_s; digits=6)) s (raw $(round(point.time_peak_raw_s; digits=6)) s; " *
+                "CH2=$(round(ch2_v[point.idx_peak]; sigdigits=6)) V) → " *
+                "$(round(freq_calibrated_mhz; digits=3)) MHz " *
+                "(residual $(round(point.freq_mhz - freq_calibrated_mhz; digits=3)) MHz)")
+        end
+        time_relative_s = time_aligned_s .- time_zero_s
         frequency_mhz = val_p[1] .* time_relative_s .+ val_p[2] .* time_relative_s .^ 2 .+
             val_p[3] .* time_relative_s .^ 3 .+ val_p[4] .* time_relative_s .^ 4
         mask_frequency = (u_calibration_range_s[1] .<= time_relative_s) .&
@@ -638,12 +749,31 @@ function plot_calibrated_spectrum_results(
         frequency_trace = frequency_mhz[mask_frequency]
         signal_trace_v = ch2_v[mask_frequency]
         color_line = parse(Colorant, String(entry["color"]))
-        tag = String(entry["tag"])
         lines!(ax, frequency_trace, signal_trace_v;
             color=color_line, linewidth=1.2, label=tag)
-        println("$name_file ($tag): detected 0 MHz peak at $(round(time_zero_s; digits=6)) s; " *
-            "using calibration time range $(u_calibration_range_s[1])…$(u_calibration_range_s[2]) s; " *
-            "raw CH2 voltage range=$(round(minimum(signal_trace_v); sigdigits=6))…$(round(maximum(signal_trace_v); sigdigits=6)) V")
+        for point in points_result
+            freq_peak_mhz = calc_frequency_from_time(val_p, point.time_peak_s - time_zero_s)
+            val_peak_v = ch2_v[point.idx_peak]
+            offset_label_x_mhz = if iszero(point.freq_mhz)
+                val_peak_v > 0.3 ? 12.0 : -12.0
+            elseif id_file == 21
+                point.freq_mhz > 0 ? -12.0 : 12.0
+            else
+                point.freq_mhz > 0 ? 12.0 : -12.0
+            end
+            offset_label_y_v = val_peak_v > 0.5 ? -0.012 : 0.012
+            scatter!(ax, [freq_peak_mhz], [val_peak_v];
+                color=color_line, marker=:utriangle, markersize=8,
+                strokecolor=:black, strokewidth=0.8)
+            text!(ax, freq_peak_mhz + offset_label_x_mhz, val_peak_v + offset_label_y_v;
+                text="t=$(round(point.time_peak_s; digits=3)) s\nf=$(round(freq_peak_mhz; digits=1)) MHz\nV=$(round(val_peak_v; digits=3)) V",
+                color=:black, fontsize=14,
+                align=(offset_label_x_mhz > 0 ? :left : :right,
+                    offset_label_y_v > 0 ? :bottom : :top),
+                strokecolor=:white, strokewidth=0.4)
+        end
+        println("$name_file ($tag): using calibration time range $(u_calibration_range_s[1])…$(u_calibration_range_s[2]) s; " *
+            "CH1 alignment zero=$(round(time_alignment_zero_s; digits=6)) s; raw CH2 voltage range=$(round(minimum(signal_trace_v); sigdigits=6))…$(round(maximum(signal_trace_v); sigdigits=6)) V")
         GC.gc()
     end
 
@@ -706,18 +836,28 @@ fig = function plot_ch1_spectrum(
     return nothing
 end
 
-length(ARGS) <= 1 || throw(ArgumentError("Usage: julia --project=. multidualmot/spectral626.jl [data-folder]"))
-path_data = isempty(ARGS) ? path_data_root : abspath(ARGS[1])
-convert_missing_scope_csvs(path_data)
+args_data = filter(!=("--skip-conversion"), ARGS)
+args_data = filter(!=("--calibration-only"), args_data)
+length(args_data) <= 1 || throw(ArgumentError(
+    "Usage: julia --project=. multidualmot/spectral626.jl [data-folder] [--skip-conversion] [--calibration-only]"))
+path_data = isempty(args_data) ? path_data_root : abspath(args_data[1])
+if "--skip-conversion" in ARGS
+    println("Skipping CSV conversion; using existing JLD2 caches in $path_data")
+else
+    convert_missing_scope_csvs(path_data)
+end
 
 # The follow-up plots and period table remain specific to SDS00014.
-path_jld2 = joinpath(path_data, "SDS00014.jld2")
-isfile(path_jld2) || throw(ArgumentError("SDS00014 JLD2 cache is missing after conversion: $path_jld2"))
-path_png = joinpath(path_data, "SDS00014_CH1_vs_time.png")
-path_period_csv = joinpath(path_data, "SDS00014_CH1_periods.csv")
-path_ch2_png = joinpath(path_data, "SDS00014_15_16_19_21_CH2_aligned_periods.png")
-plot_ch1_spectrum(path_jld2, path_png, path_period_csv, path_ch2_png)
-fig_spectrum = plot_ch2_periods_spanning_zero(path_data, [14, 15, 16, 19, 21], path_ch2_png)
+if !("--calibration-only" in ARGS)
+    path_jld2 = joinpath(path_data, "SDS00014.jld2")
+    isfile(path_jld2) || throw(ArgumentError("SDS00014 JLD2 cache is missing after conversion: $path_jld2"))
+    path_png = joinpath(path_data, "SDS00014_CH1_vs_time.png")
+    path_period_csv = joinpath(path_data, "SDS00014_CH1_periods.csv")
+    path_ch2_png = joinpath(path_data, "SDS00014_15_16_19_21_CH2_aligned_periods.png")
+    plot_ch1_spectrum(path_jld2, path_png, path_period_csv, path_ch2_png)
+    fig_spectrum = plot_ch2_periods_spanning_zero(path_data, [14, 15, 16, 19, 21], path_ch2_png)
+end
+
 path_calibration_png = joinpath(path_data, "spectrum626_time_frequency_calibration.png")
 calibration_result = plot_spectrum_frequency_calibration(path_data, path_calibration_png)
 fig_calibration = calibration_result.fig
