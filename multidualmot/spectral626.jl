@@ -3,7 +3,9 @@ using GLMakie
 using Colors
 using DataFrames
 using JLD2
+using LsqFit
 using Peaks
+using YAML
 
 GLMakie.activate!()
 const path_data_root = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\spectrum 626"
@@ -406,6 +408,253 @@ function plot_ch2_periods_spanning_zero(
     return fig
 end
 
+function find_local_peak_near_time(
+    y::AbstractVector{<:Real},
+    time_s::AbstractVector{<:Real},
+    target_time_s::Real,
+    time_uncertainty_s::Real,
+)::Int
+    length(y) == length(time_s) || throw(DimensionMismatch("Signal and time arrays must have equal lengths"))
+    time_uncertainty_s > 0 || throw(ArgumentError("time_uncertainty_s must be positive"))
+    idx_first = searchsortedfirst(time_s, target_time_s - time_uncertainty_s)
+    idx_last = searchsortedlast(time_s, target_time_s + time_uncertainty_s)
+    idx_first <= idx_last || throw(ArgumentError("No samples within ±$time_uncertainty_s s of $target_time_s s"))
+
+    y_window = @view y[idx_first:idx_last]
+    idx_local_peaks = findmaxima(y_window).indices
+    isempty(idx_local_peaks) && throw(ArgumentError("No local CH2 peak within ±$time_uncertainty_s s of $target_time_s s"))
+    idx_peaks = idx_first .+ idx_local_peaks .- 1
+    return idx_peaks[argmax(y[idx_peaks])]
+end
+
+function plot_spectrum_frequency_calibration(
+    path_data::AbstractString,
+    path_png::AbstractString,
+)
+    path_config = joinpath(path_data, "config.yaml")
+    isfile(path_config) || throw(ArgumentError("Calibration config does not exist: $path_config"))
+    config = YAML.load_file(path_config)
+    entries_calibration = get(config, "calibration", nothing)
+    isnothing(entries_calibration) && throw(ArgumentError("No 'calibration' section in $path_config"))
+
+    time_uncertainty_s = 0.001
+    points_reference = NamedTuple[]
+    for entry in entries_calibration
+        id_file = Int(entry["index"])
+        name_file = "SDS$(lpad(string(id_file), 5, '0'))"
+        path_jld2 = joinpath(path_data, "$name_file.jld2")
+        isfile(path_jld2) || throw(ArgumentError("JLD2 cache does not exist: $path_jld2"))
+        payload = JLD2.load(path_jld2)
+        ch2_v = payload["ch2_v"]
+        time_s = calc_time_axis(payload["metadata_lines"], length(ch2_v))
+        val_baseline_v = calc_mean_excluding_top_fraction(ch2_v, 0.01)
+
+        for peak_config in entry["peaks"]
+            freq_mhz = Float64(peak_config["freq"])
+            time_config_s = Float64(peak_config["time"])
+            idx_peak = find_local_peak_near_time(ch2_v, time_s, time_config_s, time_uncertainty_s)
+            time_peak_s = Float64(time_s[idx_peak])
+            push!(points_reference, (; id_file, freq_mhz, time_config_s, time_peak_s))
+            val_prominence_v = ch2_v[idx_peak] - val_baseline_v
+            println("$name_file: config $(time_config_s) s, $(freq_mhz) MHz → detected peak at $(round(time_peak_s; digits=6)) s; CH2=$(round(ch2_v[idx_peak]; sigdigits=6)) V, prominence over trimmed mean=$(round(val_prominence_v; sigdigits=5)) V")
+        end
+        GC.gc()
+    end
+
+    ids_file = unique([point.id_file for point in points_reference])
+    time_zero_by_file = Dict{Int,Float64}()
+    for id_file in ids_file
+        points_zero = filter(point -> point.id_file == id_file && iszero(point.freq_mhz), points_reference)
+        length(points_zero) == 1 || throw(ArgumentError("Expected exactly one 0 MHz reference for SDS$(lpad(string(id_file), 5, '0')); found $(length(points_zero))"))
+        time_zero_by_file[id_file] = only(points_zero).time_peak_s
+    end
+
+    length(points_reference) > 4 + length(ids_file) ||
+        throw(ArgumentError("Need more calibration references than the $(4 + length(ids_file)) fitted parameters"))
+    points_nonzero = filter(point -> !iszero(point.freq_mhz), points_reference)
+    val_u_initial = [point.time_peak_s - time_zero_by_file[point.id_file] for point in points_nonzero]
+    val_freq_nonzero = [point.freq_mhz for point in points_nonzero]
+    mat_design_initial = hcat(val_u_initial, val_u_initial .^ 2, val_u_initial .^ 3, val_u_initial .^ 4)
+    val_p_initial = mat_design_initial \ val_freq_nonzero
+    idx_group_by_file = Dict(id_file => idx for (idx, id_file) in enumerate(ids_file))
+    mat_x = vcat(
+        reshape([point.time_peak_s for point in points_reference], 1, :),
+        reshape([idx_group_by_file[point.id_file] for point in points_reference], 1, :),
+    )
+    val_frequency_mhz = [point.freq_mhz for point in points_reference]
+    val_p_initial_all = vcat(val_p_initial, [time_zero_by_file[id_file] for id_file in ids_file])
+    function model_calibration(x, p)
+        return [begin
+            u = x[1, idx] - p[4 + Int(x[2, idx])]
+            p[1] * u + p[2] * u^2 + p[3] * u^3 + p[4] * u^4
+        end for idx in axes(x, 2)]
+    end
+    function jacobian_calibration(x, p)
+        jac = zeros(Float64, size(x, 2), length(p))
+        for idx in axes(x, 2)
+            u = x[1, idx] - p[4 + Int(x[2, idx])]
+            jac[idx, 1:4] .= (u, u^2, u^3, u^4)
+            idx_t0 = 4 + Int(x[2, idx])
+            jac[idx, idx_t0] = -(p[1] + 2p[2] * u + 3p[3] * u^2 + 4p[4] * u^3)
+        end
+        return jac
+    end
+    fit_calibration = LsqFit.curve_fit(
+        model_calibration, jacobian_calibration, mat_x, val_frequency_mhz, val_p_initial_all)
+    fit_calibration.converged || @warn "Calibration fit did not report convergence"
+    val_parameters = fit_calibration.param
+    val_p = val_parameters[1:4]
+    for id_file in ids_file
+        time_zero_by_file[id_file] = val_parameters[4 + idx_group_by_file[id_file]]
+    end
+
+    ids_palette = [14, 15, 16, 19, 21]
+    val_hue_deg_file = [24, 80, 136, 192, 248]
+    function color_for_file(id_file::Int)
+        idx_file = findfirst(==(id_file), ids_palette)
+        isnothing(idx_file) && throw(ArgumentError("No matching spectrum hue configured for index $id_file"))
+        return oklch_to_rgb(val_hue_deg_file[idx_file], 0.60, 0.15)
+    end
+
+    fig = Figure(fontsize=24)
+    ax = Axis(fig[1, 1];
+        width=1200,
+        height=850,
+        title="Spectrum 626 time–frequency calibration",
+        xlabel="Time from fitted t₀ (s)",
+        ylabel="Reference frequency (MHz)",
+        titlesize=32,
+        xlabelsize=28,
+        ylabelsize=28,
+        xticklabelsize=22,
+        yticklabelsize=22,
+    )
+
+    val_u_all = [point.time_peak_s - time_zero_by_file[point.id_file] for point in points_reference]
+    u_min, u_max = extrema(val_u_all)
+    u_model = range(u_min, u_max; length=700)
+    freq_model = val_p[1] .* u_model .+ val_p[2] .* u_model .^ 2 .+
+        val_p[3] .* u_model .^ 3 .+ val_p[4] .* u_model .^ 4
+    lines!(ax, u_model, freq_model;
+        color=:black, linewidth=3, label="Shared quartic model")
+
+    for id_file in ids_file
+        ref_file = filter(point -> point.id_file == id_file, points_reference)
+        t_zero_s = time_zero_by_file[id_file]
+        color_file = color_for_file(id_file)
+        idx_group = idx_group_by_file[id_file]
+        offset_label_x_s = (idx_group - (length(ids_file) + 1) / 2) * 0.14
+        offset_label_y_mhz = (idx_group - (length(ids_file) + 1) / 2) * 70
+        scatter!(ax,
+            [point.time_peak_s - t_zero_s for point in ref_file],
+            [point.freq_mhz for point in ref_file];
+            color=color_file, markersize=18, strokecolor=:black, strokewidth=1)
+        for point in ref_file
+            time_relative_s = point.time_peak_s - t_zero_s
+            freq_model_mhz = val_p[1] * time_relative_s + val_p[2] * time_relative_s^2 +
+                val_p[3] * time_relative_s^3 + val_p[4] * time_relative_s^4
+            freq_error_mhz = point.freq_mhz - freq_model_mhz
+            str_sign = freq_error_mhz >= 0 ? "+" : ""
+            str_error = "Δf=$(str_sign)$(round(freq_error_mhz; digits=1)) MHz"
+            text!(ax, time_relative_s + offset_label_x_s, point.freq_mhz + offset_label_y_mhz;
+                text=str_error, color=color_file, fontsize=15,
+                align=(:center, :center), strokecolor=:white, strokewidth=3)
+            println("SDS$(lpad(string(id_file), 5, '0')) $(point.freq_mhz) MHz: Δf = $(round(freq_error_mhz; digits=3)) MHz")
+        end
+    end
+    axislegend(ax; position=:lb, framevisible=false, labelsize=20)
+
+    gl_text = GridLayout()
+    fig[1, 2] = gl_text
+    str_coefficients = "Shared polynomial coefficients\n" * join(
+        ["p$idx = $(round(val_p[idx]; sigdigits=7)) MHz/s^$idx" for idx in 1:4], "\n")
+    Label(gl_text[1, 1], str_coefficients;
+        color=:black, fontsize=22, halign=:left, valign=:top)
+    Label(gl_text[2, 1], "Fitted zero-frequency times";
+        color=:black, fontsize=22, halign=:left, valign=:top)
+    for (idx_file, id_file) in enumerate(ids_file)
+        Label(gl_text[idx_file + 2, 1], "t₀[$id_file] = $(round(time_zero_by_file[id_file]; digits=6)) s";
+            color=color_for_file(id_file), fontsize=22, halign=:left, valign=:top)
+    end
+    resize_to_layout!(fig)
+    mkpath(dirname(abspath(path_png)))
+    save(path_png, fig; px_per_unit=2)
+    println("Shared polynomial coefficients p1–p4: $(collect(val_p))")
+    println("Fitted t0 by index: $time_zero_by_file")
+    println("Joint-fit RSS: $(LsqFit.rss(fit_calibration)); converged=$(fit_calibration.converged); parameters=$(length(val_parameters))")
+    println("Saved resized calibration PNG to $path_png")
+    return (; fig, val_p, points_reference, ids_file, time_zero_by_file)
+end
+
+function plot_calibrated_spectrum_results(
+    path_data::AbstractString,
+    path_png::AbstractString,
+    val_p::AbstractVector{<:Real},
+    u_calibration_range_s::Tuple{<:Real,<:Real},
+)
+    config = YAML.load_file(joinpath(path_data, "config.yaml"))
+    entries_result = get(config, "result", nothing)
+    isnothing(entries_result) && throw(ArgumentError("No 'result' section in config.yaml"))
+
+    freq_min_mhz, freq_max_mhz = -750.0, 750.0
+    time_uncertainty_s = 0.001
+    axis_width_px = 720 # 54 / 25.4 * 96
+    axis_height_px = 480 # 34 / 25.4 * 96
+    fig = Figure(fontsize=9.333)
+    ax = Axis(fig[1, 1];
+        width=axis_width_px,
+        height=axis_height_px,
+        xlabel="Frequency (MHz)",
+        ylabel="Spectrum signal (V)",
+        xlabelsize=10.667,
+        ylabelsize=10.667,
+        xticklabelsize=9.333,
+        yticklabelsize=9.333,
+        limits=((freq_min_mhz, freq_max_mhz), nothing),
+    )
+
+    for entry in entries_result
+        id_file = Int(entry["index"])
+        name_file = "SDS$(lpad(string(id_file), 5, '0'))"
+        path_jld2 = joinpath(path_data, "$name_file.jld2")
+        isfile(path_jld2) || throw(ArgumentError("JLD2 cache does not exist: $path_jld2"))
+        points_zero = filter(peak -> iszero(Float64(peak["freq"])), entry["peaks"])
+        length(points_zero) == 1 || throw(ArgumentError(
+            "Expected exactly one 0 MHz result reference for $name_file; found $(length(points_zero))"))
+        time_config_s = Float64(only(points_zero)["time"])
+
+        payload = JLD2.load(path_jld2)
+        ch2_v = payload["ch2_v"]
+        time_s = calc_time_axis(payload["metadata_lines"], length(ch2_v))
+        idx_peak_zero = find_local_peak_near_time(ch2_v, time_s, time_config_s, time_uncertainty_s)
+        time_zero_s = Float64(time_s[idx_peak_zero])
+        time_relative_s = time_s .- time_zero_s
+        frequency_mhz = val_p[1] .* time_relative_s .+ val_p[2] .* time_relative_s .^ 2 .+
+            val_p[3] .* time_relative_s .^ 3 .+ val_p[4] .* time_relative_s .^ 4
+        mask_frequency = (u_calibration_range_s[1] .<= time_relative_s) .&
+            (time_relative_s .<= u_calibration_range_s[2]) .&
+            (freq_min_mhz .<= frequency_mhz) .& (frequency_mhz .<= freq_max_mhz)
+        any(mask_frequency) || throw(ArgumentError("No samples for $name_file fall in the requested frequency range"))
+        frequency_trace = frequency_mhz[mask_frequency]
+        signal_trace_v = ch2_v[mask_frequency]
+        color_line = parse(Colorant, String(entry["color"]))
+        tag = String(entry["tag"])
+        lines!(ax, frequency_trace, signal_trace_v;
+            color=color_line, linewidth=1.2, label=tag)
+        println("$name_file ($tag): detected 0 MHz peak at $(round(time_zero_s; digits=6)) s; " *
+            "using calibration time range $(u_calibration_range_s[1])…$(u_calibration_range_s[2]) s; " *
+            "raw CH2 voltage range=$(round(minimum(signal_trace_v); sigdigits=6))…$(round(maximum(signal_trace_v); sigdigits=6)) V")
+        GC.gc()
+    end
+
+    axislegend(ax; position=:rt, framevisible=false, labelsize=9.333)
+    resize_to_layout!(fig)
+    mkpath(dirname(abspath(path_png)))
+    save(path_png, fig; px_per_unit=4)
+    println("Saved result spectrum PNG with $(round(axis_width_px; digits=1))×$(round(axis_height_px; digits=1)) px axis to $path_png")
+    return fig
+end
+
 fig = function plot_ch1_spectrum(
     path_jld2::AbstractString,
     path_png::AbstractString,
@@ -469,3 +718,13 @@ path_period_csv = joinpath(path_data, "SDS00014_CH1_periods.csv")
 path_ch2_png = joinpath(path_data, "SDS00014_15_16_19_21_CH2_aligned_periods.png")
 plot_ch1_spectrum(path_jld2, path_png, path_period_csv, path_ch2_png)
 fig_spectrum = plot_ch2_periods_spanning_zero(path_data, [14, 15, 16, 19, 21], path_ch2_png)
+path_calibration_png = joinpath(path_data, "spectrum626_time_frequency_calibration.png")
+calibration_result = plot_spectrum_frequency_calibration(path_data, path_calibration_png)
+fig_calibration = calibration_result.fig
+path_result_spectrum_png = joinpath(path_data, "spectrum626_calibrated_results.png")
+u_calibration_range_s = extrema([
+    point.time_peak_s - calibration_result.time_zero_by_file[point.id_file]
+    for point in calibration_result.points_reference
+])
+fig_result_spectrum = plot_calibrated_spectrum_results(
+    path_data, path_result_spectrum_png, calibration_result.val_p, u_calibration_range_s)
