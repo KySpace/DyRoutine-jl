@@ -5,6 +5,7 @@ using DataFrames
 using JLD2
 using LsqFit
 using Peaks
+using Statistics
 using YAML
 
 GLMakie.activate!()
@@ -443,64 +444,74 @@ function find_local_peak_near_time(
     return idx_peaks[argmax(y[idx_peaks])]
 end
 
-function calc_frequency_from_time(val_p::AbstractVector{<:Real}, u_s::Real)::Float64
-    return val_p[1] * u_s + val_p[2] * u_s^2 + val_p[3] * u_s^3 + val_p[4] * u_s^4
+function calc_frequency_from_time(
+    alpha_mhz_per_s::Real,
+    val_p_shape::AbstractVector{<:Real},
+    u_s::Real,
+)::Float64
+    return alpha_mhz_per_s * u_s *
+        (1 + val_p_shape[1] * u_s + val_p_shape[2] * u_s^3 + val_p_shape[3] * u_s^4)
 end
 
-function fit_time_zero_from_references(
-    val_p::AbstractVector{<:Real},
+function fit_time_zero_and_scale(
+    time_center_s::Real,
     time_peak_s::AbstractVector{<:Real},
     freq_mhz::AbstractVector{<:Real},
-    u_calibration_range_s::Tuple{<:Real,<:Real},
+    val_p_shape::AbstractVector{<:Real},
 )
     length(time_peak_s) == length(freq_mhz) ||
         throw(DimensionMismatch("Reference times and frequencies must have equal lengths"))
-    length(time_peak_s) >= 2 || throw(ArgumentError("At least two references are needed to fit t₀"))
-    u_calibration_range_s[1] < u_calibration_range_s[2] ||
-        throw(ArgumentError("Calibration time range must be increasing"))
-    time_zero_lower_s = maximum(time_peak_s .- u_calibration_range_s[2])
-    time_zero_upper_s = minimum(time_peak_s .- u_calibration_range_s[1])
-    time_zero_lower_s < time_zero_upper_s ||
-        throw(ArgumentError("No t₀ keeps all reference peaks inside the calibrated time range"))
+    length(time_peak_s) >= 2 || throw(ArgumentError("At least two references are needed to fit t₀ and α"))
+    length(val_p_shape) == 3 || throw(DimensionMismatch("Expected shared p₂–p₄ coefficients"))
+    val_time_centered_s = Float64.(time_peak_s .- time_center_s)
 
-    function calc_sum_squared_frequency_error(time_zero_s::Real)::Float64
-        val_error_sum_mhz2 = 0.0
-        for idx in eachindex(time_peak_s)
-            freq_fit_mhz = calc_frequency_from_time(val_p, time_peak_s[idx] - time_zero_s)
-            val_error_sum_mhz2 += (freq_fit_mhz - freq_mhz[idx])^2
+    function model_result(x, theta)
+        return [calc_frequency_from_time(theta[2], val_p_shape, x[idx] - theta[1]) for idx in eachindex(x)]
+    end
+    function jacobian_result(x, theta)
+        jac = zeros(Float64, length(x), 2)
+        alpha_mhz_per_s = theta[2]
+        for idx in eachindex(x)
+            u_s = x[idx] - theta[1]
+            shape = 1 + val_p_shape[1] * u_s + val_p_shape[2] * u_s^3 + val_p_shape[3] * u_s^4
+            slope_shape = 1 + 2val_p_shape[1] * u_s +
+                4val_p_shape[2] * u_s^3 + 5val_p_shape[3] * u_s^4
+            jac[idx, 1] = -alpha_mhz_per_s * slope_shape
+            jac[idx, 2] = u_s * shape
         end
-        return val_error_sum_mhz2
+        return jac
     end
 
-    # Keep every reference within the time domain supported by the calibration.
-    # Within that domain, explicitly minimize the per-entry sum of squared errors.
-    val_t_zero_grid_s = range(time_zero_lower_s, time_zero_upper_s; length=1001)
-    pos_best = argmin(calc_sum_squared_frequency_error.(val_t_zero_grid_s))
-    pos_best == firstindex(val_t_zero_grid_s) && return first(val_t_zero_grid_s)
-    pos_best == lastindex(val_t_zero_grid_s) && return last(val_t_zero_grid_s)
-    time_left_s = val_t_zero_grid_s[pos_best - 1]
-    time_right_s = val_t_zero_grid_s[pos_best + 1]
-    val_golden = (sqrt(5) - 1) / 2
-    time_x1_s = time_right_s - val_golden * (time_right_s - time_left_s)
-    time_x2_s = time_left_s + val_golden * (time_right_s - time_left_s)
-    val_error_x1 = calc_sum_squared_frequency_error(time_x1_s)
-    val_error_x2 = calc_sum_squared_frequency_error(time_x2_s)
-    for _ in 1:100
-        if val_error_x1 <= val_error_x2
-            time_right_s = time_x2_s
-            time_x2_s = time_x1_s
-            val_error_x2 = val_error_x1
-            time_x1_s = time_right_s - val_golden * (time_right_s - time_left_s)
-            val_error_x1 = calc_sum_squared_frequency_error(time_x1_s)
-        else
-            time_left_s = time_x1_s
-            time_x1_s = time_x2_s
-            val_error_x1 = val_error_x2
-            time_x2_s = time_left_s + val_golden * (time_right_s - time_left_s)
-            val_error_x2 = calc_sum_squared_frequency_error(time_x2_s)
-        end
+    fit = LsqFit.curve_fit(
+        model_result, jacobian_result, val_time_centered_s, Float64.(freq_mhz), [0.0, -472.0])
+    fit.converged || @warn "Per-index t₀/α fit did not report convergence"
+    return (time_zero_s=Float64(time_center_s + fit.param[1]),
+        alpha_mhz_per_s=Float64(fit.param[2]), fit)
+end
+
+function fit_scale_with_fixed_time_zero(
+    time_zero_s::Real,
+    time_peak_s::AbstractVector{<:Real},
+    freq_mhz::AbstractVector{<:Real},
+    val_p_shape::AbstractVector{<:Real},
+)
+    length(time_peak_s) == length(freq_mhz) ||
+        throw(DimensionMismatch("Reference times and frequencies must have equal lengths"))
+    length(time_peak_s) >= 2 || throw(ArgumentError("At least two references are needed to fit α"))
+    val_u_s = Float64.(time_peak_s .- time_zero_s)
+    function model_scale(u_s, p)
+        return [calc_frequency_from_time(p[1], val_p_shape, u) for u in u_s]
     end
-    return (time_left_s + time_right_s) / 2
+    function jacobian_scale(u_s, p)
+        return reshape([
+            u * (1 + val_p_shape[1] * u + val_p_shape[2] * u^3 + val_p_shape[3] * u^4)
+            for u in u_s
+        ], :, 1)
+    end
+    fit = LsqFit.curve_fit(
+        model_scale, jacobian_scale, val_u_s, Float64.(freq_mhz), [-472.0])
+    fit.converged || @warn "Fixed-t₀ α fit did not report convergence"
+    return (alpha_mhz_per_s=Float64(only(fit.param)), fit)
 end
 
 function plot_spectrum_frequency_calibration(
@@ -549,33 +560,34 @@ function plot_spectrum_frequency_calibration(
         time_zero_by_file[id_file] = only(points_zero).time_peak_s
     end
 
-    length(points_reference) > 4 + length(ids_file) ||
-        throw(ArgumentError("Need more calibration references than the $(4 + length(ids_file)) fitted parameters"))
-    points_nonzero = filter(point -> !iszero(point.freq_mhz), points_reference)
-    val_u_initial = [point.time_peak_s - time_zero_by_file[point.id_file] for point in points_nonzero]
-    val_freq_nonzero = [point.freq_mhz for point in points_nonzero]
-    mat_design_initial = hcat(val_u_initial, val_u_initial .^ 2, val_u_initial .^ 3, val_u_initial .^ 4)
-    val_p_initial = mat_design_initial \ val_freq_nonzero
     idx_group_by_file = Dict(id_file => idx for (idx, id_file) in enumerate(ids_file))
+    n_parameters = 3 + length(ids_file)
+    length(points_reference) > n_parameters ||
+        throw(ArgumentError("Need more calibration references than the $n_parameters fitted parameters"))
     mat_x = vcat(
-        reshape([point.time_peak_s for point in points_reference], 1, :),
+        reshape([point.time_peak_s - time_zero_by_file[point.id_file] for point in points_reference], 1, :),
         reshape([idx_group_by_file[point.id_file] for point in points_reference], 1, :),
     )
     val_frequency_mhz = [point.freq_mhz for point in points_reference]
-    val_p_initial_all = vcat(val_p_initial, [time_zero_by_file[id_file] for id_file in ids_file])
+    val_p_initial_all = vcat(0.08, -0.0013, 0.0, fill(-472.0, length(ids_file)))
     function model_calibration(x, p)
         return [begin
-            u = x[1, idx] - p[4 + Int(x[2, idx])]
-            p[1] * u + p[2] * u^2 + p[3] * u^3 + p[4] * u^4
+            idx_group = Int(x[2, idx])
+            alpha_mhz_per_s = p[3 + idx_group]
+            calc_frequency_from_time(alpha_mhz_per_s, p[1:3], x[1, idx])
         end for idx in axes(x, 2)]
     end
     function jacobian_calibration(x, p)
         jac = zeros(Float64, size(x, 2), length(p))
         for idx in axes(x, 2)
-            u = x[1, idx] - p[4 + Int(x[2, idx])]
-            jac[idx, 1:4] .= (u, u^2, u^3, u^4)
-            idx_t0 = 4 + Int(x[2, idx])
-            jac[idx, idx_t0] = -(p[1] + 2p[2] * u + 3p[3] * u^2 + 4p[4] * u^3)
+            u_s = x[1, idx]
+            idx_group = Int(x[2, idx])
+            alpha_mhz_per_s = p[3 + idx_group]
+            shape = 1 + p[1] * u_s + p[2] * u_s^3 + p[3] * u_s^4
+            jac[idx, 1] = alpha_mhz_per_s * u_s^2
+            jac[idx, 2] = alpha_mhz_per_s * u_s^4
+            jac[idx, 3] = alpha_mhz_per_s * u_s^5
+            jac[idx, 3 + idx_group] = u_s * shape
         end
         return jac
     end
@@ -583,10 +595,8 @@ function plot_spectrum_frequency_calibration(
         model_calibration, jacobian_calibration, mat_x, val_frequency_mhz, val_p_initial_all)
     fit_calibration.converged || @warn "Calibration fit did not report convergence"
     val_parameters = fit_calibration.param
-    val_p = val_parameters[1:4]
-    for id_file in ids_file
-        time_zero_by_file[id_file] = val_parameters[4 + idx_group_by_file[id_file]]
-    end
+    val_p_shape = val_parameters[1:3]
+    alpha_by_file = Dict(id_file => val_parameters[3 + idx_group_by_file[id_file]] for id_file in ids_file)
 
     ids_palette = [14, 15, 16, 19, 21]
     val_hue_deg_file = [24, 80, 136, 192, 248]
@@ -602,7 +612,7 @@ function plot_spectrum_frequency_calibration(
         width=1200,
         height=850,
         title="Spectrum 626 time–frequency calibration",
-        xlabel="Time from fitted t₀ (s)",
+        xlabel="Time from zero-frequency t₀ (s)",
         ylabel="Reference frequency (MHz)",
         titlesize=32,
         xlabelsize=28,
@@ -611,19 +621,16 @@ function plot_spectrum_frequency_calibration(
         yticklabelsize=22,
     )
 
-    val_u_all = [point.time_peak_s - time_zero_by_file[point.id_file] for point in points_reference]
-    u_min, u_max = extrema(val_u_all)
-    u_model = range(u_min, u_max; length=700)
-    freq_model = val_p[1] .* u_model .+ val_p[2] .* u_model .^ 2 .+
-        val_p[3] .* u_model .^ 3 .+ val_p[4] .* u_model .^ 4
-    lines!(ax, u_model, freq_model;
-        color=:black, linewidth=3, label="Shared quartic model")
-
     for (idx_group, id_file) in enumerate(ids_file)
         ref_file = filter(point -> point.id_file == id_file, points_reference)
         t_zero_s = time_zero_by_file[id_file]
         color_file = color_for_file(id_file)
         marker = get(marker_by_file, id_file, :circle)
+        val_u_file = [point.time_peak_s - t_zero_s for point in ref_file]
+        u_model = range(minimum(val_u_file), maximum(val_u_file); length=700)
+        freq_model = [calc_frequency_from_time(alpha_by_file[id_file], val_p_shape, u) for u in u_model]
+        lines!(ax, u_model, freq_model;
+            color=color_file, linewidth=2, label="SDS$(lpad(string(id_file), 5, '0')) model")
         offset_label_x_s = (idx_group - (length(ids_file) + 1) / 2) * 0.14
         offset_label_y_mhz = (idx_group - (length(ids_file) + 1) / 2) * 70
         scatter!(ax,
@@ -631,11 +638,10 @@ function plot_spectrum_frequency_calibration(
             [point.freq_mhz for point in ref_file];
             color=color_file, marker, markersize=24,
             strokecolor=:white, strokewidth=0.4,
-            label="SDS$(lpad(string(id_file), 5, '0'))")
+        )
         for point in ref_file
             time_relative_s = point.time_peak_s - t_zero_s
-            freq_model_mhz = val_p[1] * time_relative_s + val_p[2] * time_relative_s^2 +
-                val_p[3] * time_relative_s^3 + val_p[4] * time_relative_s^4
+            freq_model_mhz = calc_frequency_from_time(alpha_by_file[id_file], val_p_shape, time_relative_s)
             freq_error_mhz = point.freq_mhz - freq_model_mhz
             str_sign = freq_error_mhz >= 0 ? "+" : ""
             str_error = "Δf=$(str_sign)$(round(freq_error_mhz; digits=1)) MHz"
@@ -647,14 +653,14 @@ function plot_spectrum_frequency_calibration(
     end
     gl_text = GridLayout()
     fig[1, 2] = gl_text
-    str_coefficients = "Shared polynomial coefficients\n" * join(
-        ["p$idx = $(round(val_p[idx]; sigdigits=7)) MHz/s^$idx" for idx in 1:4], "\n")
+    str_coefficients = "Shared shape coefficients\n" * join(
+        ["p$(idx + 1) = $(round(val_p_shape[idx]; sigdigits=7))" for idx in eachindex(val_p_shape)], "\n")
     Label(gl_text[1, 1], str_coefficients;
         color=:black, fontsize=22, halign=:left, valign=:top)
-    Label(gl_text[2, 1], "Zero-frequency time offsets";
+    Label(gl_text[2, 1], "Fixed zero-frequency t₀ and fitted scale";
         color=:black, fontsize=22, halign=:left, valign=:top)
     for (idx_file, id_file) in enumerate(ids_file)
-        Label(gl_text[idx_file + 2, 1], "t₀[$id_file] = $(round(time_zero_by_file[id_file]; digits=6)) s";
+        Label(gl_text[idx_file + 2, 1], "t₀[$id_file] = $(round(time_zero_by_file[id_file]; digits=6)) s; α = $(round(alpha_by_file[id_file]; digits=3)) MHz/s";
             color=color_for_file(id_file), fontsize=22, halign=:left, valign=:top)
     end
     Legend(gl_text[length(ids_file) + 3, 1], ax;
@@ -662,17 +668,19 @@ function plot_spectrum_frequency_calibration(
     resize_to_layout!(fig)
     mkpath(dirname(abspath(path_png)))
     save(path_png, fig; px_per_unit=2)
-    println("Shared polynomial coefficients p1–p4: $(collect(val_p))")
-    println("Fitted t0 by index: $time_zero_by_file")
+    println("Shared shape coefficients p2–p4: $(collect(val_p_shape))")
+    println("Fixed t0 by index from detected 0 MHz references: $time_zero_by_file")
+    println("Fitted alpha by index: $alpha_by_file")
     println("Joint-fit RSS: $(LsqFit.rss(fit_calibration)); converged=$(fit_calibration.converged); parameters=$(length(val_parameters))")
     println("Saved resized calibration PNG to $path_png")
-    return (; fig, val_p, points_reference, ids_file, time_zero_by_file)
+    return (; fig, val_p_shape, points_reference, ids_file, time_zero_by_file, alpha_by_file)
 end
 
 function plot_calibrated_spectrum_results(
     path_data::AbstractString,
     path_png::AbstractString,
-    val_p::AbstractVector{<:Real},
+    val_p_shape::AbstractVector{<:Real},
+    alpha_by_file::AbstractDict{<:Integer,<:Real},
     u_calibration_range_s::Tuple{<:Real,<:Real},
 )
     config = YAML.load_file(joinpath(path_data, "config.yaml"))
@@ -721,18 +729,33 @@ function plot_calibrated_spectrum_results(
         if length(points_zero) > 1
             throw(ArgumentError("Expected at most one 0 MHz result reference for $name_file; found $(length(points_zero))"))
         elseif isempty(points_zero)
-            time_zero_s = fit_time_zero_from_references(val_p,
+            time_center_guess_s = mean(
+                point.time_peak_s - point.freq_mhz / -472.0 for point in points_result)
+            fit_result = fit_time_zero_and_scale(
+                time_center_guess_s,
                 [point.time_peak_s for point in points_result],
                 [point.freq_mhz for point in points_result],
-                u_calibration_range_s)
-            println("$name_file ($tag): fitted t₀=$(round(time_zero_s; digits=6)) s from $(length(points_result)) nonzero-frequency references")
+                val_p_shape)
+            time_zero_s = fit_result.time_zero_s
+            alpha_mhz_per_s = fit_result.alpha_mhz_per_s
+            println("$name_file ($tag): fitted t₀=$(round(time_zero_s; digits=6)) s and α=$(round(alpha_mhz_per_s; digits=3)) MHz/s from $(length(points_result)) nonzero-frequency references")
         else
             time_zero_s = only(points_zero).time_peak_s
-            println("$name_file ($tag): detected aligned 0 MHz peak at $(round(time_zero_s; digits=6)) s " *
-                "(raw $(round(only(points_zero).time_peak_raw_s; digits=6)) s; CH1 zero $(round(time_alignment_zero_s; digits=6)) s)")
+            if haskey(alpha_by_file, id_file)
+                alpha_mhz_per_s = Float64(alpha_by_file[id_file])
+                println("$name_file ($tag): fixed t₀ to detected aligned 0 MHz peak at $(round(time_zero_s; digits=6)) s; using calibration-fit α=$(round(alpha_mhz_per_s; digits=3)) MHz/s")
+            else
+                fit_result = fit_scale_with_fixed_time_zero(
+                    time_zero_s,
+                    [point.time_peak_s for point in points_result],
+                    [point.freq_mhz for point in points_result],
+                    val_p_shape)
+                alpha_mhz_per_s = fit_result.alpha_mhz_per_s
+                println("$name_file ($tag): fixed t₀ to detected aligned 0 MHz peak at $(round(time_zero_s; digits=6)) s; fitted α=$(round(alpha_mhz_per_s; digits=3)) MHz/s")
+            end
         end
         for point in points_result
-            freq_calibrated_mhz = calc_frequency_from_time(val_p, point.time_peak_s - time_zero_s)
+            freq_calibrated_mhz = calc_frequency_from_time(alpha_mhz_per_s, val_p_shape, point.time_peak_s - time_zero_s)
             println("$name_file ($tag): reference $(point.freq_mhz) MHz at aligned t=" *
                 "$(round(point.time_peak_s; digits=6)) s (raw $(round(point.time_peak_raw_s; digits=6)) s; " *
                 "CH2=$(round(ch2_v[point.idx_peak]; sigdigits=6)) V) → " *
@@ -740,8 +763,9 @@ function plot_calibrated_spectrum_results(
                 "(residual $(round(point.freq_mhz - freq_calibrated_mhz; digits=3)) MHz)")
         end
         time_relative_s = time_aligned_s .- time_zero_s
-        frequency_mhz = val_p[1] .* time_relative_s .+ val_p[2] .* time_relative_s .^ 2 .+
-            val_p[3] .* time_relative_s .^ 3 .+ val_p[4] .* time_relative_s .^ 4
+        frequency_mhz = alpha_mhz_per_s .* time_relative_s .* (
+            1 .+ val_p_shape[1] .* time_relative_s .+ val_p_shape[2] .* time_relative_s .^ 3 .+
+            val_p_shape[3] .* time_relative_s .^ 4)
         mask_frequency = (u_calibration_range_s[1] .<= time_relative_s) .&
             (time_relative_s .<= u_calibration_range_s[2]) .&
             (freq_min_mhz .<= frequency_mhz) .& (frequency_mhz .<= freq_max_mhz)
@@ -752,7 +776,8 @@ function plot_calibrated_spectrum_results(
         lines!(ax, frequency_trace, signal_trace_v;
             color=color_line, linewidth=1.2, label=tag)
         for point in points_result
-            freq_peak_mhz = calc_frequency_from_time(val_p, point.time_peak_s - time_zero_s)
+            freq_peak_mhz = calc_frequency_from_time(
+                alpha_mhz_per_s, val_p_shape, point.time_peak_s - time_zero_s)
             val_peak_v = ch2_v[point.idx_peak]
             offset_label_x_mhz = if iszero(point.freq_mhz)
                 val_peak_v > 0.3 ? 12.0 : -12.0
@@ -867,4 +892,6 @@ u_calibration_range_s = extrema([
     for point in calibration_result.points_reference
 ])
 fig_result_spectrum = plot_calibrated_spectrum_results(
-    path_data, path_result_spectrum_png, calibration_result.val_p, u_calibration_range_s)
+    path_data, path_result_spectrum_png, calibration_result.val_p_shape,
+    calibration_result.alpha_by_file,
+    u_calibration_range_s)
