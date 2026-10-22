@@ -1,12 +1,12 @@
 using CSV
-using CairoMakie
+using GLMakie
 using Colors
 using DataFrames
 using JLD2
+using Peaks
 
+GLMakie.activate!()
 const path_data_root = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\spectrum 626"
-const path_csv_default = joinpath(path_data_root, "SDS00014.csv")
-const path_jld2_default = joinpath(path_data_root, "SDS00014.jld2")
 const n_horizontal_divisions = 14
 
 function read_scope_metadata(path_csv::AbstractString, n_lines::Int=10)::Vector{String}
@@ -56,36 +56,29 @@ function convert_scope_csv_to_jld2(path_csv::AbstractString, path_jld2::Abstract
     return nothing
 end
 
-function calc_minmax_envelope(x::AbstractVector{<:Real}, y::AbstractVector{<:Real}, n_bins::Int)::Tuple{Vector{Float64},Vector{Float64}}
-    length(x) == length(y) || throw(DimensionMismatch("x and y must have equal lengths; got $(length(x)) and $(length(y))"))
-    isempty(x) && throw(ArgumentError("Cannot plot empty data"))
-    n_bins > 0 || throw(ArgumentError("n_bins must be positive; got $n_bins"))
+function convert_missing_scope_csvs(path_data::AbstractString)::Nothing
+    isdir(path_data) || throw(ArgumentError("Data folder does not exist: $path_data"))
+    paths_csv = filter(path -> occursin(r"^SDS\d{5}\.csv$", basename(path)), readdir(path_data; join=true))
+    sort!(paths_csv)
+    println("Found $(length(paths_csv)) scope CSV files in $path_data")
 
-    n_bins = min(n_bins, length(x))
-    x_envelope = Float64[]
-    y_envelope = Float64[]
-    sizehint!(x_envelope, 2 * n_bins)
-    sizehint!(y_envelope, 2 * n_bins)
-
-    for idx_bin in 1:n_bins
-        idx_first = fld((idx_bin - 1) * length(x), n_bins) + 1
-        idx_last = fld(idx_bin * length(x), n_bins)
-        y_bin = @view y[idx_first:idx_last]
-        y_min, pos_min = findmin(y_bin)
-        y_max, pos_max = findmax(y_bin)
-        idx_min = idx_first + pos_min - 1
-        idx_max = idx_first + pos_max - 1
-
-        if idx_min <= idx_max
-            append!(x_envelope, (Float64(x[idx_min]), Float64(x[idx_max])))
-            append!(y_envelope, (Float64(y_min), Float64(y_max)))
-        else
-            append!(x_envelope, (Float64(x[idx_max]), Float64(x[idx_min])))
-            append!(y_envelope, (Float64(y_max), Float64(y_min)))
+    n_skipped = 0
+    n_converted = 0
+    for path_csv in paths_csv
+        path_jld2 = splitext(path_csv)[1] * ".jld2"
+        if isfile(path_jld2)
+            println("Skipping existing cache: $path_jld2")
+            n_skipped += 1
+            continue
         end
+
+        convert_scope_csv_to_jld2(path_csv, path_jld2)
+        n_converted += 1
+        GC.gc()
     end
 
-    return x_envelope, y_envelope
+    println("Scope conversion complete: converted $n_converted; skipped $n_skipped existing caches")
+    return nothing
 end
 
 function find_plateau_extrema(y::AbstractVector{<:Real}, find_minima::Bool)::Vector{Int}
@@ -191,6 +184,31 @@ function find_windowed_extrema(
     return select_deadtime_extrema(idx_candidates, y, time_s, find_minima, dead_time_s)
 end
 
+function find_local_peaks_with_deadtime(
+    y::AbstractVector{<:Real},
+    time_s::AbstractVector{<:Real},
+    dead_time_s::Real,
+    baseline_v::Real,
+    min_prominence_v::Real,
+)::Vector{Int}
+    length(y) == length(time_s) || throw(DimensionMismatch("Signal and time arrays must have equal lengths"))
+    dead_time_s > 0 || throw(ArgumentError("dead_time_s must be positive; got $dead_time_s"))
+    min_prominence_v >= 0 || throw(ArgumentError("min_prominence_v must be nonnegative; got $min_prominence_v"))
+    idx_candidates = findmaxima(y).indices
+    idx_selected = select_deadtime_extrema(idx_candidates, y, time_s, false, dead_time_s)
+    filter!(idx_peak -> y[idx_peak] - baseline_v > min_prominence_v, idx_selected)
+    return idx_selected
+end
+
+function calc_mean_excluding_top_fraction(y::AbstractVector{<:Real}, fraction_top::Real)::Float64
+    0 <= fraction_top < 1 || throw(ArgumentError("fraction_top must be in [0, 1); got $fraction_top"))
+    n_keep = floor(Int, (1 - fraction_top) * length(y))
+    n_keep > 0 || throw(ArgumentError("Not enough samples to calculate a trimmed mean"))
+    val_sorted = Float64.(y)
+    partialsort!(val_sorted, n_keep)
+    return sum(@view val_sorted[1:n_keep]) / n_keep
+end
+
 function write_ch1_periods_csv(
     path_csv::AbstractString,
     time_s::AbstractVector{<:Real},
@@ -274,57 +292,6 @@ function oklch_to_rgb(h_deg::Real, l::Real, c::Real)::RGB{Float64}
     return RGB(to_srgb(red_linear), to_srgb(green_linear), to_srgb(blue_linear))
 end
 
-function plot_ch2_aligned_periods(
-    path_png::AbstractString,
-    time_s::AbstractVector{<:Real},
-    ch1_v::AbstractVector{<:Real},
-    ch2_v::AbstractVector{<:Real},
-    idx_minima::AbstractVector{<:Integer},
-)::Nothing
-    length(time_s) == length(ch1_v) == length(ch2_v) ||
-        throw(DimensionMismatch("Time, CH1, and CH2 arrays must have equal lengths"))
-    n_periods = length(idx_minima) - 1
-    n_periods > 0 || throw(ArgumentError("At least two CH1 minima are needed to align periods"))
-    n_periods <= 6 || throw(ArgumentError("Expected at most six completed periods for the 1–6 rep palette; found $n_periods"))
-
-    val_offset_per_rep_v = 0.5
-    val_hue_deg_rep = [24, 80, 136, 192, 248, 304]
-    val_lightness_rep = [0.52, 0.58, 0.64, 0.70, 0.76, 0.82]
-    colors_rep = [oklch_to_rgb(val_hue_deg_rep[idx], val_lightness_rep[idx], 0.15) for idx in 1:n_periods]
-
-    px_width = 3840
-    px_height = 2160
-    fig = Figure(size=(px_width, px_height), fontsize=28)
-    ax = Axis(fig[1, 1];
-        title="SDS00014 — CH2 aligned to CH1 periods",
-        xlabel="Time from first rising CH1 zero-crossing (s)",
-        ylabel="CH2 voltage (V), offset by 0.5 V per period",
-        titlesize=36,
-        xlabelsize=32,
-        ylabelsize=32,
-        xticklabelsize=26,
-        yticklabelsize=26,
-    )
-
-    for idx_rep in 1:n_periods
-        idx_start = idx_minima[idx_rep]
-        idx_end = idx_minima[idx_rep + 1]
-        time_zero = find_first_uphill_zero_crossing(ch1_v, time_s, idx_start, idx_end)
-        time_period = @view time_s[idx_start:idx_end]
-        ch2_period = @view ch2_v[idx_start:idx_end]
-        x_plot, y_plot = calc_minmax_envelope(time_period, ch2_period, 2 * px_width)
-        x_plot .-= time_zero
-        y_plot .+= (idx_rep - 1) * val_offset_per_rep_v
-        lines!(ax, x_plot, y_plot; color=colors_rep[idx_rep], linewidth=1.5, label="Rep $idx_rep")
-        println("Rep $idx_rep: CH1 rising zero-crossing at $(round(time_zero; digits=6)) s; CH2 offset $((idx_rep - 1) * val_offset_per_rep_v) V")
-    end
-
-    axislegend(ax; position=:rt, framevisible=false, labelsize=24)
-    save(path_png, fig; px_per_unit=1)
-    println("Saved $(px_width)×$(px_height) aligned CH2 PNG to $path_png")
-    return nothing
-end
-
 function parse_scope_metadata_value(metadata_lines::AbstractVector{<:AbstractString}, field::AbstractString)::String
     idx_field = findfirst(line -> startswith(line, "$field,"), metadata_lines)
     isnothing(idx_field) && throw(ArgumentError("CSV metadata is missing '$field'"))
@@ -343,12 +310,108 @@ function calc_time_axis(metadata_lines::AbstractVector{<:AbstractString}, n_samp
     return range(-half_span_s, stop=half_span_s, length=n_samples)
 end
 
-function plot_ch1_spectrum(
+function load_scope_period_data(path_jld2::AbstractString, dead_time_s::Real)
+    payload = JLD2.load(path_jld2)
+    ch1_v = payload["ch1_v"]
+    ch2_v = payload["ch2_v"]
+    metadata_lines = payload["metadata_lines"]
+    length(ch1_v) == length(ch2_v) ||
+        throw(DimensionMismatch("CH1 and CH2 arrays must have equal lengths in $path_jld2"))
+    time_s = calc_time_axis(metadata_lines, length(ch1_v))
+    idx_minima = find_windowed_extrema(ch1_v, time_s, true, dead_time_s)
+    idx_maxima = find_windowed_extrema(ch1_v, time_s, false, dead_time_s)
+    return (; time_s, ch1_v, ch2_v, idx_minima, idx_maxima)
+end
+
+function plot_ch2_periods_spanning_zero(
+    path_data::AbstractString,
+    ids_file::AbstractVector{<:Integer},
+    path_png::AbstractString,
+)
+    isempty(ids_file) && throw(ArgumentError("At least one spectrum file is required"))
+    length(ids_file) <= 6 || throw(ArgumentError("The existing OKLCH palette supports at most six files"))
+
+    val_offset_per_file_v = 0.5
+    val_min_peak_prominence_v = 0.008
+    val_fraction_top_excluded = 0.01
+    val_peak_dead_time_s = 0.05
+    val_hue_deg_file = [24, 80, 136, 192, 248, 304]
+    val_lightness_ch2 = 0.60
+    val_lightness_ch1 = 0.88
+    val_chroma = 0.15
+    colors_ch2 = [oklch_to_rgb(val_hue_deg_file[idx], val_lightness_ch2, val_chroma) for idx in eachindex(ids_file)]
+    colors_ch1 = [oklch_to_rgb(val_hue_deg_file[idx], val_lightness_ch1, val_chroma) for idx in eachindex(ids_file)]
+
+    px_width = 3840
+    px_height = 2160
+    fig = Figure(size=(px_width, px_height), fontsize=28)
+    ax = Axis(fig[1, 1];
+        title="CH1 and CH2 cycles spanning t = 0, aligned to CH1 zero-crossings",
+        xlabel="Time from first rising CH1 zero-crossing (s)",
+        ylabel="CH1 and CH2 voltage (V), offset by 0.5 V per file",
+        titlesize=36,
+        xlabelsize=32,
+        ylabelsize=32,
+        xticklabelsize=26,
+        yticklabelsize=26,
+    )
+
+    for (idx_file, id_file) in enumerate(ids_file)
+        name_file = "SDS$(lpad(string(id_file), 5, '0'))"
+        path_jld2 = joinpath(path_data, "$name_file.jld2")
+        isfile(path_jld2) || throw(ArgumentError("JLD2 cache does not exist: $path_jld2"))
+        (; time_s, ch1_v, ch2_v, idx_minima, idx_maxima) = load_scope_period_data(path_jld2, 2.0)
+
+        pos_period = findfirst(1:(length(idx_minima) - 1)) do idx_period
+            time_s[idx_minima[idx_period]] <= 0 <= time_s[idx_minima[idx_period + 1]]
+        end
+        isnothing(pos_period) && throw(ArgumentError("No completed CH1 period in $name_file spans t = 0"))
+
+        idx_start = idx_minima[pos_period]
+        idx_end = idx_minima[pos_period + 1]
+        any(idx_start < idx_peak < idx_end for idx_peak in idx_maxima) ||
+            throw(ArgumentError("No CH1 maximum found inside the selected period in $name_file"))
+        time_zero = find_first_uphill_zero_crossing(ch1_v, time_s, idx_start, idx_end)
+        val_offset_v = (idx_file - 1) * val_offset_per_file_v
+        time_period_offset = @view(time_s[idx_start:idx_end]) .- time_zero
+        ch1_period_offset = (@view ch1_v[idx_start:idx_end]) ./ 8 .+ val_offset_v
+        time_period = @view time_s[idx_start:idx_end]
+        ch2_period = @view ch2_v[idx_start:idx_end]
+        ch2_period_offset = ch2_period .+ val_offset_v
+        lines!(ax, time_period_offset, ch1_period_offset;
+            color=colors_ch1[idx_file], linewidth=1.5)
+        lines!(ax, time_period_offset, ch2_period_offset;
+            color=colors_ch2[idx_file], linewidth=1.5, label=name_file)
+        val_ch2_baseline_v = calc_mean_excluding_top_fraction(ch2_period, val_fraction_top_excluded)
+        idx_peaks_ch2 = find_local_peaks_with_deadtime(
+            ch2_period, time_period, val_peak_dead_time_s, val_ch2_baseline_v, val_min_peak_prominence_v)
+        for idx_peak in idx_peaks_ch2
+            time_peak = time_period[idx_peak] - time_zero
+            value_peak = ch2_period[idx_peak] + val_offset_v
+            scatter!(ax, [time_peak], [value_peak];
+                color=colors_ch2[idx_file], markersize=10, strokecolor=:black, strokewidth=1)
+            text!(ax, time_peak, value_peak + 0.025;
+                text=string(round(time_peak; digits=3)),
+                color=colors_ch2[idx_file], fontsize=16,
+                rotation=π / 2, align=(:center, :bottom),
+                strokecolor=:white, strokewidth=2)
+        end
+        println("$name_file: selected period $(round(time_s[idx_start]; digits=6)) to $(round(time_s[idx_end]; digits=6)) s; rising zero-crossing $(round(time_zero; digits=6)) s; CH2 offset $val_offset_v V; trimmed CH2 baseline $(round(val_ch2_baseline_v; digits=4)) V; annotated $(length(idx_peaks_ch2)) peaks (>$val_min_peak_prominence_v V above baseline, $(val_peak_dead_time_s) s dead-time)")
+        GC.gc()
+    end
+
+    axislegend(ax; position=:rt, framevisible=false, labelsize=24)
+    save(path_png, fig; px_per_unit=1)
+    println("Saved $(px_width)×$(px_height) multi-file CH1/CH2 PNG to $path_png")
+    return fig
+end
+
+fig = function plot_ch1_spectrum(
     path_jld2::AbstractString,
     path_png::AbstractString,
     path_period_csv::AbstractString,
     path_ch2_png::AbstractString,
-)::Nothing
+)
     payload = JLD2.load(path_jld2)
     metadata_lines = payload["metadata_lines"]
     ch1_v = payload["ch1_v"]
@@ -368,8 +431,6 @@ function plot_ch1_spectrum(
     idx_maxima = find_windowed_extrema(ch1_v, time_s, false, dead_time_s)
     time_minima = time_s[idx_minima]
     time_maxima = time_s[idx_maxima]
-    x_plot, y_plot = calc_minmax_envelope(time_s, ch1_v, 2 * px_width)
-
     fig = Figure(size=(px_width, px_height), fontsize=28)
     ax = Axis(fig[1, 1];
         title="SDS00014 — Channel 1",
@@ -381,7 +442,7 @@ function plot_ch1_spectrum(
         xticklabelsize=26,
         yticklabelsize=26,
     )
-    lines!(ax, x_plot, y_plot; color=:dodgerblue, linewidth=1.5)
+    lines!(ax, time_s, ch1_v; color=:dodgerblue, linewidth=1.5)
     vlines!(ax, time_minima; color=:red, linewidth=2, linestyle=:dash, label="Minima ($(length(time_minima)))")
     vlines!(ax, time_maxima; color=:darkorange, linewidth=2, linestyle=:dash, label="Maxima ($(length(time_maxima)))")
     axislegend(ax; position=:rt, framevisible=false, labelsize=24)
@@ -393,20 +454,18 @@ function plot_ch1_spectrum(
     println("Minimum separation: $(length(time_minima) > 1 ? minimum(diff(time_minima)) : NaN) s minima; $(length(time_maxima) > 1 ? minimum(diff(time_maxima)) : NaN) s maxima")
     println("Saved $(px_width)×$(px_height) PNG to $path_png")
     write_ch1_periods_csv(path_period_csv, time_s, ch1_v, idx_minima, idx_maxima)
-    plot_ch2_aligned_periods(path_ch2_png, time_s, ch1_v, ch2_v, idx_minima)
     return nothing
 end
 
-length(ARGS) <= 5 || throw(ArgumentError("Usage: julia --project=. multidualmot/spectral626.jl [input.csv] [output.jld2] [output.png] [periods.csv] [ch2.png]"))
-path_csv = isempty(ARGS) ? path_csv_default : abspath(ARGS[1])
-path_jld2 = length(ARGS) < 2 ? splitext(path_csv)[1] * ".jld2" : abspath(ARGS[2])
-path_png = length(ARGS) < 3 ? splitext(path_jld2)[1] * "_CH1_vs_time.png" : abspath(ARGS[3])
-path_period_csv = length(ARGS) < 4 ? splitext(path_jld2)[1] * "_CH1_periods.csv" : abspath(ARGS[4])
-path_ch2_png = length(ARGS) < 5 ? splitext(path_jld2)[1] * "_CH2_aligned_periods.png" : abspath(ARGS[5])
+length(ARGS) <= 1 || throw(ArgumentError("Usage: julia --project=. multidualmot/spectral626.jl [data-folder]"))
+path_data = isempty(ARGS) ? path_data_root : abspath(ARGS[1])
+convert_missing_scope_csvs(path_data)
 
-if isfile(path_jld2)
-    println("Using existing JLD2 file: $path_jld2")
-else
-    convert_scope_csv_to_jld2(path_csv, path_jld2)
-end
+# The follow-up plots and period table remain specific to SDS00014.
+path_jld2 = joinpath(path_data, "SDS00014.jld2")
+isfile(path_jld2) || throw(ArgumentError("SDS00014 JLD2 cache is missing after conversion: $path_jld2"))
+path_png = joinpath(path_data, "SDS00014_CH1_vs_time.png")
+path_period_csv = joinpath(path_data, "SDS00014_CH1_periods.csv")
+path_ch2_png = joinpath(path_data, "SDS00014_15_16_19_21_CH2_aligned_periods.png")
 plot_ch1_spectrum(path_jld2, path_png, path_period_csv, path_ch2_png)
+fig_spectrum = plot_ch2_periods_spanning_zero(path_data, [14, 15, 16, 19, 21], path_ch2_png)
