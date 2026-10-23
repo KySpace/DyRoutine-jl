@@ -1089,16 +1089,22 @@ function plot_spectrum_frequency_calibration(
         time_zero_by_file, alpha_by_file, u_calibration_range_s)
 end
 
-function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::AbstractVector)
+function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::AbstractVector;
+    compact::Bool=false)
+    n_rows = cld(length(traces_fine_scan), 3)
     for (idx_trace, trace) in enumerate(traces_fine_scan)
         pos_row = fld(idx_trace - 1, 3) + 1
         pos_col = mod(idx_trace - 1, 3) + 1
         ax_fine = Axis(gl_fine_scan[pos_row, pos_col];
-            width=450, height=260,
+            width=compact ? 280 : 450,
+            height=compact ? 135 : 260,
             title="$(trace.tag): $(round(trace.target_frequency_mhz; digits=1)) MHz",
-            xlabel="Frequency (MHz)", ylabel="Signal (V)",
-            titlesize=15, xlabelsize=12, ylabelsize=12,
-            xticklabelsize=11, yticklabelsize=11)
+            xlabel=compact && pos_row < n_rows ? "" : "Frequency (MHz)",
+            ylabel=compact && pos_col > 1 ? "" : "Signal (V)",
+            titlesize=compact ? 11 : 15,
+            xlabelsize=compact ? 9 : 12, ylabelsize=compact ? 9 : 12,
+            xticklabelsize=compact ? 8 : 11,
+            yticklabelsize=compact ? 8 : 11)
         if !isempty(trace.frequency_coarse_fine)
             lines!(ax_fine, trace.frequency_coarse_fine, trace.signal_coarse_fine_v;
                 color=(trace.color_line, 0.35), linewidth=1.2, linestyle=:dash)
@@ -1122,8 +1128,8 @@ function plot_calibrated_spectrum_results(
 
     freq_min_mhz, freq_max_mhz = bounds_result_frequency_mhz
     time_uncertainty_s = 0.001
-    axis_width_px = 1440 # 54 / 25.4 * 96
-    axis_height_px = 960 # 34 / 25.4 * 96
+    axis_width_px = 1080
+    axis_height_px = 540
     fig = Figure(fontsize=14)
     ax = Axis(fig[1, 1];
         width=axis_width_px,
@@ -1388,7 +1394,7 @@ function plot_calibrated_spectrum_results(
             color=point.color_line, marker=point.marker, markersize=8,
             strokecolor=:black, strokewidth=0.8)
         text!(ax, point.text_x, text_y;
-            text=text_label, color=:black, fontsize=14,
+            text=text_label, color=:black, fontsize=10,
             align=point.text_align, strokecolor=:white, strokewidth=0.4)
     end
 
@@ -1398,7 +1404,10 @@ function plot_calibrated_spectrum_results(
             halign=:left, fontsize=14)
         gl_fine_scan = GridLayout()
         fig[3, 1] = gl_fine_scan
-        draw_fine_scan_panels!(gl_fine_scan, traces_fine_scan)
+        rowgap!(fig.layout, 8)
+        rowgap!(gl_fine_scan, 4)
+        colgap!(gl_fine_scan, 8)
+        draw_fine_scan_panels!(gl_fine_scan, traces_fine_scan; compact=true)
     end
     resize_to_layout!(fig)
     mkpath(dirname(abspath(path_png)))
