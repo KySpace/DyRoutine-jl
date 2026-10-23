@@ -14,6 +14,8 @@ const path_data_root = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\spectrum 626
 const n_horizontal_divisions = 14
 const val_smoothing_sigma_points = 2.5
 const n_smoothing_window_points = 11 # symmetric kernel spanning ten sample intervals
+const bounds_spectrum_frequency_mhz = (-800.0, 800.0)
+const bounds_result_frequency_mhz = (-720.0, 720.0)
 
 function smooth_scope_channel(values::AbstractVector{<:Real})::Vector{Float64}
     kernel_gaussian = Kernel.gaussian(
@@ -359,13 +361,13 @@ function plot_ch2_periods_spanning_zero(
     path_png::AbstractString,
 )
     isempty(ids_file) && throw(ArgumentError("At least one spectrum file is required"))
-    length(ids_file) <= 6 || throw(ArgumentError("The existing OKLCH palette supports at most six files"))
 
     val_offset_per_file_v = 0.5
     val_min_peak_prominence_v = 0.005
     val_fraction_top_excluded = 0.01
     val_peak_dead_time_s = 0.05
-    val_hue_deg_file = [24, 80, 136, 192, 248, 304]
+    val_hue_deg_file = [mod(24 + (idx - 1) * 360 / length(ids_file), 360)
+        for idx in eachindex(ids_file)]
     val_lightness_ch2 = 0.60
     val_lightness_ch1 = 0.88
     val_chroma = 0.15
@@ -402,7 +404,7 @@ function plot_ch2_periods_spanning_zero(
         any(idx_start < idx_peak < idx_end for idx_peak in idx_maxima) ||
             throw(ArgumentError("No CH1 maximum found inside the selected period in $name_file"))
         time_zero = find_first_uphill_zero_crossing(ch1_v, time_s, idx_start, idx_end)
-        val_offset_v = (idx_file - 1) * val_offset_per_file_v
+        val_offset_v = (length(ids_file) - idx_file) * val_offset_per_file_v
         time_period_offset = @view(time_s[idx_start:idx_end]) .- time_zero
         ch1_period_offset = (@view ch1_v[idx_start:idx_end]) ./ 8 .+ val_offset_v
         time_period = @view time_s[idx_start:idx_end]
@@ -490,6 +492,80 @@ function calc_frequency_from_time(
         (1 + val_p_shape[1] * u_s + val_p_shape[2] * u_s^3 + val_p_shape[3] * u_s^4)
 end
 
+function calc_frequency_shape_slope(
+    val_p_shape::AbstractVector{<:Real},
+    u_s::Real,
+)::Float64
+    return 1 + 2val_p_shape[1] * u_s +
+        4val_p_shape[2] * u_s^3 + 5val_p_shape[3] * u_s^4
+end
+
+function find_monotonic_model_limits(
+    alpha_mhz_per_s::Real,
+    val_p_shape::AbstractVector{<:Real},
+    freq_min_mhz::Real,
+    freq_max_mhz::Real,
+)::Tuple{Float64,Float64}
+    length(val_p_shape) == 3 || throw(DimensionMismatch("Expected three frequency-shape coefficients"))
+    freq_min_mhz < 0 < freq_max_mhz ||
+        throw(ArgumentError("Frequency limits must span zero; got $freq_min_mhz to $freq_max_mhz MHz"))
+    iszero(alpha_mhz_per_s) && throw(ArgumentError("Calibration scale α cannot be zero"))
+
+    step_s = 0.001
+    max_steps = 100_000
+    limits_u = Float64[]
+    for direction in (-1, 1)
+        u_s = 0.0
+        for _ in 1:max_steps
+            u_next_s = u_s + direction * step_s
+            frequency_next_mhz = calc_frequency_from_time(alpha_mhz_per_s, val_p_shape, u_next_s)
+            if calc_frequency_shape_slope(val_p_shape, u_next_s) <= 0 ||
+                !(freq_min_mhz <= frequency_next_mhz <= freq_max_mhz)
+                break
+            end
+            u_s = u_next_s
+        end
+        abs(u_s) < max_steps * step_s ||
+            throw(ArgumentError("Calibration model did not reach a frequency limit or turning point within $(max_steps * step_s) s"))
+        push!(limits_u, u_s)
+    end
+    return (limits_u[1], limits_u[2])
+end
+
+function find_monotonic_frequency_indices(
+    time_relative_s::AbstractVector{<:Real},
+    frequency_mhz::AbstractVector{<:Real},
+    val_p_shape::AbstractVector{<:Real},
+    freq_min_mhz::Real,
+    freq_max_mhz::Real,
+)::UnitRange{Int}
+    length(time_relative_s) == length(frequency_mhz) ||
+        throw(DimensionMismatch("Relative time and frequency arrays must have equal lengths"))
+    length(val_p_shape) == 3 || throw(DimensionMismatch("Expected three frequency-shape coefficients"))
+    isempty(time_relative_s) && throw(ArgumentError("Relative time array cannot be empty"))
+    time_relative_s[1] <= 0 <= time_relative_s[end] ||
+        throw(ArgumentError("Relative time array must span zero"))
+    freq_min_mhz < 0 < freq_max_mhz ||
+        throw(ArgumentError("Frequency limits must span zero; got $freq_min_mhz to $freq_max_mhz MHz"))
+
+    idx_zero = searchsortedfirst(time_relative_s, 0)
+    idx_first = idx_zero
+    while idx_first > 1
+        idx_next = idx_first - 1
+        calc_frequency_shape_slope(val_p_shape, time_relative_s[idx_next]) > 0 || break
+        freq_min_mhz <= frequency_mhz[idx_next] <= freq_max_mhz || break
+        idx_first = idx_next
+    end
+    idx_last = idx_zero
+    while idx_last < length(time_relative_s)
+        idx_next = idx_last + 1
+        calc_frequency_shape_slope(val_p_shape, time_relative_s[idx_next]) > 0 || break
+        freq_min_mhz <= frequency_mhz[idx_next] <= freq_max_mhz || break
+        idx_last = idx_next
+    end
+    return idx_first:idx_last
+end
+
 function fit_time_zero_and_scale(
     time_center_s::Real,
     time_peak_s::AbstractVector{<:Real},
@@ -551,19 +627,263 @@ function fit_scale_with_fixed_time_zero(
     return (alpha_mhz_per_s=Float64(only(fit.param)), fit)
 end
 
+function fit_monotone_cubic(
+    time_s::AbstractVector{<:Real}, freq_mhz::AbstractVector{<:Real};
+    extrapolation::Symbol=:linear,
+)
+    extrapolation in (:linear, :quadratic) ||
+        throw(ArgumentError("Spline extrapolation must be linear or quadratic; got $extrapolation"))
+    length(time_s) == length(freq_mhz) ||
+        throw(DimensionMismatch("Spline reference times and frequencies must have equal lengths"))
+    n_required = extrapolation == :quadratic ? 3 : 2
+    length(time_s) >= n_required ||
+        throw(ArgumentError("$extrapolation spline extrapolation needs at least $n_required references"))
+    ids_sorted = sortperm(time_s)
+    val_time_s = Float64.(time_s[ids_sorted])
+    val_freq_mhz = Float64.(freq_mhz[ids_sorted])
+    val_h_s = diff(val_time_s)
+    all(>(0), val_h_s) || throw(ArgumentError("Spline reference times must be distinct"))
+    val_secant = diff(val_freq_mhz) ./ val_h_s
+    all(>(0), val_secant) || all(<(0), val_secant) ||
+        throw(ArgumentError("Spline reference frequencies must be strictly monotonic in time"))
+    n_points = length(val_time_s)
+    val_tangent = zeros(Float64, n_points)
+    if n_points == 2
+        val_tangent .= val_secant[1]
+    else
+        for idx in 2:(n_points - 1)
+            h_left, h_right = val_h_s[idx - 1], val_h_s[idx]
+            slope_left, slope_right = val_secant[idx - 1], val_secant[idx]
+            weight_left = 2h_right + h_left
+            weight_right = h_right + 2h_left
+            val_tangent[idx] = (weight_left + weight_right) /
+                (weight_left / slope_left + weight_right / slope_right)
+        end
+        val_tangent[1] = ((2val_h_s[1] + val_h_s[2]) * val_secant[1] -
+            val_h_s[1] * val_secant[2]) / (val_h_s[1] + val_h_s[2])
+        val_tangent[end] = ((2val_h_s[end] + val_h_s[end - 1]) * val_secant[end] -
+            val_h_s[end] * val_secant[end - 1]) / (val_h_s[end] + val_h_s[end - 1])
+        for idx in (1, n_points)
+            idx_secant = idx == 1 ? 1 : length(val_secant)
+            if sign(val_tangent[idx]) != sign(val_secant[idx_secant])
+                val_tangent[idx] = 0.0
+            elseif abs(val_tangent[idx]) > 3abs(val_secant[idx_secant])
+                val_tangent[idx] = 3val_secant[idx_secant]
+            end
+        end
+    end
+    curvature_left = n_points >= 3 ?
+        (val_secant[2] - val_secant[1]) / (val_time_s[3] - val_time_s[1]) : 0.0
+    curvature_right = n_points >= 3 ?
+        (val_secant[end] - val_secant[end - 1]) /
+        (val_time_s[end] - val_time_s[end - 2]) : 0.0
+    return (; time_s=val_time_s, freq_mhz=val_freq_mhz,
+        tangent_mhz_per_s=val_tangent, extrapolation,
+        curvature_tails=(curvature_left, curvature_right))
+end
+
+function calc_monotone_cubic_frequency(spline, time_s::Real)::Float64
+    val_time_s = spline.time_s
+    val_freq_mhz = spline.freq_mhz
+    val_tangent = spline.tangent_mhz_per_s
+    if time_s <= first(val_time_s)
+        dt_s = time_s - first(val_time_s)
+        curvature = spline.extrapolation == :quadratic ? spline.curvature_tails[1] : 0.0
+        return first(val_freq_mhz) + first(val_tangent) * dt_s + curvature * dt_s^2
+    elseif time_s >= last(val_time_s)
+        dt_s = time_s - last(val_time_s)
+        curvature = spline.extrapolation == :quadratic ? spline.curvature_tails[2] : 0.0
+        return last(val_freq_mhz) + last(val_tangent) * dt_s + curvature * dt_s^2
+    end
+    idx = searchsortedlast(val_time_s, time_s)
+    h_s = val_time_s[idx + 1] - val_time_s[idx]
+    z = (time_s - val_time_s[idx]) / h_s
+    return (2z^3 - 3z^2 + 1) * val_freq_mhz[idx] +
+        (z^3 - 2z^2 + z) * h_s * val_tangent[idx] +
+        (-2z^3 + 3z^2) * val_freq_mhz[idx + 1] +
+        (z^3 - z^2) * h_s * val_tangent[idx + 1]
+end
+
+function find_monotone_cubic_tail_limit(spline, target_freq_mhz::Real, side::Symbol)::Float64
+    side in (:left, :right) || throw(ArgumentError("Spline tail side must be left or right"))
+    idx_endpoint = side == :left ? 1 : length(spline.time_s)
+    direction = side == :left ? -1 : 1
+    time_endpoint_s = spline.time_s[idx_endpoint]
+    freq_endpoint_mhz = spline.freq_mhz[idx_endpoint]
+    slope_endpoint = spline.tangent_mhz_per_s[idx_endpoint]
+    curvature = spline.extrapolation == :quadratic ?
+        spline.curvature_tails[side == :left ? 1 : 2] : 0.0
+    movement_sign = sign(slope_endpoint * direction)
+    iszero(movement_sign) && return time_endpoint_s
+    distance_target_mhz = (target_freq_mhz - freq_endpoint_mhz) * movement_sign
+    distance_target_mhz >= 0 ||
+        throw(ArgumentError("$target_freq_mhz MHz lies inside the $side spline references"))
+    iszero(distance_target_mhz) && return time_endpoint_s
+
+    time_turn_s = iszero(curvature) ? time_endpoint_s :
+        time_endpoint_s - slope_endpoint / (2curvature)
+    if !iszero(curvature) && direction * (time_turn_s - time_endpoint_s) > 0
+        freq_turn_mhz = calc_monotone_cubic_frequency(spline, time_turn_s)
+        if distance_target_mhz >= (freq_turn_mhz - freq_endpoint_mhz) * movement_sign
+            return time_turn_s
+        end
+        time_far_s = time_turn_s
+    else
+        span_s = max(1.0, 2distance_target_mhz / abs(slope_endpoint))
+        time_far_s = time_endpoint_s + direction * span_s
+        while (calc_monotone_cubic_frequency(spline, time_far_s) - target_freq_mhz) *
+            movement_sign < 0
+            span_s *= 2
+            span_s <= 100_000 ||
+                throw(ArgumentError("Spline tail did not reach $target_freq_mhz MHz"))
+            time_far_s = time_endpoint_s + direction * span_s
+        end
+    end
+    time_near_s = time_endpoint_s
+    for _ in 1:60
+        time_mid_s = (time_near_s + time_far_s) / 2
+        if (calc_monotone_cubic_frequency(spline, time_mid_s) - target_freq_mhz) *
+            movement_sign < 0
+            time_near_s = time_mid_s
+        else
+            time_far_s = time_mid_s
+        end
+    end
+    return (time_near_s + time_far_s) / 2
+end
+
+function find_monotone_cubic_model_limits(
+    spline, freq_min_mhz::Real, freq_max_mhz::Real,
+)::Tuple{Float64,Float64}
+    freq_min_mhz < freq_max_mhz ||
+        throw(ArgumentError("Frequency limits must increase; got $freq_min_mhz to $freq_max_mhz MHz"))
+    is_descending = first(spline.freq_mhz) > last(spline.freq_mhz)
+    freq_left_mhz = is_descending ? freq_max_mhz : freq_min_mhz
+    freq_right_mhz = is_descending ? freq_min_mhz : freq_max_mhz
+    freq_ref_min_mhz, freq_ref_max_mhz = extrema(spline.freq_mhz)
+    time_left_s = freq_ref_min_mhz <= freq_left_mhz <= freq_ref_max_mhz ?
+        find_monotone_cubic_time(spline, freq_left_mhz) :
+        find_monotone_cubic_tail_limit(spline, freq_left_mhz, :left)
+    time_right_s = freq_ref_min_mhz <= freq_right_mhz <= freq_ref_max_mhz ?
+        find_monotone_cubic_time(spline, freq_right_mhz) :
+        find_monotone_cubic_tail_limit(spline, freq_right_mhz, :right)
+    return (time_left_s, time_right_s)
+end
+
+function find_monotone_cubic_time(spline, target_freq_mhz::Real)::Float64
+    val_freq_mhz = spline.freq_mhz
+    val_time_s = spline.time_s
+    idx_knot = findfirst(==(target_freq_mhz), val_freq_mhz)
+    isnothing(idx_knot) || return val_time_s[idx_knot]
+    if (target_freq_mhz - val_freq_mhz[1]) * sign(val_freq_mhz[end] - val_freq_mhz[1]) <= 0
+        time_target_s = find_monotone_cubic_tail_limit(spline, target_freq_mhz, :left)
+        isapprox(calc_monotone_cubic_frequency(spline, time_target_s), target_freq_mhz; atol=1e-7) ||
+            throw(ArgumentError("Left spline tail turns before $target_freq_mhz MHz"))
+        return time_target_s
+    elseif (target_freq_mhz - val_freq_mhz[end]) * sign(val_freq_mhz[end] - val_freq_mhz[1]) >= 0
+        time_target_s = find_monotone_cubic_tail_limit(spline, target_freq_mhz, :right)
+        isapprox(calc_monotone_cubic_frequency(spline, time_target_s), target_freq_mhz; atol=1e-7) ||
+            throw(ArgumentError("Right spline tail turns before $target_freq_mhz MHz"))
+        return time_target_s
+    end
+    idx = only(filter(i -> min(val_freq_mhz[i], val_freq_mhz[i + 1]) <= target_freq_mhz <=
+        max(val_freq_mhz[i], val_freq_mhz[i + 1]), 1:(length(val_freq_mhz) - 1)))
+    time_left_s, time_right_s = val_time_s[idx], val_time_s[idx + 1]
+    for _ in 1:60
+        time_mid_s = (time_left_s + time_right_s) / 2
+        if (calc_monotone_cubic_frequency(spline, time_mid_s) - target_freq_mhz) *
+            sign(val_freq_mhz[end] - val_freq_mhz[1]) < 0
+            time_left_s = time_mid_s
+        else
+            time_right_s = time_mid_s
+        end
+    end
+    return (time_left_s + time_right_s) / 2
+end
+
+function plot_monotone_cubic_calibration(
+    path_png::AbstractString, tag_calibration::AbstractString,
+    points_reference::AbstractVector, ids_file::AbstractVector{<:Integer},
+    extrapolation::Symbol,
+)
+    splines_by_file = Dict{Int,Any}()
+    time_zero_by_file = Dict{Int,Float64}()
+    fig = Figure(fontsize=24)
+    ax = Axis(fig[1, 1]; width=1200, height=850,
+        title="Spectrum 626 time–frequency calibration: $tag_calibration",
+        xlabel="Time from zero-frequency t₀ (s)", ylabel="Reference frequency (MHz)",
+        titlesize=32, xlabelsize=28, ylabelsize=28,
+        xticklabelsize=22, yticklabelsize=22)
+    gl_text = GridLayout()
+    fig[1, 2] = gl_text
+    name_extrapolation = extrapolation == :linear ?
+        "Linear endpoint-tangent extrapolation" :
+        "Three-reference quadratic tails"
+    Label(gl_text[1, 1], "Monotone cubic interpolation\n$name_extrapolation";
+        color=:black, fontsize=22, halign=:left, valign=:top)
+    marker_by_file = Dict(14 => :utriangle, 19 => :circle)
+    for (idx_file, id_file) in enumerate(ids_file)
+        ref_file = filter(point -> point.id_file == id_file, points_reference)
+        spline = fit_monotone_cubic([point.time_peak_s for point in ref_file],
+            [point.freq_mhz for point in ref_file]; extrapolation)
+        splines_by_file[id_file] = spline
+        t_zero_s = find_monotone_cubic_time(spline, 0.0)
+        time_zero_by_file[id_file] = t_zero_s
+        color_file = oklch_to_rgb(mod(24 + (idx_file - 1) * 360 / length(ids_file), 360), 0.60, 0.15)
+        marker = get(marker_by_file, id_file, :circle)
+        time_min_s, time_max_s = find_monotone_cubic_model_limits(
+            spline, bounds_spectrum_frequency_mhz...)
+        for (time_start_s, time_stop_s) in ((time_min_s, first(spline.time_s)),
+            (last(spline.time_s), time_max_s))
+            time_start_s < time_stop_s || continue
+            val_time_plot_s = range(time_start_s, time_stop_s; length=400)
+            lines!(ax, val_time_plot_s .- t_zero_s,
+                [calc_monotone_cubic_frequency(spline, t) for t in val_time_plot_s];
+                color=color_file, linewidth=2, linestyle=:dash)
+        end
+        val_time_plot_s = range(first(spline.time_s), last(spline.time_s); length=700)
+        lines!(ax, val_time_plot_s .- t_zero_s,
+            [calc_monotone_cubic_frequency(spline, t) for t in val_time_plot_s];
+            color=color_file, linewidth=2,
+            label="SDS$(lpad(string(id_file), 5, '0')) monotone cubic")
+        scatter!(ax, [point.time_peak_s - t_zero_s for point in ref_file],
+            [point.freq_mhz for point in ref_file];
+            color=color_file, marker, markersize=24, strokecolor=:white, strokewidth=0.4)
+        Label(gl_text[idx_file + 1, 1],
+            "SDS$(lpad(string(id_file), 5, '0')): t₀=$(round(t_zero_s; digits=6)) s\n" *
+            "endpoint slopes $(round(first(spline.tangent_mhz_per_s); digits=2)), " *
+            "$(round(last(spline.tangent_mhz_per_s); digits=2)) MHz/s";
+            color=color_file, fontsize=20, halign=:left, valign=:top)
+        println("Calibration '$tag_calibration' SDS$(lpad(string(id_file), 5, '0')): monotone cubic through $(length(ref_file)) references; endpoint slopes $(first(spline.tangent_mhz_per_s)), $(last(spline.tangent_mhz_per_s)) MHz/s; t₀=$t_zero_s s")
+    end
+    Label(gl_text[length(ids_file) + 2, 1],
+        "Solid: reference span; dashed: $extrapolation extrapolation";
+        color=:black, fontsize=18, halign=:left, valign=:top)
+    Legend(gl_text[length(ids_file) + 3, 1], ax;
+        framevisible=false, labelsize=20, patchsize=(36, 24))
+    resize_to_layout!(fig)
+    mkpath(dirname(abspath(path_png)))
+    save(path_png, fig; px_per_unit=2)
+    println("Saved monotone cubic calibration PNG to $path_png")
+    return (; tag=String(tag_calibration), model=:cubicspline, fig, points_reference, ids_file,
+        extrapolation, splines_by_file, time_zero_by_file)
+end
+
 function plot_spectrum_frequency_calibration(
     path_data::AbstractString,
     path_png::AbstractString,
+    entry_calibration::AbstractDict,
 )
-    path_config = joinpath(path_data, "config.yaml")
-    isfile(path_config) || throw(ArgumentError("Calibration config does not exist: $path_config"))
-    config = YAML.load_file(path_config)
-    entries_calibration = get(config, "calibration", nothing)
-    isnothing(entries_calibration) && throw(ArgumentError("No 'calibration' section in $path_config"))
+    tag_calibration = String(entry_calibration["tag"])
+    model = Symbol(lowercase(String(get(entry_calibration, "model", "p4"))))
+    model in (:p4, :cubicspline) ||
+        throw(ArgumentError("Calibration '$tag_calibration' has unknown model '$model'; expected p4 or cubicspline"))
+    entries_source = entry_calibration["source"]
+    isempty(entries_source) && throw(ArgumentError("Calibration '$tag_calibration' has no sources"))
 
     time_uncertainty_s = 0.001
     points_reference = NamedTuple[]
-    for entry in entries_calibration
+    for entry in entries_source
         id_file = Int(entry["index"])
         name_file = "SDS$(lpad(string(id_file), 5, '0'))"
         path_jld2 = joinpath(path_data, "$name_file.jld2")
@@ -584,47 +904,71 @@ function plot_spectrum_frequency_calibration(
             time_peak_raw_s = Float64(time_s[idx_peak])
             push!(points_reference, (; id_file, freq_mhz, time_config_s, time_peak_s, time_peak_raw_s))
             val_prominence_v = ch2_v[idx_peak] - val_baseline_v
-            println("$name_file: config aligned $(time_config_s) s, $(freq_mhz) MHz → detected at aligned $(round(time_peak_s; digits=6)) s (raw $(round(time_peak_raw_s; digits=6)) s; CH1 zero $(round(time_alignment_zero_s; digits=6)) s); CH2=$(round(ch2_v[idx_peak]; sigdigits=6)) V, prominence over trimmed mean=$(round(val_prominence_v; sigdigits=5)) V")
+            println("Calibration '$tag_calibration' $name_file: config aligned $(time_config_s) s, $(freq_mhz) MHz → detected at aligned $(round(time_peak_s; digits=6)) s (raw $(round(time_peak_raw_s; digits=6)) s; CH1 zero $(round(time_alignment_zero_s; digits=6)) s); CH2=$(round(ch2_v[idx_peak]; sigdigits=6)) V, prominence over trimmed mean=$(round(val_prominence_v; sigdigits=5)) V")
         end
         GC.gc()
     end
 
     ids_file = unique([point.id_file for point in points_reference])
+    if model == :cubicspline
+        extrapolation = Symbol(lowercase(String(get(entry_calibration, "extrapolation", "linear"))))
+        return plot_monotone_cubic_calibration(
+            path_png, tag_calibration, points_reference, ids_file, extrapolation)
+    end
     time_zero_by_file = Dict{Int,Float64}()
+    ids_fitted_zero = Int[]
     for id_file in ids_file
         points_zero = filter(point -> point.id_file == id_file && iszero(point.freq_mhz), points_reference)
-        length(points_zero) == 1 || throw(ArgumentError("Expected exactly one 0 MHz reference for SDS$(lpad(string(id_file), 5, '0')); found $(length(points_zero))"))
-        time_zero_by_file[id_file] = only(points_zero).time_peak_s
+        length(points_zero) <= 1 || throw(ArgumentError("Expected at most one 0 MHz reference for SDS$(lpad(string(id_file), 5, '0')); found $(length(points_zero))"))
+        if isempty(points_zero)
+            ref_file = filter(point -> point.id_file == id_file, points_reference)
+            time_zero_by_file[id_file] = mean(point.time_peak_s - point.freq_mhz / -472.0 for point in ref_file)
+            push!(ids_fitted_zero, id_file)
+        else
+            time_zero_by_file[id_file] = only(points_zero).time_peak_s
+        end
     end
 
     idx_group_by_file = Dict(id_file => idx for (idx, id_file) in enumerate(ids_file))
-    n_parameters = 3 + length(ids_file)
+    idx_zero_by_file = Dict(id_file => idx for (idx, id_file) in enumerate(ids_fitted_zero))
+    n_parameters = 3 + length(ids_file) + length(ids_fitted_zero)
     length(points_reference) > n_parameters ||
         throw(ArgumentError("Need more calibration references than the $n_parameters fitted parameters"))
     mat_x = vcat(
-        reshape([point.time_peak_s - time_zero_by_file[point.id_file] for point in points_reference], 1, :),
+        reshape([point.time_peak_s for point in points_reference], 1, :),
         reshape([idx_group_by_file[point.id_file] for point in points_reference], 1, :),
     )
     val_frequency_mhz = [point.freq_mhz for point in points_reference]
-    val_p_initial_all = vcat(0.08, -0.0013, 0.0, fill(-472.0, length(ids_file)))
+    val_p_initial_all = vcat(0.08, -0.0013, 0.0, fill(-472.0, length(ids_file)),
+        [time_zero_by_file[id_file] for id_file in ids_fitted_zero])
     function model_calibration(x, p)
         return [begin
             idx_group = Int(x[2, idx])
+            id_file = ids_file[idx_group]
+            t_zero_s = haskey(idx_zero_by_file, id_file) ?
+                p[3 + length(ids_file) + idx_zero_by_file[id_file]] : time_zero_by_file[id_file]
             alpha_mhz_per_s = p[3 + idx_group]
-            calc_frequency_from_time(alpha_mhz_per_s, p[1:3], x[1, idx])
+            calc_frequency_from_time(alpha_mhz_per_s, p[1:3], x[1, idx] - t_zero_s)
         end for idx in axes(x, 2)]
     end
     function jacobian_calibration(x, p)
         jac = zeros(Float64, size(x, 2), length(p))
         for idx in axes(x, 2)
-            u_s = x[1, idx]
             idx_group = Int(x[2, idx])
+            id_file = ids_file[idx_group]
+            t_zero_s = haskey(idx_zero_by_file, id_file) ?
+                p[3 + length(ids_file) + idx_zero_by_file[id_file]] : time_zero_by_file[id_file]
+            u_s = x[1, idx] - t_zero_s
             alpha_mhz_per_s = p[3 + idx_group]
             shape = 1 + p[1] * u_s + p[2] * u_s^3 + p[3] * u_s^4
             jac[idx, 1] = alpha_mhz_per_s * u_s^2
             jac[idx, 2] = alpha_mhz_per_s * u_s^4
             jac[idx, 3] = alpha_mhz_per_s * u_s^5
             jac[idx, 3 + idx_group] = u_s * shape
+            if haskey(idx_zero_by_file, id_file)
+                jac[idx, 3 + length(ids_file) + idx_zero_by_file[id_file]] =
+                    -alpha_mhz_per_s * (1 + 2p[1] * u_s + 4p[2] * u_s^3 + 5p[3] * u_s^4)
+            end
         end
         return jac
     end
@@ -634,13 +978,13 @@ function plot_spectrum_frequency_calibration(
     val_parameters = fit_calibration.param
     val_p_shape = val_parameters[1:3]
     alpha_by_file = Dict(id_file => val_parameters[3 + idx_group_by_file[id_file]] for id_file in ids_file)
+    for id_file in ids_fitted_zero
+        time_zero_by_file[id_file] = val_parameters[3 + length(ids_file) + idx_zero_by_file[id_file]]
+    end
 
-    ids_palette = [14, 15, 16, 19, 21]
-    val_hue_deg_file = [24, 80, 136, 192, 248]
     function color_for_file(id_file::Int)
-        idx_file = findfirst(==(id_file), ids_palette)
-        isnothing(idx_file) && throw(ArgumentError("No matching spectrum hue configured for index $id_file"))
-        return oklch_to_rgb(val_hue_deg_file[idx_file], 0.60, 0.15)
+        idx_file = idx_group_by_file[id_file]
+        return oklch_to_rgb(mod(24 + (idx_file - 1) * 360 / length(ids_file), 360), 0.60, 0.15)
     end
     marker_by_file = Dict(14 => :utriangle, 19 => :circle)
 
@@ -648,7 +992,7 @@ function plot_spectrum_frequency_calibration(
     ax = Axis(fig[1, 1];
         width=1200,
         height=850,
-        title="Spectrum 626 time–frequency calibration",
+        title="Spectrum 626 time–frequency calibration: $tag_calibration",
         xlabel="Time from zero-frequency t₀ (s)",
         ylabel="Reference frequency (MHz)",
         titlesize=32,
@@ -664,8 +1008,19 @@ function plot_spectrum_frequency_calibration(
         color_file = color_for_file(id_file)
         marker = get(marker_by_file, id_file, :circle)
         val_u_file = [point.time_peak_s - t_zero_s for point in ref_file]
-        u_model = range(minimum(val_u_file), maximum(val_u_file); length=700)
-        freq_model = [calc_frequency_from_time(alpha_by_file[id_file], val_p_shape, u) for u in u_model]
+        alpha_mhz_per_s = alpha_by_file[id_file]
+        u_min_ref, u_max_ref = extrema(val_u_file)
+        u_min_model, u_max_model = find_monotonic_model_limits(
+            alpha_mhz_per_s, val_p_shape, bounds_spectrum_frequency_mhz...)
+        for (u_start, u_stop) in ((u_min_model, u_min_ref), (u_max_ref, u_max_model))
+            u_start < u_stop || continue
+            u_extrap = range(u_start, u_stop; length=400)
+            lines!(ax, u_extrap,
+                [calc_frequency_from_time(alpha_mhz_per_s, val_p_shape, u) for u in u_extrap];
+                color=color_file, linewidth=2, linestyle=:dash)
+        end
+        u_model = range(u_min_ref, u_max_ref; length=700)
+        freq_model = [calc_frequency_from_time(alpha_mhz_per_s, val_p_shape, u) for u in u_model]
         lines!(ax, u_model, freq_model;
             color=color_file, linewidth=2, label="SDS$(lpad(string(id_file), 5, '0')) model")
         offset_label_x_s = (idx_group - (length(ids_file) + 1) / 2) * 0.14
@@ -694,37 +1049,40 @@ function plot_spectrum_frequency_calibration(
         ["p$(idx + 1) = $(round(val_p_shape[idx]; sigdigits=7))" for idx in eachindex(val_p_shape)], "\n")
     Label(gl_text[1, 1], str_coefficients;
         color=:black, fontsize=22, halign=:left, valign=:top)
-    Label(gl_text[2, 1], "Fixed zero-frequency t₀ and fitted scale";
+    Label(gl_text[2, 1], "Zero-frequency t₀ (detected or fitted) and fitted scale";
         color=:black, fontsize=22, halign=:left, valign=:top)
     for (idx_file, id_file) in enumerate(ids_file)
         Label(gl_text[idx_file + 2, 1], "t₀[$id_file] = $(round(time_zero_by_file[id_file]; digits=6)) s; α = $(round(alpha_by_file[id_file]; digits=3)) MHz/s";
             color=color_for_file(id_file), fontsize=22, halign=:left, valign=:top)
     end
-    Legend(gl_text[length(ids_file) + 3, 1], ax;
+    Label(gl_text[length(ids_file) + 3, 1], "Solid: reference span; dashed: extrapolation";
+        color=:black, fontsize=18, halign=:left, valign=:top)
+    Legend(gl_text[length(ids_file) + 4, 1], ax;
         framevisible=false, labelsize=20, patchsize=(36, 24))
     resize_to_layout!(fig)
     mkpath(dirname(abspath(path_png)))
     save(path_png, fig; px_per_unit=2)
-    println("Shared shape coefficients p2–p4: $(collect(val_p_shape))")
-    println("Fixed t0 by index from detected 0 MHz references: $time_zero_by_file")
+    println("Calibration '$tag_calibration' shared shape coefficients p2–p4: $(collect(val_p_shape))")
+    println("Calibration '$tag_calibration' t0 by index: $time_zero_by_file")
     println("Fitted alpha by index: $alpha_by_file")
     println("Joint-fit RSS: $(LsqFit.rss(fit_calibration)); converged=$(fit_calibration.converged); parameters=$(length(val_parameters))")
     println("Saved resized calibration PNG to $path_png")
-    return (; fig, val_p_shape, points_reference, ids_file, time_zero_by_file, alpha_by_file)
+    u_calibration_range_s = extrema(
+        point.time_peak_s - time_zero_by_file[point.id_file] for point in points_reference)
+    return (; tag=tag_calibration, model=:p4, fig, val_p_shape, points_reference, ids_file,
+        time_zero_by_file, alpha_by_file, u_calibration_range_s)
 end
 
 function plot_calibrated_spectrum_results(
     path_data::AbstractString,
     path_png::AbstractString,
-    val_p_shape::AbstractVector{<:Real},
-    alpha_by_file::AbstractDict{<:Integer,<:Real},
-    u_calibration_range_s::Tuple{<:Real,<:Real},
+    calibrations_by_tag::AbstractDict,
 )
     config = YAML.load_file(joinpath(path_data, "config.yaml"))
     entries_result = get(config, "result", nothing)
     isnothing(entries_result) && throw(ArgumentError("No 'result' section in config.yaml"))
 
-    freq_min_mhz, freq_max_mhz = -800.0, 800.0
+    freq_min_mhz, freq_max_mhz = bounds_result_frequency_mhz
     time_uncertainty_s = 0.001
     axis_width_px = 1440 # 54 / 25.4 * 96
     axis_height_px = 960 # 34 / 25.4 * 96
@@ -738,12 +1096,24 @@ function plot_calibrated_spectrum_results(
         ylabelsize=10.667,
         xticklabelsize=9.333,
         yticklabelsize=9.333,
-        xticks=-800:200:800,
+        xticks=(vmin, vmax) -> begin
+            if vmax - vmin >= 1000
+                return (ceil(Int, vmin / 200) * 200):200:(floor(Int, vmax / 200) * 200)
+            end
+            return GLMakie.Makie.get_tickvalues(WilkinsonTicks(7), vmin, vmax)
+        end,
         limits=((freq_min_mhz, freq_max_mhz), nothing),
     )
 
     points_annotations = NamedTuple[]
     for (idx_entry, entry) in enumerate(entries_result)
+        tag_calibration = String(entry["calibration"])
+        haskey(calibrations_by_tag, tag_calibration) ||
+            throw(ArgumentError("Result '$(entry["tag"])' selects unknown calibration '$tag_calibration'"))
+        calibration = calibrations_by_tag[tag_calibration]
+        is_spline = calibration.model == :cubicspline
+        val_p_shape = is_spline ? nothing : calibration.val_p_shape
+        alpha_by_file = is_spline ? nothing : calibration.alpha_by_file
         id_file = Int(entry["index"])
         name_file = "SDS$(lpad(string(id_file), 5, '0'))"
         tag = String(entry["tag"])
@@ -769,8 +1139,22 @@ function plot_calibrated_spectrum_results(
         end
         isempty(points_reference) && throw(ArgumentError("No ref: true frequency references configured for $name_file"))
         points_zero = filter(point -> iszero(point.freq_mhz), points_reference)
-        if length(points_zero) > 1
+        length(points_zero) <= 1 ||
             throw(ArgumentError("Expected at most one 0 MHz result reference for $name_file; found $(length(points_zero))"))
+        if is_spline
+            spline = if haskey(calibration.splines_by_file, id_file)
+                calibration.splines_by_file[id_file]
+            else
+                fit_monotone_cubic([point.time_peak_s for point in points_reference],
+                    [point.freq_mhz for point in points_reference];
+                    extrapolation=calibration.extrapolation)
+            end
+            time_zero_s = find_monotone_cubic_time(spline, 0.0)
+            println("$name_file ($tag): using monotone cubic calibration '$tag_calibration' with t₀=$(round(time_zero_s; digits=6)) s")
+        elseif haskey(alpha_by_file, id_file)
+            time_zero_s = calibration.time_zero_by_file[id_file]
+            alpha_mhz_per_s = Float64(alpha_by_file[id_file])
+            println("$name_file ($tag): using t₀=$(round(time_zero_s; digits=6)) s and α=$(round(alpha_mhz_per_s; digits=3)) MHz/s from calibration '$tag_calibration'")
         elseif isempty(points_zero)
             time_center_guess_s = mean(
                 point.time_peak_s - point.freq_mhz / -472.0 for point in points_reference)
@@ -784,21 +1168,18 @@ function plot_calibrated_spectrum_results(
             println("$name_file ($tag): fitted t₀=$(round(time_zero_s; digits=6)) s and α=$(round(alpha_mhz_per_s; digits=3)) MHz/s from $(length(points_reference)) ref: true peaks")
         else
             time_zero_s = only(points_zero).time_peak_s
-            if haskey(alpha_by_file, id_file)
-                alpha_mhz_per_s = Float64(alpha_by_file[id_file])
-                println("$name_file ($tag): fixed t₀ to detected aligned 0 MHz peak at $(round(time_zero_s; digits=6)) s; using calibration-fit α=$(round(alpha_mhz_per_s; digits=3)) MHz/s")
-            else
-                fit_result = fit_scale_with_fixed_time_zero(
-                    time_zero_s,
-                    [point.time_peak_s for point in points_reference],
-                    [point.freq_mhz for point in points_reference],
-                    val_p_shape)
-                alpha_mhz_per_s = fit_result.alpha_mhz_per_s
-                println("$name_file ($tag): fixed t₀ to detected aligned 0 MHz peak at $(round(time_zero_s; digits=6)) s; fitted α=$(round(alpha_mhz_per_s; digits=3)) MHz/s")
-            end
+            fit_result = fit_scale_with_fixed_time_zero(
+                time_zero_s,
+                [point.time_peak_s for point in points_reference],
+                [point.freq_mhz for point in points_reference],
+                val_p_shape)
+            alpha_mhz_per_s = fit_result.alpha_mhz_per_s
+            println("$name_file ($tag): fixed t₀ to detected aligned 0 MHz peak at $(round(time_zero_s; digits=6)) s; fitted α=$(round(alpha_mhz_per_s; digits=3)) MHz/s")
         end
         for point in points_reference
-            freq_calibrated_mhz = calc_frequency_from_time(alpha_mhz_per_s, val_p_shape, point.time_peak_s - time_zero_s)
+            freq_calibrated_mhz = is_spline ?
+                calc_monotone_cubic_frequency(spline, point.time_peak_s) :
+                calc_frequency_from_time(alpha_mhz_per_s, val_p_shape, point.time_peak_s - time_zero_s)
             println("$name_file ($tag): reference $(point.freq_mhz) MHz at aligned t=" *
                 "$(round(point.time_peak_s; digits=6)) s (raw $(round(point.time_peak_raw_s; digits=6)) s; " *
                 "CH2=$(round(ch2_v[point.idx_peak]; sigdigits=6)) V) → " *
@@ -806,15 +1187,24 @@ function plot_calibrated_spectrum_results(
                 "(residual $(round(point.freq_mhz - freq_calibrated_mhz; digits=3)) MHz)")
         end
         time_relative_s = time_aligned_s .- time_zero_s
-        frequency_mhz = alpha_mhz_per_s .* time_relative_s .* (
-            1 .+ val_p_shape[1] .* time_relative_s .+ val_p_shape[2] .* time_relative_s .^ 3 .+
-            val_p_shape[3] .* time_relative_s .^ 4)
-        mask_frequency = (u_calibration_range_s[1] .<= time_relative_s) .&
-            (time_relative_s .<= u_calibration_range_s[2]) .&
-            (freq_min_mhz .<= frequency_mhz) .& (frequency_mhz .<= freq_max_mhz)
-        any(mask_frequency) || throw(ArgumentError("No samples for $name_file fall in the requested frequency range"))
-        frequency_trace = frequency_mhz[mask_frequency]
-        signal_trace_v = ch2_v[mask_frequency]
+        if is_spline
+            frequency_mhz = [calc_monotone_cubic_frequency(spline, t) for t in time_aligned_s]
+            time_min_plot_s, time_max_plot_s = find_monotone_cubic_model_limits(
+                spline, freq_min_mhz, freq_max_mhz)
+            idx_first = searchsortedfirst(time_aligned_s, time_min_plot_s)
+            idx_last = searchsortedlast(time_aligned_s, time_max_plot_s)
+            idx_first <= idx_last ||
+                throw(ArgumentError("Spline result for $name_file does not intersect the plotted frequency range"))
+            ids_trace = idx_first:idx_last
+        else
+            frequency_mhz = alpha_mhz_per_s .* time_relative_s .* (
+                1 .+ val_p_shape[1] .* time_relative_s .+ val_p_shape[2] .* time_relative_s .^ 3 .+
+                val_p_shape[3] .* time_relative_s .^ 4)
+            ids_trace = find_monotonic_frequency_indices(
+                time_relative_s, frequency_mhz, val_p_shape, freq_min_mhz, freq_max_mhz)
+        end
+        frequency_trace = frequency_mhz[ids_trace]
+        signal_trace_v = ch2_v[ids_trace]
         color_line = parse(Colorant, String(entry["color"]))
         lines!(ax, frequency_trace, signal_trace_v;
             color=color_line, linewidth=1.2, label=tag)
@@ -827,13 +1217,9 @@ function plot_calibrated_spectrum_results(
                 idx_peak = find_local_peak_near_time(ch2_v, time_aligned_s, time_config_s, time_uncertainty_s)
             elseif haskey(peak_config, "freq")
                 target_frequency_mhz = Float64(peak_config["freq"])
-                idx_first_calibrated = searchsortedfirst(time_relative_s, u_calibration_range_s[1])
-                idx_last_calibrated = searchsortedlast(time_relative_s, u_calibration_range_s[2])
-                idx_first_calibrated <= idx_last_calibrated ||
-                    throw(ArgumentError("No samples in the calibration time range for $name_file"))
-                idx_peak = idx_first_calibrated - 1 + find_local_peak_near_frequency(
-                    @view(ch2_v[idx_first_calibrated:idx_last_calibrated]),
-                    @view(frequency_mhz[idx_first_calibrated:idx_last_calibrated]),
+                idx_peak = first(ids_trace) - 1 + find_local_peak_near_frequency(
+                    @view(ch2_v[ids_trace]),
+                    @view(frequency_mhz[ids_trace]),
                     target_frequency_mhz, 5.0)
                 println("$name_file ($tag): frequency-only peak target $(target_frequency_mhz) MHz → selected sample at $(round(frequency_mhz[idx_peak]; digits=3)) MHz, $(round(ch2_v[idx_peak]; sigdigits=6)) V")
             elseif has_time
@@ -881,7 +1267,7 @@ function plot_calibrated_spectrum_results(
                     offset_label_y_v > 0 ? :bottom : :top)))
             println("$name_file ($tag): $(is_reference ? "reference" : "sample") peak at aligned $(round(time_peak_s; digits=6)) s, $(round(freq_peak_mhz; digits=3)) MHz, $(round(val_peak_v; sigdigits=6)) V$(isempty(peak_tag) ? "" : " — $peak_tag")")
         end
-        println("$name_file ($tag): using calibration time range $(u_calibration_range_s[1])…$(u_calibration_range_s[2]) s; " *
+        println("$name_file ($tag): using calibration '$tag_calibration' with plotted frequency range $(round(extrema(frequency_trace)[1]; digits=3))…$(round(extrema(frequency_trace)[2]; digits=3)) MHz; " *
             "CH1 alignment zero=$(round(time_alignment_zero_s; digits=6)) s; raw CH2 voltage range=$(round(minimum(signal_trace_v); sigdigits=6))…$(round(maximum(signal_trace_v); sigdigits=6)) V")
         GC.gc()
     end
@@ -907,7 +1293,6 @@ fig = function plot_ch1_spectrum(
     path_jld2::AbstractString,
     path_png::AbstractString,
     path_period_csv::AbstractString,
-    path_ch2_png::AbstractString,
 )
     payload = JLD2.load(path_jld2)
     metadata_lines = payload["metadata_lines"]
@@ -959,6 +1344,9 @@ args_data = filter(!=("--calibration-only"), args_data)
 length(args_data) <= 1 || throw(ArgumentError(
     "Usage: julia --project=. multidualmot/spectral626.jl [data-folder] [--skip-conversion] [--calibration-only]"))
 path_data = isempty(args_data) ? path_data_root : abspath(args_data[1])
+path_config = joinpath(path_data, "config.yaml")
+isfile(path_config) || throw(ArgumentError("Spectrum config does not exist: $path_config"))
+config = YAML.load_file(path_config)
 if "--skip-conversion" in ARGS
     println("Skipping CSV conversion; using existing JLD2 caches in $path_data")
 else
@@ -971,20 +1359,41 @@ if !("--calibration-only" in ARGS)
     isfile(path_jld2) || throw(ArgumentError("SDS00014 JLD2 cache is missing after conversion: $path_jld2"))
     path_png = joinpath(path_data, "SDS00014_CH1_vs_time.png")
     path_period_csv = joinpath(path_data, "SDS00014_CH1_periods.csv")
-    path_ch2_png = joinpath(path_data, "SDS00007_14_15_16_19_21_CH2_aligned_periods.png")
-    plot_ch1_spectrum(path_jld2, path_png, path_period_csv, path_ch2_png)
-    fig_spectrum = plot_ch2_periods_spanning_zero(path_data, [07, 14, 15, 16, 19, 21], path_ch2_png)
+    plot_ch1_spectrum(path_jld2, path_png, path_period_csv)
+    entries_display = get(config, "display", nothing)
+    isnothing(entries_display) && throw(ArgumentError("No 'display' section in $path_config"))
+    fig_spectra = []
+    for entry in entries_display
+        ids_display = Int.(entry["indices"])
+        isempty(ids_display) && throw(ArgumentError("A display entry has no indices"))
+        name_display = join([lpad(string(id), idx == 1 ? 5 : 2, '0')
+            for (idx, id) in enumerate(ids_display)], "_")
+        path_ch2_png = joinpath(path_data, "SDS$(name_display)_CH2_aligned_periods.png")
+        push!(fig_spectra, plot_ch2_periods_spanning_zero(path_data, ids_display, path_ch2_png))
+    end
+    length(fig_spectra) == 1 && (fig_spectrum = only(fig_spectra))
 end
 
-path_calibration_png = joinpath(path_data, "spectrum626_time_frequency_calibration.png")
-calibration_result = plot_spectrum_frequency_calibration(path_data, path_calibration_png)
-fig_calibration = calibration_result.fig
+entries_calibration = get(config, "calibration", nothing)
+isnothing(entries_calibration) && throw(ArgumentError("No 'calibration' section in $path_config"))
+calibration_results = []
+calibrations_by_tag = Dict{String,Any}()
+names_calibration_png = Set{String}()
+for entry in entries_calibration
+    tag_calibration = String(entry["tag"])
+    isempty(strip(tag_calibration)) && throw(ArgumentError("Calibration tag cannot be empty"))
+    haskey(calibrations_by_tag, tag_calibration) &&
+        throw(ArgumentError("Duplicate calibration tag '$tag_calibration'"))
+    name_tag_png = replace(tag_calibration, r"[^A-Za-z0-9_-]+" => "_")
+    name_tag_png in names_calibration_png &&
+        throw(ArgumentError("Calibration tags must produce unique output filenames; '$tag_calibration' conflicts with another tag"))
+    push!(names_calibration_png, name_tag_png)
+    path_calibration_png = joinpath(path_data, "spectrum626_time_frequency_calibration_$(name_tag_png).png")
+    calibration_result = plot_spectrum_frequency_calibration(path_data, path_calibration_png, entry)
+    push!(calibration_results, calibration_result)
+    calibrations_by_tag[tag_calibration] = calibration_result
+end
+fig_calibrations = [calibration.fig for calibration in calibration_results]
 path_result_spectrum_png = joinpath(path_data, "spectrum626_calibrated_results.png")
-u_calibration_range_s = extrema([
-    point.time_peak_s - calibration_result.time_zero_by_file[point.id_file]
-    for point in calibration_result.points_reference
-])
 fig_result_spectrum = plot_calibrated_spectrum_results(
-    path_data, path_result_spectrum_png, calibration_result.val_p_shape,
-    calibration_result.alpha_by_file,
-    u_calibration_range_s)
+    path_data, path_result_spectrum_png, calibrations_by_tag)
