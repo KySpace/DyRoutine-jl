@@ -1091,7 +1091,8 @@ end
 function plot_calibrated_spectrum_results(
     path_data::AbstractString,
     path_png::AbstractString,
-    calibrations_by_tag::AbstractDict,
+    calibrations_by_tag::AbstractDict;
+    normalize_amplitude::Bool=true,
 )
     config = YAML.load_file(joinpath(path_data, "config.yaml"))
     entries_result = get(config, "result", nothing)
@@ -1106,7 +1107,7 @@ function plot_calibrated_spectrum_results(
         width=axis_width_px,
         height=axis_height_px,
         xlabel="Frequency (MHz)",
-        ylabel="Normalized spectrum signal",
+        ylabel=normalize_amplitude ? "Normalized spectrum signal" : "Spectrum signal (V)",
         xlabelsize=10.667,
         ylabelsize=10.667,
         xticklabelsize=9.333,
@@ -1221,7 +1222,8 @@ function plot_calibrated_spectrum_results(
         end
         frequency_trace = frequency_mhz[ids_trace]
         signal_trace_v = ch2_v[ids_trace]
-        val_ch2_baseline_v = calc_mean_excluding_top_fraction(signal_trace_v, 0.01)
+        val_ch2_baseline_v = normalize_amplitude ?
+            calc_mean_excluding_top_fraction(signal_trace_v, 0.01) : 0.0
         color_line = parse(Colorant, String(entry["color"]))
         push!(traces_result, (; name_file, tag, frequency_trace, signal_trace_v,
             val_ch2_baseline_v, color_line))
@@ -1288,26 +1290,37 @@ function plot_calibrated_spectrum_results(
         GC.gc()
     end
 
-    val_peak_by_result_v = [maximum(trace.signal_trace_v) - trace.val_ch2_baseline_v
-        for trace in traces_result]
-    all(isfinite, val_peak_by_result_v) ||
-        throw(ArgumentError("Result traces contain a nonfinite baseline-corrected maximum"))
-    pos_normalization = argmax(val_peak_by_result_v)
-    val_normalization_v = val_peak_by_result_v[pos_normalization]
-    val_normalization_v > 0 ||
-        throw(ArgumentError("The largest baseline-corrected result signal must be positive; got $val_normalization_v V"))
-    println("Normalizing result spectra by $(traces_result[pos_normalization].name_file) ($(traces_result[pos_normalization].tag)) maximum $(round(val_normalization_v; sigdigits=6)) V above its baseline")
+    val_normalization_v = 1.0
+    if normalize_amplitude
+        val_peak_by_result_v = [maximum(trace.signal_trace_v) - trace.val_ch2_baseline_v
+            for trace in traces_result]
+        all(isfinite, val_peak_by_result_v) ||
+            throw(ArgumentError("Result traces contain a nonfinite baseline-corrected maximum"))
+        pos_normalization = argmax(val_peak_by_result_v)
+        val_normalization_v = val_peak_by_result_v[pos_normalization]
+        val_normalization_v > 0 ||
+            throw(ArgumentError("The largest baseline-corrected result signal must be positive; got $val_normalization_v V"))
+        println("Normalizing result spectra by $(traces_result[pos_normalization].name_file) ($(traces_result[pos_normalization].tag)) maximum $(round(val_normalization_v; sigdigits=6)) V above its baseline")
+    else
+        println("Plotting result spectra in raw CH2 volts")
+    end
     for trace in traces_result
-        signal_normalized = (trace.signal_trace_v .- trace.val_ch2_baseline_v) ./ val_normalization_v
-        lines!(ax, trace.frequency_trace, signal_normalized;
+        signal_plot = normalize_amplitude ?
+            (trace.signal_trace_v .- trace.val_ch2_baseline_v) ./ val_normalization_v : trace.signal_trace_v
+        lines!(ax, trace.frequency_trace, signal_plot;
             color=trace.color_line, linewidth=1.2, label=trace.tag)
     end
     for point in points_annotations
-        val_peak_normalized = (point.val_peak_v - point.val_ch2_baseline_v) / val_normalization_v
-        text_y = val_peak_normalized + point.offset_label_y_v / val_normalization_v
-        text_label = "t=$(round(point.time_peak_s; digits=3)) s\nf=$(round(point.freq_peak_mhz; digits=1)) MHz\nA=$(round(val_peak_normalized; digits=3))" *
+        val_peak_plot = normalize_amplitude ?
+            (point.val_peak_v - point.val_ch2_baseline_v) / val_normalization_v : point.val_peak_v
+        offset_label_y_plot = normalize_amplitude ?
+            point.offset_label_y_v / val_normalization_v : point.offset_label_y_v
+        text_y = val_peak_plot + offset_label_y_plot
+        text_value = normalize_amplitude ?
+            "A=$(round(val_peak_plot; digits=3))" : "V=$(round(val_peak_plot; digits=3)) V"
+        text_label = "t=$(round(point.time_peak_s; digits=3)) s\nf=$(round(point.freq_peak_mhz; digits=1)) MHz\n$text_value" *
             (isempty(point.peak_tag) ? "" : "\n$(point.peak_tag)")
-        scatter!(ax, [point.freq_marker_mhz], [val_peak_normalized];
+        scatter!(ax, [point.freq_marker_mhz], [val_peak_plot];
             color=point.color_line, marker=point.marker, markersize=8,
             strokecolor=:black, strokewidth=0.8)
         text!(ax, point.text_x, text_y;
@@ -1376,8 +1389,9 @@ end
 args_data = filter(!=("--skip-conversion"), ARGS)
 args_data = filter(!=("--calibration-only"), args_data)
 args_data = filter(!=("--display-only"), args_data)
+args_data = filter(!=("--result-voltage"), args_data)
 length(args_data) <= 1 || throw(ArgumentError(
-    "Usage: julia --project=. multidualmot/spectral626.jl [data-folder] [--skip-conversion] [--calibration-only|--display-only]"))
+    "Usage: julia --project=. multidualmot/spectral626.jl [data-folder] [--skip-conversion] [--calibration-only|--display-only] [--result-voltage]"))
 !("--calibration-only" in ARGS && "--display-only" in ARGS) ||
     throw(ArgumentError("--calibration-only and --display-only cannot be combined"))
 path_data = isempty(args_data) ? path_data_root : abspath(args_data[1])
@@ -1436,5 +1450,6 @@ end
 fig_calibrations = [calibration.fig for calibration in calibration_results]
 path_result_spectrum_png = joinpath(path_data, "spectrum626_calibrated_results.png")
 fig_result_spectrum = plot_calibrated_spectrum_results(
-    path_data, path_result_spectrum_png, calibrations_by_tag)
+    path_data, path_result_spectrum_png, calibrations_by_tag;
+    normalize_amplitude=!("--result-voltage" in ARGS))
 end
