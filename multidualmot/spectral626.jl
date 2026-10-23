@@ -16,7 +16,7 @@ const n_horizontal_divisions = 14
 const val_smoothing_sigma_points = 2.5
 const n_smoothing_window_points = 11 # symmetric kernel spanning ten sample intervals
 const bounds_spectrum_frequency_mhz = (-800.0, 800.0)
-const bounds_result_frequency_mhz = (-720.0, 720.0)
+const bounds_result_frequency_mhz = (-750.0, 750.0)
 
 function smooth_scope_channel(values::AbstractVector{<:Real})::Vector{Float64}
     kernel_gaussian = Kernel.gaussian(
@@ -1089,8 +1089,30 @@ function plot_spectrum_frequency_calibration(
         time_zero_by_file, alpha_by_file, u_calibration_range_s)
 end
 
+function calc_fine_scan_baseline(
+    frequency_mhz::AbstractVector{<:Real},
+    signal_v::AbstractVector{<:Real},
+    abs_freq0_mhz::Real,
+)::Float64
+    length(frequency_mhz) == length(signal_v) ||
+        throw(DimensionMismatch("Fine-scan frequency and voltage lengths differ: $(length(frequency_mhz)) and $(length(signal_v))"))
+    freq_min_mhz, freq_max_mhz = extrema(frequency_mhz)
+    freq_min_mhz < freq_max_mhz ||
+        throw(ArgumentError("Fine-scan frequency range must be nonzero; got $freq_min_mhz…$freq_max_mhz MHz"))
+    isfinite(abs_freq0_mhz) && freq_min_mhz <= abs_freq0_mhz <= freq_max_mhz ||
+        throw(ArgumentError("Fine-scan absFreq0=$abs_freq0_mhz MHz is outside $freq_min_mhz…$freq_max_mhz MHz"))
+    delta_freq_mhz = (freq_max_mhz - freq_min_mhz) / 4
+    ids_baseline = findall(freq -> abs(freq - abs_freq0_mhz) > delta_freq_mhz, frequency_mhz)
+    isempty(ids_baseline) &&
+        throw(ArgumentError("No fine-scan samples remain outside absFreq0 ± $delta_freq_mhz MHz"))
+    return mean(@view signal_v[ids_baseline])
+end
+
 function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::AbstractVector;
-    compact::Bool=false)
+    compact::Bool=false,
+    normalize_amplitude::Bool=true,
+    val_normalization_coarse_v::Real=1.0,
+    val_normalization_fine_v::Real=1.0)
     n_rows = cld(length(traces_fine_scan), 3)
     for (idx_trace, trace) in enumerate(traces_fine_scan)
         pos_row = fld(idx_trace - 1, 3) + 1
@@ -1100,16 +1122,23 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
             height=compact ? 135 : 260,
             title="$(trace.tag): $(round(trace.target_frequency_mhz; digits=1)) MHz",
             xlabel=compact && pos_row < n_rows ? "" : "Frequency (MHz)",
-            ylabel=compact && pos_col > 1 ? "" : "Signal (V)",
+            ylabel=compact && pos_col > 1 ? "" :
+                (normalize_amplitude ? "Signal (a.u.)" : "Signal (V)"),
             titlesize=compact ? 11 : 15,
             xlabelsize=compact ? 9 : 12, ylabelsize=compact ? 9 : 12,
             xticklabelsize=compact ? 8 : 11,
             yticklabelsize=compact ? 8 : 11)
         if !isempty(trace.frequency_coarse_fine)
-            lines!(ax_fine, trace.frequency_coarse_fine, trace.signal_coarse_fine_v;
+            signal_coarse_plot = normalize_amplitude ?
+                (trace.signal_coarse_fine_v .- trace.val_ch2_baseline_v) ./ val_normalization_coarse_v :
+                trace.signal_coarse_fine_v
+            lines!(ax_fine, trace.frequency_coarse_fine, signal_coarse_plot;
                 color=(trace.color_line, 0.35), linewidth=1.2, linestyle=:dash)
         end
-        lines!(ax_fine, trace.frequency_fine_mhz, trace.signal_fine_v;
+        signal_fine_plot = normalize_amplitude ?
+            (trace.signal_fine_v .- trace.val_fine_baseline_v) ./ val_normalization_fine_v :
+            trace.signal_fine_v
+        lines!(ax_fine, trace.frequency_fine_mhz, signal_fine_plot;
             color=(trace.color_line, 0.5), linewidth=2)
         xlims!(ax_fine, extrema(trace.frequency_fine_mhz)...)
     end
@@ -1120,7 +1149,7 @@ function plot_calibrated_spectrum_results(
     path_data::AbstractString,
     path_png::AbstractString,
     calibrations_by_tag::AbstractDict;
-    normalize_amplitude::Bool=false,
+    normalize_amplitude::Bool=true,
 )
     config = YAML.load_file(joinpath(path_data, "config.yaml"))
     entries_result = get(config, "result", nothing)
@@ -1259,7 +1288,7 @@ function plot_calibrated_spectrum_results(
             val_ch2_baseline_v, color_line))
         for peak_config in entry["peaks"]
             replace_config = get(peak_config, "replace", nothing)
-            if !normalize_amplitude && !is_missing_config_value(replace_config)
+            if !is_missing_config_value(replace_config)
                 replace_config isa AbstractVector && length(replace_config) == 2 &&
                     all(value -> value isa AbstractString && !isempty(strip(value)), replace_config) ||
                     throw(ArgumentError("$name_file peak replace must be [MAT filename, group_data field]; got $replace_config"))
@@ -1283,6 +1312,14 @@ function plot_calibrated_spectrum_results(
                     throw(DimensionMismatch("$path_mat group_data.$name_case has $(length(frequency_fine_mhz)) frequency and $(length(signal_fine_v)) voltage values; expected matching lengths of at least 2"))
                 all(isfinite, frequency_fine_mhz) && all(isfinite, signal_fine_v) ||
                     throw(ArgumentError("$path_mat group_data.$name_case contains nonfinite values"))
+                val_fine_baseline_v = if normalize_amplitude
+                    haskey(case_data, "absFreq0") ||
+                        throw(ArgumentError("$path_mat group_data.$name_case has no absFreq0 field"))
+                    calc_fine_scan_baseline(frequency_fine_mhz, signal_fine_v,
+                        Float64(case_data["absFreq0"]))
+                else
+                    0.0
+                end
                 target_frequency_mhz = Float64(get(peak_config, "freq", mean(frequency_fine_mhz)))
                 freq_min_fine, freq_max_fine = extrema(frequency_fine_mhz)
                 ids_coarse_fine = findall(freq -> freq_min_fine <= freq <= freq_max_fine,
@@ -1290,7 +1327,8 @@ function plot_calibrated_spectrum_results(
                 frequency_coarse_fine = frequency_trace[ids_coarse_fine]
                 signal_coarse_fine_v = signal_trace_v[ids_coarse_fine]
                 push!(traces_fine_scan, (; frequency_fine_mhz, signal_fine_v,
-                    frequency_coarse_fine, signal_coarse_fine_v,
+                    frequency_coarse_fine, signal_coarse_fine_v, val_ch2_baseline_v,
+                    val_fine_baseline_v,
                     color_line, tag, target_frequency_mhz))
                 println("$name_file ($tag): overlaying $name_mat group_data.$name_case over $(round(extrema(frequency_fine_mhz)[1]; digits=3))…$(round(extrema(frequency_fine_mhz)[2]; digits=3)) MHz")
             end
@@ -1357,6 +1395,7 @@ function plot_calibrated_spectrum_results(
     end
 
     val_normalization_v = 1.0
+    val_fine_normalization_v = 1.0
     if normalize_amplitude
         val_peak_by_result_v = [maximum(trace.signal_trace_v) - trace.val_ch2_baseline_v
             for trace in traces_result]
@@ -1367,6 +1406,15 @@ function plot_calibrated_spectrum_results(
         val_normalization_v > 0 ||
             throw(ArgumentError("The largest baseline-corrected result signal must be positive; got $val_normalization_v V"))
         println("Normalizing result spectra by $(traces_result[pos_normalization].name_file) ($(traces_result[pos_normalization].tag)) maximum $(round(val_normalization_v; sigdigits=6)) V above its baseline")
+        if !isempty(traces_fine_scan)
+            val_peak_by_fine_v = [maximum(trace.signal_fine_v) - trace.val_fine_baseline_v
+                for trace in traces_fine_scan]
+            pos_fine_normalization = argmax(val_peak_by_fine_v)
+            val_fine_normalization_v = val_peak_by_fine_v[pos_fine_normalization]
+            isfinite(val_fine_normalization_v) && val_fine_normalization_v > 0 ||
+                throw(ArgumentError("The largest baseline-corrected fine-scan peak must be positive and finite; got $val_fine_normalization_v V"))
+            println("Normalizing all fine scans by $(traces_fine_scan[pos_fine_normalization].tag) peak $(round(val_fine_normalization_v; sigdigits=6)) V above its local baseline")
+        end
     else
         println("Plotting result spectra in raw CH2 volts")
     end
@@ -1377,7 +1425,10 @@ function plot_calibrated_spectrum_results(
             color=trace.color_line, linewidth=1.2, label=trace.tag)
     end
     for trace in traces_fine_scan
-        lines!(ax, trace.frequency_fine_mhz, trace.signal_fine_v;
+        signal_fine_plot = normalize_amplitude ?
+            (trace.signal_fine_v .- trace.val_fine_baseline_v) ./ val_fine_normalization_v :
+            trace.signal_fine_v
+        lines!(ax, trace.frequency_fine_mhz, signal_fine_plot;
             color=(trace.color_line, 0.5), linewidth=1.2)
     end
     for point in points_annotations
@@ -1400,14 +1451,20 @@ function plot_calibrated_spectrum_results(
 
     axislegend(ax; position=:rt, framevisible=false, labelsize=9.333)
     if !isempty(traces_fine_scan)
-        Label(fig[2, 1], "Fine-scan detail · dashed: coarse scan · solid: fine scan (50% opacity)";
+        str_fine_label = normalize_amplitude ?
+            "Fine-scan detail · dashed: full scan · solid: fine scan; each group has a shared 1.0 peak" :
+            "Fine-scan detail · dashed: coarse scan · solid: fine scan (50% opacity)"
+        Label(fig[2, 1], str_fine_label;
             halign=:left, fontsize=14)
         gl_fine_scan = GridLayout()
         fig[3, 1] = gl_fine_scan
         rowgap!(fig.layout, 8)
         rowgap!(gl_fine_scan, 4)
         colgap!(gl_fine_scan, 8)
-        draw_fine_scan_panels!(gl_fine_scan, traces_fine_scan; compact=true)
+        draw_fine_scan_panels!(gl_fine_scan, traces_fine_scan;
+            compact=true, normalize_amplitude,
+            val_normalization_coarse_v=val_normalization_v,
+            val_normalization_fine_v=val_fine_normalization_v)
     end
     resize_to_layout!(fig)
     mkpath(dirname(abspath(path_png)))
@@ -1415,11 +1472,14 @@ function plot_calibrated_spectrum_results(
     println("Saved result spectrum PNG with $(round(axis_width_px; digits=1))×$(round(axis_height_px; digits=1)) px axis to $path_png")
     if !isempty(traces_fine_scan)
         fig_detail = Figure(fontsize=14)
-        Label(fig_detail[1, 1], "Fine-scan overlays · dashed: coarse scan · solid: fine scan (50% opacity)";
+        Label(fig_detail[1, 1], str_fine_label;
             halign=:left, fontsize=14)
         gl_detail = GridLayout()
         fig_detail[2, 1] = gl_detail
-        draw_fine_scan_panels!(gl_detail, traces_fine_scan)
+        draw_fine_scan_panels!(gl_detail, traces_fine_scan;
+            normalize_amplitude,
+            val_normalization_coarse_v=val_normalization_v,
+            val_normalization_fine_v=val_fine_normalization_v)
         resize_to_layout!(fig_detail)
         path_detail_png = splitext(path_png)[1] * "_fine_scan_detail.png"
         save(path_detail_png, fig_detail; px_per_unit=3)
@@ -1546,5 +1606,5 @@ fig_calibrations = [calibration.fig for calibration in calibration_results]
 path_result_spectrum_png = joinpath(path_data, "spectrum626_calibrated_results.png")
 fig_result_spectrum = plot_calibrated_spectrum_results(
     path_data, path_result_spectrum_png, calibrations_by_tag;
-    normalize_amplitude=("--result-normalized" in ARGS))
+    normalize_amplitude=false) # ("--result-normalized" in ARGS))
 end
