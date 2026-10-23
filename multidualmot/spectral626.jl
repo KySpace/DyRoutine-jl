@@ -5,6 +5,7 @@ using DataFrames
 using ImageFiltering
 using JLD2
 using LsqFit
+using MAT
 using Peaks
 using Statistics
 using YAML
@@ -1088,11 +1089,32 @@ function plot_spectrum_frequency_calibration(
         time_zero_by_file, alpha_by_file, u_calibration_range_s)
 end
 
+function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::AbstractVector)
+    for (idx_trace, trace) in enumerate(traces_fine_scan)
+        pos_row = fld(idx_trace - 1, 3) + 1
+        pos_col = mod(idx_trace - 1, 3) + 1
+        ax_fine = Axis(gl_fine_scan[pos_row, pos_col];
+            width=450, height=260,
+            title="$(trace.tag): $(round(trace.target_frequency_mhz; digits=1)) MHz",
+            xlabel="Frequency (MHz)", ylabel="Signal (V)",
+            titlesize=15, xlabelsize=12, ylabelsize=12,
+            xticklabelsize=11, yticklabelsize=11)
+        if !isempty(trace.frequency_coarse_fine)
+            lines!(ax_fine, trace.frequency_coarse_fine, trace.signal_coarse_fine_v;
+                color=(trace.color_line, 0.35), linewidth=1.2, linestyle=:dash)
+        end
+        lines!(ax_fine, trace.frequency_fine_mhz, trace.signal_fine_v;
+            color=(trace.color_line, 0.5), linewidth=2)
+        xlims!(ax_fine, extrema(trace.frequency_fine_mhz)...)
+    end
+    return nothing
+end
+
 function plot_calibrated_spectrum_results(
     path_data::AbstractString,
     path_png::AbstractString,
     calibrations_by_tag::AbstractDict;
-    normalize_amplitude::Bool=true,
+    normalize_amplitude::Bool=false,
 )
     config = YAML.load_file(joinpath(path_data, "config.yaml"))
     entries_result = get(config, "result", nothing)
@@ -1122,6 +1144,8 @@ function plot_calibrated_spectrum_results(
     )
 
     traces_result = NamedTuple[]
+    traces_fine_scan = NamedTuple[]
+    mat_data_by_path = Dict{String,Any}()
     points_annotations = NamedTuple[]
     for (idx_entry, entry) in enumerate(entries_result)
         tag_calibration = String(entry["calibration"])
@@ -1228,6 +1252,42 @@ function plot_calibrated_spectrum_results(
         push!(traces_result, (; name_file, tag, frequency_trace, signal_trace_v,
             val_ch2_baseline_v, color_line))
         for peak_config in entry["peaks"]
+            replace_config = get(peak_config, "replace", nothing)
+            if !normalize_amplitude && !is_missing_config_value(replace_config)
+                replace_config isa AbstractVector && length(replace_config) == 2 &&
+                    all(value -> value isa AbstractString && !isempty(strip(value)), replace_config) ||
+                    throw(ArgumentError("$name_file peak replace must be [MAT filename, group_data field]; got $replace_config"))
+                name_mat, name_case = String.(replace_config)
+                path_mat = joinpath(path_data, "individual reprocess", name_mat)
+                isfile(path_mat) || throw(ArgumentError("Fine-scan MAT file does not exist: $path_mat"))
+                mat_data = get!(mat_data_by_path, path_mat) do
+                    MAT.matread(path_mat)
+                end
+                haskey(mat_data, "group_data") ||
+                    throw(ArgumentError("$path_mat has no group_data structure"))
+                group_data = mat_data["group_data"]
+                haskey(group_data, name_case) ||
+                    throw(ArgumentError("$path_mat group_data has no case '$name_case'"))
+                case_data = group_data[name_case]
+                all(haskey(case_data, key) for key in ("frequency", "voltage")) ||
+                    throw(ArgumentError("$path_mat group_data.$name_case needs frequency and voltage fields"))
+                frequency_fine_mhz = vec(Float64.(case_data["frequency"]))
+                signal_fine_v = smooth_scope_channel(vec(Float64.(case_data["voltage"])))
+                length(frequency_fine_mhz) == length(signal_fine_v) && length(frequency_fine_mhz) >= 2 ||
+                    throw(DimensionMismatch("$path_mat group_data.$name_case has $(length(frequency_fine_mhz)) frequency and $(length(signal_fine_v)) voltage values; expected matching lengths of at least 2"))
+                all(isfinite, frequency_fine_mhz) && all(isfinite, signal_fine_v) ||
+                    throw(ArgumentError("$path_mat group_data.$name_case contains nonfinite values"))
+                target_frequency_mhz = Float64(get(peak_config, "freq", mean(frequency_fine_mhz)))
+                freq_min_fine, freq_max_fine = extrema(frequency_fine_mhz)
+                ids_coarse_fine = findall(freq -> freq_min_fine <= freq <= freq_max_fine,
+                    frequency_trace)
+                frequency_coarse_fine = frequency_trace[ids_coarse_fine]
+                signal_coarse_fine_v = signal_trace_v[ids_coarse_fine]
+                push!(traces_fine_scan, (; frequency_fine_mhz, signal_fine_v,
+                    frequency_coarse_fine, signal_coarse_fine_v,
+                    color_line, tag, target_frequency_mhz))
+                println("$name_file ($tag): overlaying $name_mat group_data.$name_case over $(round(extrema(frequency_fine_mhz)[1]; digits=3))…$(round(extrema(frequency_fine_mhz)[2]; digits=3)) MHz")
+            end
             is_reference = get(peak_config, "ref", false) === true
             has_time = haskey(peak_config, "time") && !is_missing_config_value(peak_config["time"])
             if is_reference
@@ -1310,6 +1370,10 @@ function plot_calibrated_spectrum_results(
         lines!(ax, trace.frequency_trace, signal_plot;
             color=trace.color_line, linewidth=1.2, label=trace.tag)
     end
+    for trace in traces_fine_scan
+        lines!(ax, trace.frequency_fine_mhz, trace.signal_fine_v;
+            color=(trace.color_line, 0.5), linewidth=1.2)
+    end
     for point in points_annotations
         val_peak_plot = normalize_amplitude ?
             (point.val_peak_v - point.val_ch2_baseline_v) / val_normalization_v : point.val_peak_v
@@ -1329,10 +1393,29 @@ function plot_calibrated_spectrum_results(
     end
 
     axislegend(ax; position=:rt, framevisible=false, labelsize=9.333)
+    if !isempty(traces_fine_scan)
+        Label(fig[2, 1], "Fine-scan detail · dashed: coarse scan · solid: fine scan (50% opacity)";
+            halign=:left, fontsize=14)
+        gl_fine_scan = GridLayout()
+        fig[3, 1] = gl_fine_scan
+        draw_fine_scan_panels!(gl_fine_scan, traces_fine_scan)
+    end
     resize_to_layout!(fig)
     mkpath(dirname(abspath(path_png)))
     save(path_png, fig; px_per_unit=4)
     println("Saved result spectrum PNG with $(round(axis_width_px; digits=1))×$(round(axis_height_px; digits=1)) px axis to $path_png")
+    if !isempty(traces_fine_scan)
+        fig_detail = Figure(fontsize=14)
+        Label(fig_detail[1, 1], "Fine-scan overlays · dashed: coarse scan · solid: fine scan (50% opacity)";
+            halign=:left, fontsize=14)
+        gl_detail = GridLayout()
+        fig_detail[2, 1] = gl_detail
+        draw_fine_scan_panels!(gl_detail, traces_fine_scan)
+        resize_to_layout!(fig_detail)
+        path_detail_png = splitext(path_png)[1] * "_fine_scan_detail.png"
+        save(path_detail_png, fig_detail; px_per_unit=3)
+        println("Saved fine-scan detail PNG to $path_detail_png")
+    end
     return fig
 end
 
@@ -1390,10 +1473,13 @@ args_data = filter(!=("--skip-conversion"), ARGS)
 args_data = filter(!=("--calibration-only"), args_data)
 args_data = filter(!=("--display-only"), args_data)
 args_data = filter(!=("--result-voltage"), args_data)
+args_data = filter(!=("--result-normalized"), args_data)
 length(args_data) <= 1 || throw(ArgumentError(
-    "Usage: julia --project=. multidualmot/spectral626.jl [data-folder] [--skip-conversion] [--calibration-only|--display-only] [--result-voltage]"))
+    "Usage: julia --project=. multidualmot/spectral626.jl [data-folder] [--skip-conversion] [--calibration-only|--display-only] [--result-voltage|--result-normalized]"))
 !("--calibration-only" in ARGS && "--display-only" in ARGS) ||
     throw(ArgumentError("--calibration-only and --display-only cannot be combined"))
+!("--result-voltage" in ARGS && "--result-normalized" in ARGS) ||
+    throw(ArgumentError("--result-voltage and --result-normalized cannot be combined"))
 path_data = isempty(args_data) ? path_data_root : abspath(args_data[1])
 path_config = joinpath(path_data, "config.yaml")
 isfile(path_config) || throw(ArgumentError("Spectrum config does not exist: $path_config"))
@@ -1451,5 +1537,5 @@ fig_calibrations = [calibration.fig for calibration in calibration_results]
 path_result_spectrum_png = joinpath(path_data, "spectrum626_calibrated_results.png")
 fig_result_spectrum = plot_calibrated_spectrum_results(
     path_data, path_result_spectrum_png, calibrations_by_tag;
-    normalize_amplitude=!("--result-voltage" in ARGS))
+    normalize_amplitude=("--result-normalized" in ARGS))
 end

@@ -1,6 +1,10 @@
 ## Local Notes
 - Julia launcher path to try first on this machine if the default doesn't work:
   `C:\Users\ky\AppData\Local\Microsoft\WindowsApps\julia.exe`
+- If that launcher is unavailable, use the complete Juliaup installation at
+  `C:\Users\ky\.julia\juliaup\julia-1.12.6+0.x64.w64.mingw32\bin\julia.exe`.
+  The separate `AppData\Local\Programs\Julia-1.12.6` copy lacks standard-library
+  sources and cannot load MAT.
 - When a task focuses on plotting or a late data-processing stage, prefer loading
   and processing the selected data once in a persistent Julia REPL, then rerun
   only the relevant later script section against the variables already in that
