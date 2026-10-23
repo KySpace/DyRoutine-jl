@@ -1106,7 +1106,7 @@ function plot_calibrated_spectrum_results(
         width=axis_width_px,
         height=axis_height_px,
         xlabel="Frequency (MHz)",
-        ylabel="Spectrum signal (V)",
+        ylabel="Normalized spectrum signal",
         xlabelsize=10.667,
         ylabelsize=10.667,
         xticklabelsize=9.333,
@@ -1120,6 +1120,7 @@ function plot_calibrated_spectrum_results(
         limits=((freq_min_mhz, freq_max_mhz), nothing),
     )
 
+    traces_result = NamedTuple[]
     points_annotations = NamedTuple[]
     for (idx_entry, entry) in enumerate(entries_result)
         tag_calibration = String(entry["calibration"])
@@ -1220,9 +1221,10 @@ function plot_calibrated_spectrum_results(
         end
         frequency_trace = frequency_mhz[ids_trace]
         signal_trace_v = ch2_v[ids_trace]
+        val_ch2_baseline_v = calc_mean_excluding_top_fraction(signal_trace_v, 0.01)
         color_line = parse(Colorant, String(entry["color"]))
-        lines!(ax, frequency_trace, signal_trace_v;
-            color=color_line, linewidth=1.2, label=tag)
+        push!(traces_result, (; name_file, tag, frequency_trace, signal_trace_v,
+            val_ch2_baseline_v, color_line))
         for peak_config in entry["peaks"]
             is_reference = get(peak_config, "ref", false) === true
             has_time = haskey(peak_config, "time") && !is_missing_config_value(peak_config["time"])
@@ -1272,12 +1274,11 @@ function plot_calibrated_spectrum_results(
             else
                 0.012 + 0.055 * (idx_entry - 1)
             end
-            push!(points_annotations, (; freq_marker_mhz, val_peak_v, color_line,
+            push!(points_annotations, (; freq_marker_mhz, val_peak_v, val_ch2_baseline_v,
+                time_peak_s, freq_peak_mhz, peak_tag, color_line,
                 marker=is_reference ? :utriangle : :circle,
                 text_x=freq_marker_mhz + offset_label_x_mhz,
-                text_y=val_peak_v + offset_label_y_v,
-                text="t=$(round(time_peak_s; digits=3)) s\nf=$(round(freq_peak_mhz; digits=1)) MHz\nV=$(round(val_peak_v; digits=3)) V" *
-                    (isempty(peak_tag) ? "" : "\n$peak_tag"),
+                offset_label_y_v,
                 text_align=(offset_label_x_mhz > 0 ? :left : :right,
                     offset_label_y_v > 0 ? :bottom : :top)))
             println("$name_file ($tag): $(is_reference ? "reference" : "sample") peak at aligned $(round(time_peak_s; digits=6)) s, $(round(freq_peak_mhz; digits=3)) MHz, $(round(val_peak_v; sigdigits=6)) V$(isempty(peak_tag) ? "" : " — $peak_tag")")
@@ -1287,12 +1288,30 @@ function plot_calibrated_spectrum_results(
         GC.gc()
     end
 
+    val_peak_by_result_v = [maximum(trace.signal_trace_v) - trace.val_ch2_baseline_v
+        for trace in traces_result]
+    all(isfinite, val_peak_by_result_v) ||
+        throw(ArgumentError("Result traces contain a nonfinite baseline-corrected maximum"))
+    pos_normalization = argmax(val_peak_by_result_v)
+    val_normalization_v = val_peak_by_result_v[pos_normalization]
+    val_normalization_v > 0 ||
+        throw(ArgumentError("The largest baseline-corrected result signal must be positive; got $val_normalization_v V"))
+    println("Normalizing result spectra by $(traces_result[pos_normalization].name_file) ($(traces_result[pos_normalization].tag)) maximum $(round(val_normalization_v; sigdigits=6)) V above its baseline")
+    for trace in traces_result
+        signal_normalized = (trace.signal_trace_v .- trace.val_ch2_baseline_v) ./ val_normalization_v
+        lines!(ax, trace.frequency_trace, signal_normalized;
+            color=trace.color_line, linewidth=1.2, label=trace.tag)
+    end
     for point in points_annotations
-        scatter!(ax, [point.freq_marker_mhz], [point.val_peak_v];
+        val_peak_normalized = (point.val_peak_v - point.val_ch2_baseline_v) / val_normalization_v
+        text_y = val_peak_normalized + point.offset_label_y_v / val_normalization_v
+        text_label = "t=$(round(point.time_peak_s; digits=3)) s\nf=$(round(point.freq_peak_mhz; digits=1)) MHz\nA=$(round(val_peak_normalized; digits=3))" *
+            (isempty(point.peak_tag) ? "" : "\n$(point.peak_tag)")
+        scatter!(ax, [point.freq_marker_mhz], [val_peak_normalized];
             color=point.color_line, marker=point.marker, markersize=8,
             strokecolor=:black, strokewidth=0.8)
-        text!(ax, point.text_x, point.text_y;
-            text=point.text, color=:black, fontsize=14,
+        text!(ax, point.text_x, text_y;
+            text=text_label, color=:black, fontsize=14,
             align=point.text_align, strokecolor=:white, strokewidth=0.4)
     end
 
