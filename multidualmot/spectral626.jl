@@ -1162,6 +1162,10 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
         lines!(ax_fine, trace.frequency_fine_mhz, signal_fine_plot;
             color=(trace.color_line, 0.5), linewidth=2)
         xlims!(ax_fine, extrema(trace.frequency_fine_mhz)...)
+        text!(ax_fine, 0.04, 0.96;
+            text=trace.peak_tag, space=:relative, align=(:left, :top),
+            fontsize=compact ? 8 : 11,
+            color=:black, strokecolor=:white, strokewidth=1.5)
     end
     return nothing
 end
@@ -1308,6 +1312,7 @@ function plot_calibrated_spectrum_results(
         push!(traces_result, (; name_file, tag, frequency_trace, signal_trace_v,
             val_ch2_baseline_v, color_line))
         for peak_config in entry["peaks"]
+            peak_tag = String(get(peak_config, "tag", ""))
             replace_config = get(peak_config, "replace", nothing)
             if !is_missing_config_value(replace_config)
                 replace_config isa AbstractVector && length(replace_config) == 2 &&
@@ -1352,7 +1357,7 @@ function plot_calibrated_spectrum_results(
                 push!(traces_fine_scan, (; frequency_fine_mhz, signal_fine_v,
                     frequency_coarse_fine, signal_coarse_fine_v, val_ch2_baseline_v,
                     val_fine_baseline_v,
-                    color_line, tag, target_frequency_mhz, rows_grid, cols_grid))
+                    color_line, tag, peak_tag, target_frequency_mhz, rows_grid, cols_grid))
                 println("$name_file ($tag): overlaying $name_mat group_data.$name_case over $(round(extrema(frequency_fine_mhz)[1]; digits=3))…$(round(extrema(frequency_fine_mhz)[2]; digits=3)) MHz")
             end
             is_reference = get(peak_config, "ref", false) === true
@@ -1384,7 +1389,6 @@ function plot_calibrated_spectrum_results(
             freq_peak_mhz = Float64(frequency_mhz[idx_peak])
             freq_marker_mhz = clamp(freq_peak_mhz, freq_min_mhz, freq_max_mhz)
             val_peak_v = ch2_v[idx_peak]
-            peak_tag = String(get(peak_config, "tag", ""))
             offset_label_x_mhz = if freq_peak_mhz > 620
                 -7.0
             elseif freq_peak_mhz < -620
