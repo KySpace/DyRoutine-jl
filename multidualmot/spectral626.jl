@@ -1108,21 +1108,42 @@ function calc_fine_scan_baseline(
     return mean(@view signal_v[ids_baseline])
 end
 
+function parse_fine_scan_grid_span(value, axis_name::AbstractString)::UnitRange{Int}
+    if value isa Integer && !(value isa Bool) && value > 0
+        return Int(value):Int(value)
+    end
+    if value isa AbstractVector && length(value) == 2 &&
+        all(pos -> pos isa Integer && !(pos isa Bool) && pos > 0, value) &&
+        value[1] <= value[2]
+        return Int(value[1]):Int(value[2])
+    end
+    throw(ArgumentError("Fine-scan $axis_name must be a positive grid index or [first, last] span; got $value"))
+end
+
 function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::AbstractVector;
     compact::Bool=false,
     normalize_amplitude::Bool=true,
     val_normalization_coarse_v::Real=1.0,
     val_normalization_fine_v::Real=1.0)
-    n_rows = cld(length(traces_fine_scan), 3)
-    for (idx_trace, trace) in enumerate(traces_fine_scan)
-        pos_row = fld(idx_trace - 1, 3) + 1
-        pos_col = mod(idx_trace - 1, 3) + 1
-        ax_fine = Axis(gl_fine_scan[pos_row, pos_col];
-            width=compact ? 280 : 450,
-            height=compact ? 135 : 260,
+    isempty(traces_fine_scan) && return nothing
+    n_rows = maximum(last(trace.rows_grid) for trace in traces_fine_scan)
+    n_cols = maximum(last(trace.cols_grid) for trace in traces_fine_scan)
+    occupied = falses(n_rows, n_cols)
+    for trace in traces_fine_scan
+        any(@view occupied[trace.rows_grid, trace.cols_grid]) &&
+            throw(ArgumentError("Fine-scan grid cells $(trace.rows_grid), $(trace.cols_grid) for $(trace.tag) overlap another inset"))
+        occupied[trace.rows_grid, trace.cols_grid] .= true
+    end
+    width_cell = compact ? 190 : 290
+    height_cell = compact ? 135 : 230
+    for trace in traces_fine_scan
+        rows_grid, cols_grid = trace.rows_grid, trace.cols_grid
+        ax_fine = Axis(gl_fine_scan[rows_grid, cols_grid];
+            width=width_cell * length(cols_grid) + 8 * (length(cols_grid) - 1),
+            height=height_cell,
             title="$(trace.tag): $(round(trace.target_frequency_mhz; digits=1)) MHz",
-            xlabel=compact && pos_row < n_rows ? "" : "Frequency (MHz)",
-            ylabel=compact && pos_col > 1 ? "" :
+            xlabel=compact && last(rows_grid) < n_rows ? "" : "Frequency (MHz)",
+            ylabel=compact && first(cols_grid) > 1 ? "" :
                 (normalize_amplitude ? "Signal (a.u.)" : "Signal (V)"),
             titlesize=compact ? 11 : 15,
             xlabelsize=compact ? 9 : 12, ylabelsize=compact ? 9 : 12,
@@ -1182,7 +1203,7 @@ function plot_calibrated_spectrum_results(
     traces_fine_scan = NamedTuple[]
     mat_data_by_path = Dict{String,Any}()
     points_annotations = NamedTuple[]
-    for (idx_entry, entry) in enumerate(entries_result)
+    for entry in entries_result
         tag_calibration = String(entry["calibration"])
         haskey(calibrations_by_tag, tag_calibration) ||
             throw(ArgumentError("Result '$(entry["tag"])' selects unknown calibration '$tag_calibration'"))
@@ -1320,6 +1341,8 @@ function plot_calibrated_spectrum_results(
                 else
                     0.0
                 end
+                rows_grid = parse_fine_scan_grid_span(get(peak_config, "row", nothing), "row")
+                cols_grid = parse_fine_scan_grid_span(get(peak_config, "col", nothing), "col")
                 target_frequency_mhz = Float64(get(peak_config, "freq", mean(frequency_fine_mhz)))
                 freq_min_fine, freq_max_fine = extrema(frequency_fine_mhz)
                 ids_coarse_fine = findall(freq -> freq_min_fine <= freq <= freq_max_fine,
@@ -1329,24 +1352,30 @@ function plot_calibrated_spectrum_results(
                 push!(traces_fine_scan, (; frequency_fine_mhz, signal_fine_v,
                     frequency_coarse_fine, signal_coarse_fine_v, val_ch2_baseline_v,
                     val_fine_baseline_v,
-                    color_line, tag, target_frequency_mhz))
+                    color_line, tag, target_frequency_mhz, rows_grid, cols_grid))
                 println("$name_file ($tag): overlaying $name_mat group_data.$name_case over $(round(extrema(frequency_fine_mhz)[1]; digits=3))…$(round(extrema(frequency_fine_mhz)[2]; digits=3)) MHz")
             end
             is_reference = get(peak_config, "ref", false) === true
-            has_time = haskey(peak_config, "time") && !is_missing_config_value(peak_config["time"])
+            time_config = get(peak_config, "time", nothing)
+            has_time = !is_missing_config_value(time_config)
+            is_exact_time = time_config isa AbstractString && lowercase(strip(time_config)) == "exact"
             if is_reference
-                has_time || throw(ArgumentError("Reference peak for $name_file must have a time: $peak_config"))
-                time_config_s = Float64(peak_config["time"])
+                has_time && !is_exact_time ||
+                    throw(ArgumentError("Reference peak for $name_file needs a numeric time: $peak_config"))
+                time_config_s = Float64(time_config)
                 idx_peak = find_local_peak_near_time(ch2_v, time_aligned_s, time_config_s, time_uncertainty_s)
             elseif haskey(peak_config, "freq")
                 target_frequency_mhz = Float64(peak_config["freq"])
-                idx_peak = first(ids_trace) - 1 + find_local_peak_near_frequency(
-                    @view(ch2_v[ids_trace]),
-                    @view(frequency_mhz[ids_trace]),
-                    target_frequency_mhz, 5.0)
-                println("$name_file ($tag): frequency-only peak target $(target_frequency_mhz) MHz → selected sample at $(round(frequency_mhz[idx_peak]; digits=3)) MHz, $(round(ch2_v[idx_peak]; sigdigits=6)) V")
+                idx_trace_peak = is_exact_time ?
+                    argmin(abs.(frequency_trace .- target_frequency_mhz)) :
+                    find_local_peak_near_frequency(
+                        @view(ch2_v[ids_trace]),
+                        @view(frequency_mhz[ids_trace]),
+                        target_frequency_mhz, 5.0)
+                idx_peak = first(ids_trace) - 1 + idx_trace_peak
+                println("$name_file ($tag): $(is_exact_time ? "exact-frequency" : "frequency-only peak") target $(target_frequency_mhz) MHz → selected sample at $(round(frequency_mhz[idx_peak]; digits=3)) MHz, $(round(ch2_v[idx_peak]; sigdigits=6)) V")
             elseif has_time
-                time_config_s = Float64(peak_config["time"])
+                time_config_s = Float64(time_config)
                 idx_peak = find_local_peak_near_time(ch2_v, time_aligned_s, time_config_s, time_uncertainty_s)
             else
                 throw(ArgumentError("Peak needs a frequency or time: $peak_config"))
@@ -1357,29 +1386,17 @@ function plot_calibrated_spectrum_results(
             val_peak_v = ch2_v[idx_peak]
             peak_tag = String(get(peak_config, "tag", ""))
             offset_label_x_mhz = if freq_peak_mhz > 620
-                -18.0
+                -7.0
             elseif freq_peak_mhz < -620
-                18.0
+                7.0
             elseif is_reference && iszero(Float64(peak_config["freq"]))
-                val_peak_v > 0.3 ? 12.0 : -12.0
+                val_peak_v > 0.3 ? 7.0 : -7.0
             elseif id_file == 21
-                freq_peak_mhz > 0 ? -12.0 : 12.0
+                freq_peak_mhz > 0 ? -7.0 : 7.0
             else
-                freq_peak_mhz > 0 ? 12.0 : -12.0
+                freq_peak_mhz > 0 ? 7.0 : -7.0
             end
-            offset_label_y_v = if freq_peak_mhz < -750
-                0.28 - val_peak_v
-            elseif freq_peak_mhz < -600
-                (id_file == 21 ? 0.12 : 0.20) - val_peak_v
-            elseif freq_peak_mhz > 750
-                0.20 - val_peak_v
-            elseif freq_peak_mhz > 600
-                0.12 - val_peak_v
-            elseif val_peak_v > 0.5
-                -0.012 - 0.055 * (idx_entry - 1)
-            else
-                0.012 + 0.055 * (idx_entry - 1)
-            end
+            offset_label_y_v = val_peak_v > 0.45 ? -0.008 : 0.008
             push!(points_annotations, (; freq_marker_mhz, val_peak_v, val_ch2_baseline_v,
                 time_peak_s, freq_peak_mhz, peak_tag, color_line,
                 marker=is_reference ? :utriangle : :circle,
@@ -1431,11 +1448,29 @@ function plot_calibrated_spectrum_results(
         lines!(ax, trace.frequency_fine_mhz, signal_fine_plot;
             color=(trace.color_line, 0.5), linewidth=1.2)
     end
-    for point in points_annotations
+    label_lane_by_point = zeros(Int, length(points_annotations))
+    last_frequency_by_lane = Float64[]
+    ids_low_peaks = sortperm(1:length(points_annotations);
+        by=idx -> points_annotations[idx].freq_peak_mhz)
+    for idx_point in ids_low_peaks
+        point = points_annotations[idx_point]
+        point.val_peak_v > 0.45 && continue
+        pos_lane = findfirst(freq_last -> point.freq_peak_mhz - freq_last >= 100,
+            last_frequency_by_lane)
+        if isnothing(pos_lane)
+            push!(last_frequency_by_lane, point.freq_peak_mhz)
+            pos_lane = length(last_frequency_by_lane)
+        else
+            last_frequency_by_lane[pos_lane] = point.freq_peak_mhz
+        end
+        label_lane_by_point[idx_point] = pos_lane - 1
+    end
+    for (idx_point, point) in enumerate(points_annotations)
         val_peak_plot = normalize_amplitude ?
             (point.val_peak_v - point.val_ch2_baseline_v) / val_normalization_v : point.val_peak_v
+        offset_label_y_v = point.offset_label_y_v + 0.032 * label_lane_by_point[idx_point]
         offset_label_y_plot = normalize_amplitude ?
-            point.offset_label_y_v / val_normalization_v : point.offset_label_y_v
+            offset_label_y_v / val_normalization_v : offset_label_y_v
         text_y = val_peak_plot + offset_label_y_plot
         text_value = normalize_amplitude ?
             "A=$(round(val_peak_plot; digits=3))" : "V=$(round(val_peak_plot; digits=3)) V"
@@ -1445,7 +1480,7 @@ function plot_calibrated_spectrum_results(
             color=point.color_line, marker=point.marker, markersize=8,
             strokecolor=:black, strokewidth=0.8)
         text!(ax, point.text_x, text_y;
-            text=text_label, color=:black, fontsize=10,
+            text=text_label, color=:black, fontsize=8,
             align=point.text_align, strokecolor=:white, strokewidth=0.4)
     end
 
@@ -1606,5 +1641,5 @@ fig_calibrations = [calibration.fig for calibration in calibration_results]
 path_result_spectrum_png = joinpath(path_data, "spectrum626_calibrated_results.png")
 fig_result_spectrum = plot_calibrated_spectrum_results(
     path_data, path_result_spectrum_png, calibrations_by_tag;
-    normalize_amplitude=false) # ("--result-normalized" in ARGS))
+    normalize_amplitude=true) # ("--result-normalized" in ARGS))
 end
