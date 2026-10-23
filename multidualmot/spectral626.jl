@@ -166,7 +166,8 @@ function find_windowed_extrema(
     length(y) == length(time_s) || throw(DimensionMismatch("Signal and time arrays must have equal lengths"))
     dead_time_s > 0 || throw(ArgumentError("dead_time_s must be positive; got $dead_time_s"))
 
-    n_bins = ceil(Int, (time_s[end] - time_s[1]) / dead_time_s)
+    bin_width_s = dead_time_s / 4
+    n_bins = ceil(Int, (time_s[end] - time_s[1]) / bin_width_s)
     val_bin_mean = Float64[]
     idx_bin_first = Int[]
     idx_bin_last = Int[]
@@ -175,8 +176,8 @@ function find_windowed_extrema(
     sizehint!(idx_bin_last, n_bins)
 
     for idx_bin in 1:n_bins
-        time_first = time_s[1] + (idx_bin - 1) * dead_time_s
-        time_last = min(time_first + dead_time_s, time_s[end])
+        time_first = time_s[1] + (idx_bin - 1) * bin_width_s
+        time_last = min(time_first + bin_width_s, time_s[end])
         idx_first = searchsortedfirst(time_s, time_first)
         idx_last = searchsortedlast(time_s, time_last)
         idx_first <= idx_last || continue
@@ -266,7 +267,10 @@ function write_ch1_periods_csv(
         ))
     end
 
-    isempty(period_rows) && throw(ArgumentError("At least two minima are required to calculate a completed period"))
+    if isempty(period_rows)
+        println("No completed CH1 periods found; skipping period CSV $path_csv")
+        return nothing
+    end
     mkpath(dirname(abspath(path_csv)))
     CSV.write(path_csv, DataFrame(period_rows))
     println("Saved $(length(period_rows)) completed periods to $path_csv")
@@ -278,8 +282,8 @@ function find_first_uphill_zero_crossing(
     time_s::AbstractVector{<:Real},
     idx_start::Int,
     idx_end::Int,
-)::Float64
-    idx_start < idx_end || throw(ArgumentError("A period must contain at least two samples"))
+)::Union{Nothing,Float64}
+    idx_start < idx_end || throw(ArgumentError("A rising ramp must contain at least two samples"))
     for idx in idx_start:(idx_end - 1)
         val = y[idx]
         val_next = y[idx + 1]
@@ -289,7 +293,31 @@ function find_first_uphill_zero_crossing(
             return Float64(time_s[idx] + frac * (time_s[idx + 1] - time_s[idx]))
         end
     end
-    throw(ArgumentError("No rising CH1 zero-crossing found in period samples $idx_start:$idx_end"))
+    return nothing
+end
+
+function find_ch1_rising_ramp(
+    ch1_v::AbstractVector{<:Real},
+    time_s::AbstractVector{<:Real},
+    idx_minima::AbstractVector{<:Integer},
+    idx_maxima::AbstractVector{<:Integer},
+)
+    length(ch1_v) == length(time_s) || throw(DimensionMismatch("CH1 and time arrays must have equal lengths"))
+    best_ramp = nothing
+    for (pos_min, idx_start) in enumerate(idx_minima)
+        pos_max = searchsortedfirst(idx_maxima, idx_start + 1)
+        pos_max <= length(idx_maxima) || continue
+        idx_end = idx_maxima[pos_max]
+        pos_min == length(idx_minima) || idx_end < idx_minima[pos_min + 1] || continue
+        time_zero_s = find_first_uphill_zero_crossing(ch1_v, time_s, idx_start, idx_end)
+        isnothing(time_zero_s) && continue
+        if isnothing(best_ramp) || abs(time_zero_s) < abs(best_ramp.time_zero_s)
+            best_ramp = (; idx_start, idx_end, time_zero_s)
+        end
+    end
+    isnothing(best_ramp) && throw(ArgumentError(
+        "No complete CH1 rising ramp with a zero crossing was found between a minimum and a later maximum"))
+    return best_ramp
 end
 
 function find_ch1_alignment_zero_crossing(
@@ -299,13 +327,8 @@ function find_ch1_alignment_zero_crossing(
 )::Float64
     length(ch1_v) == length(time_s) || throw(DimensionMismatch("CH1 and time arrays must have equal lengths"))
     idx_minima = find_windowed_extrema(ch1_v, time_s, true, dead_time_s)
-    length(idx_minima) >= 2 || throw(ArgumentError("At least two CH1 minima are required to align one period"))
-    idx_period = findfirst(1:(length(idx_minima) - 1)) do idx
-        time_s[idx_minima[idx]] <= 0 <= time_s[idx_minima[idx + 1]]
-    end
-    isnothing(idx_period) && throw(ArgumentError("No completed CH1 period spans raw t = 0"))
-    return find_first_uphill_zero_crossing(
-        ch1_v, time_s, idx_minima[idx_period], idx_minima[idx_period + 1])
+    idx_maxima = find_windowed_extrema(ch1_v, time_s, false, dead_time_s)
+    return find_ch1_rising_ramp(ch1_v, time_s, idx_minima, idx_maxima).time_zero_s
 end
 
 function oklch_to_rgb(h_deg::Real, l::Real, c::Real)::RGB{Float64}
@@ -355,15 +378,15 @@ function load_scope_period_data(path_jld2::AbstractString, dead_time_s::Real)
     return (; time_s, ch1_v, ch2_v, idx_minima, idx_maxima)
 end
 
-function plot_ch2_periods_spanning_zero(
+function plot_ch2_rising_ramps(
     path_data::AbstractString,
     ids_file::AbstractVector{<:Integer},
-    path_png::AbstractString,
+    path_png::AbstractString;
+    val_min_peak_prominence_v::Float64 = 0.005
 )
     isempty(ids_file) && throw(ArgumentError("At least one spectrum file is required"))
 
     val_offset_per_file_v = 0.5
-    val_min_peak_prominence_v = 0.005
     val_fraction_top_excluded = 0.01
     val_peak_dead_time_s = 0.05
     val_hue_deg_file = [mod(24 + (idx - 1) * 360 / length(ids_file), 360)
@@ -378,7 +401,7 @@ function plot_ch2_periods_spanning_zero(
     px_height = 2160
     fig = Figure(size=(px_width, px_height), fontsize=28)
     ax = Axis(fig[1, 1];
-        title="CH1 and CH2 cycles spanning t = 0, aligned to CH1 zero-crossings",
+        title="CH1 and CH2 rising ramps, aligned to CH1 zero-crossings",
         xlabel="Time from first rising CH1 zero-crossing (s)",
         ylabel="CH1 and CH2 voltage (V), offset by 0.5 V per file",
         titlesize=36,
@@ -394,32 +417,24 @@ function plot_ch2_periods_spanning_zero(
         isfile(path_jld2) || throw(ArgumentError("JLD2 cache does not exist: $path_jld2"))
         (; time_s, ch1_v, ch2_v, idx_minima, idx_maxima) = load_scope_period_data(path_jld2, 2.0)
 
-        pos_period = findfirst(1:(length(idx_minima) - 1)) do idx_period
-            time_s[idx_minima[idx_period]] <= 0 <= time_s[idx_minima[idx_period + 1]]
-        end
-        isnothing(pos_period) && throw(ArgumentError("No completed CH1 period in $name_file spans t = 0"))
-
-        idx_start = idx_minima[pos_period]
-        idx_end = idx_minima[pos_period + 1]
-        any(idx_start < idx_peak < idx_end for idx_peak in idx_maxima) ||
-            throw(ArgumentError("No CH1 maximum found inside the selected period in $name_file"))
-        time_zero = find_first_uphill_zero_crossing(ch1_v, time_s, idx_start, idx_end)
+        (; idx_start, idx_end, time_zero_s) = find_ch1_rising_ramp(
+            ch1_v, time_s, idx_minima, idx_maxima)
         val_offset_v = (length(ids_file) - idx_file) * val_offset_per_file_v
-        time_period_offset = @view(time_s[idx_start:idx_end]) .- time_zero
-        ch1_period_offset = (@view ch1_v[idx_start:idx_end]) ./ 8 .+ val_offset_v
-        time_period = @view time_s[idx_start:idx_end]
-        ch2_period = @view ch2_v[idx_start:idx_end]
-        ch2_period_offset = ch2_period .+ val_offset_v
-        lines!(ax, time_period_offset, ch1_period_offset;
+        time_ramp_offset = @view(time_s[idx_start:idx_end]) .- time_zero_s
+        ch1_ramp_offset = (@view ch1_v[idx_start:idx_end]) ./ 8 .+ val_offset_v
+        time_ramp = @view time_s[idx_start:idx_end]
+        ch2_ramp = @view ch2_v[idx_start:idx_end]
+        ch2_ramp_offset = ch2_ramp .+ val_offset_v
+        lines!(ax, time_ramp_offset, ch1_ramp_offset;
             color=colors_ch1[idx_file], linewidth=1.5)
-        lines!(ax, time_period_offset, ch2_period_offset;
+        lines!(ax, time_ramp_offset, ch2_ramp_offset;
             color=colors_ch2[idx_file], linewidth=1.5, label=name_file)
-        val_ch2_baseline_v = calc_mean_excluding_top_fraction(ch2_period, val_fraction_top_excluded)
+        val_ch2_baseline_v = calc_mean_excluding_top_fraction(ch2_ramp, val_fraction_top_excluded)
         idx_peaks_ch2 = find_local_peaks_with_deadtime(
-            ch2_period, time_period, val_peak_dead_time_s, val_ch2_baseline_v, val_min_peak_prominence_v)
+            ch2_ramp, time_ramp, val_peak_dead_time_s, val_ch2_baseline_v, val_min_peak_prominence_v)
         for idx_peak in idx_peaks_ch2
-            time_peak = time_period[idx_peak] - time_zero
-            value_peak = ch2_period[idx_peak] + val_offset_v
+            time_peak = time_ramp[idx_peak] - time_zero_s
+            value_peak = ch2_ramp[idx_peak] + val_offset_v
             scatter!(ax, [time_peak], [value_peak];
                 color=colors_ch2[idx_file], markersize=10, strokecolor=:black, strokewidth=1)
             text!(ax, time_peak, value_peak + 0.025;
@@ -428,7 +443,7 @@ function plot_ch2_periods_spanning_zero(
                 rotation=π / 2, align=(:center, :bottom),
                 strokecolor=:white, strokewidth=0.4)
         end
-        println("$name_file: selected period $(round(time_s[idx_start]; digits=6)) to $(round(time_s[idx_end]; digits=6)) s; rising zero-crossing $(round(time_zero; digits=6)) s; CH2 offset $val_offset_v V; trimmed CH2 baseline $(round(val_ch2_baseline_v; digits=4)) V; annotated $(length(idx_peaks_ch2)) peaks (>$val_min_peak_prominence_v V above baseline, $(val_peak_dead_time_s) s dead-time)")
+        println("$name_file: selected rising ramp $(round(time_s[idx_start]; digits=6)) to $(round(time_s[idx_end]; digits=6)) s; rising zero-crossing $(round(time_zero_s; digits=6)) s; CH2 offset $val_offset_v V; trimmed CH2 baseline $(round(val_ch2_baseline_v; digits=4)) V; annotated $(length(idx_peaks_ch2)) peaks (>$val_min_peak_prominence_v V above baseline, $(val_peak_dead_time_s) s dead-time)")
         GC.gc()
     end
 
@@ -1341,8 +1356,11 @@ end
 
 args_data = filter(!=("--skip-conversion"), ARGS)
 args_data = filter(!=("--calibration-only"), args_data)
+args_data = filter(!=("--display-only"), args_data)
 length(args_data) <= 1 || throw(ArgumentError(
-    "Usage: julia --project=. multidualmot/spectral626.jl [data-folder] [--skip-conversion] [--calibration-only]"))
+    "Usage: julia --project=. multidualmot/spectral626.jl [data-folder] [--skip-conversion] [--calibration-only|--display-only]"))
+!("--calibration-only" in ARGS && "--display-only" in ARGS) ||
+    throw(ArgumentError("--calibration-only and --display-only cannot be combined"))
 path_data = isempty(args_data) ? path_data_root : abspath(args_data[1])
 path_config = joinpath(path_data, "config.yaml")
 isfile(path_config) || throw(ArgumentError("Spectrum config does not exist: $path_config"))
@@ -1353,13 +1371,15 @@ else
     convert_missing_scope_csvs(path_data)
 end
 
-# The follow-up plots and period table remain specific to SDS00014.
-if !("--calibration-only" in ARGS)
+# The CH1 overview and period table remain specific to SDS00014.
+if !("--calibration-only" in ARGS || "--display-only" in ARGS)
     path_jld2 = joinpath(path_data, "SDS00014.jld2")
     isfile(path_jld2) || throw(ArgumentError("SDS00014 JLD2 cache is missing after conversion: $path_jld2"))
     path_png = joinpath(path_data, "SDS00014_CH1_vs_time.png")
     path_period_csv = joinpath(path_data, "SDS00014_CH1_periods.csv")
     plot_ch1_spectrum(path_jld2, path_png, path_period_csv)
+end
+if !("--calibration-only" in ARGS)
     entries_display = get(config, "display", nothing)
     isnothing(entries_display) && throw(ArgumentError("No 'display' section in $path_config"))
     fig_spectra = []
@@ -1369,11 +1389,12 @@ if !("--calibration-only" in ARGS)
         name_display = join([lpad(string(id), idx == 1 ? 5 : 2, '0')
             for (idx, id) in enumerate(ids_display)], "_")
         path_ch2_png = joinpath(path_data, "SDS$(name_display)_CH2_aligned_periods.png")
-        push!(fig_spectra, plot_ch2_periods_spanning_zero(path_data, ids_display, path_ch2_png))
+        push!(fig_spectra, plot_ch2_rising_ramps(path_data, ids_display, path_ch2_png; val_min_peak_prominence_v=0.003))
     end
     length(fig_spectra) == 1 && (fig_spectrum = only(fig_spectra))
 end
 
+if !("--display-only" in ARGS)
 entries_calibration = get(config, "calibration", nothing)
 isnothing(entries_calibration) && throw(ArgumentError("No 'calibration' section in $path_config"))
 calibration_results = []
@@ -1397,3 +1418,4 @@ fig_calibrations = [calibration.fig for calibration in calibration_results]
 path_result_spectrum_png = joinpath(path_data, "spectrum626_calibrated_results.png")
 fig_result_spectrum = plot_calibrated_spectrum_results(
     path_data, path_result_spectrum_png, calibrations_by_tag)
+end
