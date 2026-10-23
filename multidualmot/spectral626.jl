@@ -362,7 +362,7 @@ function plot_ch2_periods_spanning_zero(
     length(ids_file) <= 6 || throw(ArgumentError("The existing OKLCH palette supports at most six files"))
 
     val_offset_per_file_v = 0.5
-    val_min_peak_prominence_v = 0.008
+    val_min_peak_prominence_v = 0.005
     val_fraction_top_excluded = 0.01
     val_peak_dead_time_s = 0.05
     val_hue_deg_file = [24, 80, 136, 192, 248, 304]
@@ -971,9 +971,9 @@ if !("--calibration-only" in ARGS)
     isfile(path_jld2) || throw(ArgumentError("SDS00014 JLD2 cache is missing after conversion: $path_jld2"))
     path_png = joinpath(path_data, "SDS00014_CH1_vs_time.png")
     path_period_csv = joinpath(path_data, "SDS00014_CH1_periods.csv")
-    path_ch2_png = joinpath(path_data, "SDS00014_15_16_19_21_CH2_aligned_periods.png")
+    path_ch2_png = joinpath(path_data, "SDS00007_14_15_16_19_21_CH2_aligned_periods.png")
     plot_ch1_spectrum(path_jld2, path_png, path_period_csv, path_ch2_png)
-    fig_spectrum = plot_ch2_periods_spanning_zero(path_data, [14, 15, 16, 19, 21], path_ch2_png)
+    fig_spectrum = plot_ch2_periods_spanning_zero(path_data, [07, 14, 15, 16, 19, 21], path_ch2_png)
 end
 
 path_calibration_png = joinpath(path_data, "spectrum626_time_frequency_calibration.png")
