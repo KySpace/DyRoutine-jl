@@ -1120,11 +1120,77 @@ function parse_fine_scan_grid_span(value, axis_name::AbstractString)::UnitRange{
     throw(ArgumentError("Fine-scan $axis_name must be a positive grid index or [first, last] span; got $value"))
 end
 
+function interpolate_linear_frequency(
+    frequency_mhz::AbstractVector{<:Real},
+    signal::AbstractVector{<:Real},
+    frequency_query_mhz::AbstractVector{<:Real},
+)::Vector{Float64}
+    length(frequency_mhz) == length(signal) && length(frequency_mhz) >= 2 ||
+        throw(DimensionMismatch("Linear interpolation needs matching frequency and signal arrays with at least two points"))
+    ids_sorted = sortperm(frequency_mhz)
+    frequency_sorted = Float64.(frequency_mhz[ids_sorted])
+    signal_sorted = Float64.(signal[ids_sorted])
+    all(diff(frequency_sorted) .> 0) ||
+        throw(ArgumentError("Linear interpolation needs distinct frequency samples"))
+    frequency_min_mhz, frequency_max_mhz = first(frequency_sorted), last(frequency_sorted)
+    all(f -> frequency_min_mhz <= f <= frequency_max_mhz, frequency_query_mhz) ||
+        throw(ArgumentError("Interpolation grid extends outside $frequency_min_mhz…$frequency_max_mhz MHz"))
+    signal_query = Vector{Float64}(undef, length(frequency_query_mhz))
+    for (idx_query, frequency_query) in enumerate(frequency_query_mhz)
+        idx_left = clamp(searchsortedlast(frequency_sorted, frequency_query), 1,
+            length(frequency_sorted) - 1)
+        fraction = (frequency_query - frequency_sorted[idx_left]) /
+            (frequency_sorted[idx_left + 1] - frequency_sorted[idx_left])
+        signal_query[idx_query] = signal_sorted[idx_left] + fraction *
+            (signal_sorted[idx_left + 1] - signal_sorted[idx_left])
+    end
+    return signal_query
+end
+
+function calc_blended_fine_scan(
+    frequency_coarse_mhz::AbstractVector{<:Real},
+    signal_coarse::AbstractVector{<:Real},
+    frequency_fine_mhz::AbstractVector{<:Real},
+    signal_fine::AbstractVector{<:Real},
+    frequency_center_mhz::Real,
+    frequency_half_width_mhz::Real,
+)
+    isfinite(frequency_center_mhz) && isfinite(frequency_half_width_mhz) &&
+        frequency_half_width_mhz > 0 ||
+        throw(ArgumentError("Blend center and half-width must be finite, and half-width positive"))
+    frequency_left_mhz = frequency_center_mhz - frequency_half_width_mhz
+    frequency_right_mhz = frequency_center_mhz + frequency_half_width_mhz
+    n_coarse = count(f -> frequency_left_mhz <= f <= frequency_right_mhz,
+        frequency_coarse_mhz)
+    n_fine = count(f -> frequency_left_mhz <= f <= frequency_right_mhz,
+        frequency_fine_mhz)
+    n_samples = min(n_coarse, n_fine)
+    n_samples >= 2 || throw(ArgumentError(
+        "Blend window $frequency_left_mhz…$frequency_right_mhz MHz needs at least two samples in both traces; found $n_coarse coarse and $n_fine fine"))
+    frequency_mhz = collect(range(frequency_left_mhz, frequency_right_mhz;
+        length=n_samples))
+    signal_coarse_resampled = interpolate_linear_frequency(
+        frequency_coarse_mhz, signal_coarse, frequency_mhz)
+    signal_fine_resampled = interpolate_linear_frequency(
+        frequency_fine_mhz, signal_fine, frequency_mhz)
+    weight_fine = 0.5 .* (1 .+ cos.(π .* (frequency_mhz .- frequency_center_mhz) ./
+        frequency_half_width_mhz))
+    signal_blended = weight_fine .* signal_fine_resampled .+
+        (1 .- weight_fine) .* signal_coarse_resampled
+    return (; frequency_mhz, signal_blended, signal_coarse_resampled,
+        signal_fine_resampled, weight_fine)
+end
+
+function padded_signal_limits(vectors::AbstractVector{<:Real}...)::Tuple{Float64,Float64}
+    values = (Float64(value) for vector in vectors for value in vector if isfinite(value))
+    val_min, val_max = extrema(values)
+    val_padding = max(0.05 * (val_max - val_min), 1e-5)
+    return (val_min - val_padding, val_max + val_padding)
+end
+
 function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::AbstractVector;
     compact::Bool=false,
-    normalize_amplitude::Bool=true,
-    val_normalization_coarse_v::Real=1.0,
-    val_normalization_fine_v::Real=1.0)
+    mode::Observable=Observable(:raw_voltage_overlay))
     isempty(traces_fine_scan) && return nothing
     n_rows = maximum(last(trace.rows_grid) for trace in traces_fine_scan)
     n_cols = maximum(last(trace.cols_grid) for trace in traces_fine_scan)
@@ -1144,28 +1210,46 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
             title="$(trace.tag): $(round(trace.target_frequency_mhz; digits=1)) MHz",
             xlabel=compact && last(rows_grid) < n_rows ? "" : "Frequency (MHz)",
             ylabel=compact && first(cols_grid) > 1 ? "" :
-                (normalize_amplitude ? "Signal (a.u.)" : "Signal (V)"),
+                (mode[] == :raw_voltage_overlay ? "Signal (V)" : "Signal (a.u.)"),
             titlesize=compact ? 11 : 15,
             xlabelsize=compact ? 9 : 12, ylabelsize=compact ? 9 : 12,
             xticklabelsize=compact ? 8 : 11,
             yticklabelsize=compact ? 8 : 11)
         if !isempty(trace.frequency_coarse_fine)
-            signal_coarse_plot = normalize_amplitude ?
-                (trace.signal_coarse_fine_v .- trace.val_ch2_baseline_v) ./ val_normalization_coarse_v :
-                trace.signal_coarse_fine_v
-            lines!(ax_fine, trace.frequency_coarse_fine, signal_coarse_plot;
-                color=(trace.color_line, 0.35), linewidth=1.2, linestyle=:dash)
+            lines!(ax_fine, trace.frequency_coarse_fine, trace.signal_coarse_fine_v;
+                color=(trace.color_line, 0.35), linewidth=1.2, linestyle=:dash,
+                visible=@lift($mode == :raw_voltage_overlay))
+            lines!(ax_fine, trace.frequency_coarse_fine, trace.signal_coarse_normalized;
+                color=(trace.color_line, 0.35), linewidth=1.2, linestyle=:dash,
+                visible=@lift($mode == :normalized_overlay))
+            lines!(ax_fine, trace.frequency_coarse_fine, trace.signal_coarse_replaced;
+                color=trace.color_line, linewidth=1.5,
+                visible=@lift($mode == :normalized_replaced))
         end
-        signal_fine_plot = normalize_amplitude ?
-            (trace.signal_fine_v .- trace.val_fine_baseline_v) ./ val_normalization_fine_v :
-            trace.signal_fine_v
-        lines!(ax_fine, trace.frequency_fine_mhz, signal_fine_plot;
-            color=(trace.color_line, 0.5), linewidth=2)
+        lines!(ax_fine, trace.frequency_fine_mhz, trace.signal_fine_v;
+            color=(trace.color_line, 0.5), linewidth=2,
+            visible=@lift($mode == :raw_voltage_overlay))
+        lines!(ax_fine, trace.frequency_fine_mhz, trace.signal_fine_normalized;
+            color=(trace.color_line, 0.5), linewidth=2,
+            visible=@lift($mode == :normalized_overlay))
+        lines!(ax_fine, trace.blend.frequency_mhz, trace.blend.signal_blended;
+            color=trace.color_line, linewidth=2,
+            visible=@lift($mode == :normalized_replaced))
         xlims!(ax_fine, extrema(trace.frequency_fine_mhz)...)
+        limits_raw = padded_signal_limits(trace.signal_coarse_fine_v, trace.signal_fine_v)
+        limits_normalized = padded_signal_limits(trace.signal_coarse_normalized,
+            trace.signal_fine_normalized, trace.blend.signal_blended)
+        on(mode) do selected_mode
+            ax_fine.ylabel[] = compact && first(cols_grid) > 1 ? "" :
+                (selected_mode == :raw_voltage_overlay ? "Signal (V)" : "Signal (a.u.)")
+            ylims!(ax_fine, (selected_mode == :raw_voltage_overlay ?
+                limits_raw : limits_normalized)...)
+        end
+        ylims!(ax_fine, (mode[] == :raw_voltage_overlay ? limits_raw : limits_normalized)...)
         text!(ax_fine, 0.04, 0.96;
             text=trace.peak_tag, space=:relative, align=(:left, :top),
             fontsize=compact ? 8 : 11,
-            color=:black, strokecolor=:white, strokewidth=1.5)
+            color=:black, strokecolor=:white, strokewidth=0.4)
     end
     return nothing
 end
@@ -1175,7 +1259,11 @@ function plot_calibrated_spectrum_results(
     path_png::AbstractString,
     calibrations_by_tag::AbstractDict;
     normalize_amplitude::Bool=true,
+    initial_mode::Symbol=normalize_amplitude ? :normalized_overlay : :raw_voltage_overlay,
 )
+    modes_result = (:raw_voltage_overlay, :normalized_overlay, :normalized_replaced)
+    initial_mode in modes_result ||
+        throw(ArgumentError("Unknown result-spectrum mode $initial_mode; expected one of $modes_result"))
     config = YAML.load_file(joinpath(path_data, "config.yaml"))
     entries_result = get(config, "result", nothing)
     isnothing(entries_result) && throw(ArgumentError("No 'result' section in config.yaml"))
@@ -1185,11 +1273,22 @@ function plot_calibrated_spectrum_results(
     axis_width_px = 1080
     axis_height_px = 540
     fig = Figure(fontsize=14)
+    mode = Observable(initial_mode)
+    menu_options = [("Raw voltage overlay", :raw_voltage_overlay),
+        ("Normalized overlay", :normalized_overlay),
+        ("Normalized replaced", :normalized_replaced)]
+    idx_initial_mode = findfirst(option -> option[2] == initial_mode, menu_options)
+    menu_mode = Menu(fig[0, 1]; options=menu_options,
+        default=menu_options[idx_initial_mode][1])
+    on(menu_mode.selection) do selected_mode
+        isnothing(selected_mode) || (mode[] = selected_mode)
+    end
     ax = Axis(fig[1, 1];
         width=axis_width_px,
         height=axis_height_px,
         xlabel="Frequency (MHz)",
-        ylabel=normalize_amplitude ? "Normalized spectrum signal" : "Spectrum signal (V)",
+        ylabel=initial_mode == :raw_voltage_overlay ?
+            "Spectrum signal (V)" : "Normalized spectrum signal",
         xlabelsize=10.667,
         ylabelsize=10.667,
         xticklabelsize=9.333,
@@ -1306,9 +1405,9 @@ function plot_calibrated_spectrum_results(
         end
         frequency_trace = frequency_mhz[ids_trace]
         signal_trace_v = ch2_v[ids_trace]
-        val_ch2_baseline_v = normalize_amplitude ?
-            calc_mean_excluding_top_fraction(signal_trace_v, 0.01) : 0.0
+        val_ch2_baseline_v = calc_mean_excluding_top_fraction(signal_trace_v, 0.01)
         color_line = parse(Colorant, String(entry["color"]))
+        idx_result = length(traces_result) + 1
         push!(traces_result, (; name_file, tag, frequency_trace, signal_trace_v,
             val_ch2_baseline_v, color_line))
         for peak_config in entry["peaks"]
@@ -1338,14 +1437,10 @@ function plot_calibrated_spectrum_results(
                     throw(DimensionMismatch("$path_mat group_data.$name_case has $(length(frequency_fine_mhz)) frequency and $(length(signal_fine_v)) voltage values; expected matching lengths of at least 2"))
                 all(isfinite, frequency_fine_mhz) && all(isfinite, signal_fine_v) ||
                     throw(ArgumentError("$path_mat group_data.$name_case contains nonfinite values"))
-                val_fine_baseline_v = if normalize_amplitude
-                    haskey(case_data, "absFreq0") ||
-                        throw(ArgumentError("$path_mat group_data.$name_case has no absFreq0 field"))
-                    calc_fine_scan_baseline(frequency_fine_mhz, signal_fine_v,
-                        Float64(case_data["absFreq0"]))
-                else
-                    0.0
-                end
+                haskey(case_data, "absFreq0") ||
+                    throw(ArgumentError("$path_mat group_data.$name_case has no absFreq0 field"))
+                val_fine_baseline_v = calc_fine_scan_baseline(frequency_fine_mhz,
+                    signal_fine_v, Float64(case_data["absFreq0"]))
                 rows_grid = parse_fine_scan_grid_span(get(peak_config, "row", nothing), "row")
                 cols_grid = parse_fine_scan_grid_span(get(peak_config, "col", nothing), "col")
                 target_frequency_mhz = Float64(get(peak_config, "freq", mean(frequency_fine_mhz)))
@@ -1357,7 +1452,8 @@ function plot_calibrated_spectrum_results(
                 push!(traces_fine_scan, (; frequency_fine_mhz, signal_fine_v,
                     frequency_coarse_fine, signal_coarse_fine_v, val_ch2_baseline_v,
                     val_fine_baseline_v,
-                    color_line, tag, peak_tag, target_frequency_mhz, rows_grid, cols_grid))
+                    color_line, tag, peak_tag, target_frequency_mhz,
+                    rows_grid, cols_grid, idx_result))
                 println("$name_file ($tag): overlaying $name_mat group_data.$name_case over $(round(extrema(frequency_fine_mhz)[1]; digits=3))…$(round(extrema(frequency_fine_mhz)[2]; digits=3)) MHz")
             end
             is_reference = get(peak_config, "ref", false) === true
@@ -1402,7 +1498,7 @@ function plot_calibrated_spectrum_results(
             end
             offset_label_y_v = val_peak_v > 0.45 ? -0.008 : 0.008
             push!(points_annotations, (; freq_marker_mhz, val_peak_v, val_ch2_baseline_v,
-                time_peak_s, freq_peak_mhz, peak_tag, color_line,
+                time_peak_s, freq_peak_mhz, peak_tag, color_line, idx_result,
                 marker=is_reference ? :utriangle : :circle,
                 text_x=freq_marker_mhz + offset_label_x_mhz,
                 offset_label_y_v,
@@ -1415,43 +1511,86 @@ function plot_calibrated_spectrum_results(
         GC.gc()
     end
 
-    val_normalization_v = 1.0
+    val_peak_by_result_v = [maximum(trace.signal_trace_v) - trace.val_ch2_baseline_v
+        for trace in traces_result]
+    all(isfinite, val_peak_by_result_v) ||
+        throw(ArgumentError("Result traces contain a nonfinite baseline-corrected maximum"))
+    pos_normalization = argmax(val_peak_by_result_v)
+    val_normalization_v = val_peak_by_result_v[pos_normalization]
+    val_normalization_v > 0 ||
+        throw(ArgumentError("The largest baseline-corrected result signal must be positive; got $val_normalization_v V"))
+    println("Normalizing result spectra by $(traces_result[pos_normalization].name_file) ($(traces_result[pos_normalization].tag)) maximum $(round(val_normalization_v; sigdigits=6)) V above its baseline")
     val_fine_normalization_v = 1.0
-    if normalize_amplitude
-        val_peak_by_result_v = [maximum(trace.signal_trace_v) - trace.val_ch2_baseline_v
-            for trace in traces_result]
-        all(isfinite, val_peak_by_result_v) ||
-            throw(ArgumentError("Result traces contain a nonfinite baseline-corrected maximum"))
-        pos_normalization = argmax(val_peak_by_result_v)
-        val_normalization_v = val_peak_by_result_v[pos_normalization]
-        val_normalization_v > 0 ||
-            throw(ArgumentError("The largest baseline-corrected result signal must be positive; got $val_normalization_v V"))
-        println("Normalizing result spectra by $(traces_result[pos_normalization].name_file) ($(traces_result[pos_normalization].tag)) maximum $(round(val_normalization_v; sigdigits=6)) V above its baseline")
-        if !isempty(traces_fine_scan)
-            val_peak_by_fine_v = [maximum(trace.signal_fine_v) - trace.val_fine_baseline_v
-                for trace in traces_fine_scan]
-            pos_fine_normalization = argmax(val_peak_by_fine_v)
-            val_fine_normalization_v = val_peak_by_fine_v[pos_fine_normalization]
-            isfinite(val_fine_normalization_v) && val_fine_normalization_v > 0 ||
-                throw(ArgumentError("The largest baseline-corrected fine-scan peak must be positive and finite; got $val_fine_normalization_v V"))
-            println("Normalizing all fine scans by $(traces_fine_scan[pos_fine_normalization].tag) peak $(round(val_fine_normalization_v; sigdigits=6)) V above its local baseline")
-        end
-    else
-        println("Plotting result spectra in raw CH2 volts")
+    if !isempty(traces_fine_scan)
+        val_peak_by_fine_v = [maximum(trace.signal_fine_v) - trace.val_fine_baseline_v
+            for trace in traces_fine_scan]
+        pos_fine_normalization = argmax(val_peak_by_fine_v)
+        val_fine_normalization_v = val_peak_by_fine_v[pos_fine_normalization]
+        isfinite(val_fine_normalization_v) && val_fine_normalization_v > 0 ||
+            throw(ArgumentError("The largest baseline-corrected fine-scan peak must be positive and finite; got $val_fine_normalization_v V"))
+        println("Normalizing all fine scans by $(traces_fine_scan[pos_fine_normalization].peak_tag) peak $(round(val_fine_normalization_v; sigdigits=6)) V above its local baseline")
+    end
+
+    frequency_half_width_mhz = 4.0
+    traces_result = [merge(trace, (;
+        signal_normalized=(trace.signal_trace_v .- trace.val_ch2_baseline_v) ./ val_normalization_v,
+        signal_replaced=(trace.signal_trace_v .- trace.val_ch2_baseline_v) ./ val_normalization_v))
+        for trace in traces_result]
+    traces_fine_scan = [begin
+        signal_coarse_normalized = (trace.signal_coarse_fine_v .-
+            trace.val_ch2_baseline_v) ./ val_normalization_v
+        signal_fine_normalized = (trace.signal_fine_v .-
+            trace.val_fine_baseline_v) ./ val_fine_normalization_v
+        blend = calc_blended_fine_scan(trace.frequency_coarse_fine,
+            signal_coarse_normalized, trace.frequency_fine_mhz,
+            signal_fine_normalized, trace.target_frequency_mhz,
+            frequency_half_width_mhz)
+        signal_coarse_replaced = copy(signal_coarse_normalized)
+        signal_coarse_replaced[abs.(trace.frequency_coarse_fine .-
+            trace.target_frequency_mhz) .<= frequency_half_width_mhz] .= NaN
+        merge(trace, (; signal_coarse_normalized, signal_fine_normalized,
+            signal_coarse_replaced, blend))
+    end for trace in traces_fine_scan]
+    for trace in traces_fine_scan
+        signal_replaced = traces_result[trace.idx_result].signal_replaced
+        signal_replaced[abs.(traces_result[trace.idx_result].frequency_trace .-
+            trace.target_frequency_mhz) .<= frequency_half_width_mhz] .= NaN
     end
     for trace in traces_result
-        signal_plot = normalize_amplitude ?
-            (trace.signal_trace_v .- trace.val_ch2_baseline_v) ./ val_normalization_v : trace.signal_trace_v
-        lines!(ax, trace.frequency_trace, signal_plot;
-            color=trace.color_line, linewidth=1.2, label=trace.tag)
+        lines!(ax, trace.frequency_trace, trace.signal_trace_v;
+            color=trace.color_line, linewidth=1.2, label=trace.tag,
+            visible=@lift($mode == :raw_voltage_overlay))
+        lines!(ax, trace.frequency_trace, trace.signal_normalized;
+            color=trace.color_line, linewidth=1.2,
+            visible=@lift($mode == :normalized_overlay))
+        lines!(ax, trace.frequency_trace, trace.signal_replaced;
+            color=trace.color_line, linewidth=1.2,
+            visible=@lift($mode == :normalized_replaced))
     end
     for trace in traces_fine_scan
-        signal_fine_plot = normalize_amplitude ?
-            (trace.signal_fine_v .- trace.val_fine_baseline_v) ./ val_fine_normalization_v :
-            trace.signal_fine_v
-        lines!(ax, trace.frequency_fine_mhz, signal_fine_plot;
-            color=(trace.color_line, 0.5), linewidth=1.2)
+        lines!(ax, trace.frequency_fine_mhz, trace.signal_fine_v;
+            color=(trace.color_line, 0.5), linewidth=1.2,
+            visible=@lift($mode == :raw_voltage_overlay))
+        lines!(ax, trace.frequency_fine_mhz, trace.signal_fine_normalized;
+            color=(trace.color_line, 0.5), linewidth=1.2,
+            visible=@lift($mode == :normalized_overlay))
+        lines!(ax, trace.blend.frequency_mhz, trace.blend.signal_blended;
+            color=trace.color_line, linewidth=1.5,
+            visible=@lift($mode == :normalized_replaced))
     end
+    limits_raw = padded_signal_limits(
+        [trace.signal_trace_v for trace in traces_result]...,
+        [trace.signal_fine_v for trace in traces_fine_scan]...)
+    limits_normalized = padded_signal_limits(
+        [trace.signal_normalized for trace in traces_result]...,
+        [trace.signal_fine_normalized for trace in traces_fine_scan]...)
+    on(mode) do selected_mode
+        ax.ylabel[] = selected_mode == :raw_voltage_overlay ?
+            "Spectrum signal (V)" : "Normalized spectrum signal"
+        ylims!(ax, (selected_mode == :raw_voltage_overlay ?
+            limits_raw : limits_normalized)...)
+    end
+    ylims!(ax, (mode[] == :raw_voltage_overlay ? limits_raw : limits_normalized)...)
     label_lane_by_point = zeros(Int, length(points_annotations))
     last_frequency_by_lane = Float64[]
     ids_low_peaks = sortperm(1:length(points_annotations);
@@ -1470,29 +1609,51 @@ function plot_calibrated_spectrum_results(
         label_lane_by_point[idx_point] = pos_lane - 1
     end
     for (idx_point, point) in enumerate(points_annotations)
-        val_peak_plot = normalize_amplitude ?
-            (point.val_peak_v - point.val_ch2_baseline_v) / val_normalization_v : point.val_peak_v
         offset_label_y_v = point.offset_label_y_v + 0.032 * label_lane_by_point[idx_point]
-        offset_label_y_plot = normalize_amplitude ?
-            offset_label_y_v / val_normalization_v : offset_label_y_v
-        text_y = val_peak_plot + offset_label_y_plot
-        text_value = normalize_amplitude ?
-            "A=$(round(val_peak_plot; digits=3))" : "V=$(round(val_peak_plot; digits=3)) V"
-        text_label = "t=$(round(point.time_peak_s; digits=3)) s\nf=$(round(point.freq_peak_mhz; digits=1)) MHz\n$text_value" *
-            (isempty(point.peak_tag) ? "" : "\n$(point.peak_tag)")
-        scatter!(ax, [point.freq_marker_mhz], [val_peak_plot];
-            color=point.color_line, marker=point.marker, markersize=8,
-            strokecolor=:black, strokewidth=0.8)
-        text!(ax, point.text_x, text_y;
-            text=text_label, color=:black, fontsize=8,
-            align=point.text_align, strokecolor=:white, strokewidth=0.4)
+        val_peak_normalized = (point.val_peak_v - point.val_ch2_baseline_v) /
+            val_normalization_v
+        idx_fine = findfirst(trace -> trace.idx_result == point.idx_result &&
+            abs(point.freq_peak_mhz - trace.target_frequency_mhz) <=
+            frequency_half_width_mhz, traces_fine_scan)
+        val_peak_replaced = isnothing(idx_fine) ? val_peak_normalized :
+            only(interpolate_linear_frequency(traces_fine_scan[idx_fine].blend.frequency_mhz,
+                traces_fine_scan[idx_fine].blend.signal_blended,
+                [point.freq_peak_mhz]))
+        for selected_mode in modes_result
+            is_raw = selected_mode == :raw_voltage_overlay
+            val_peak_plot = is_raw ? point.val_peak_v :
+                (selected_mode == :normalized_replaced ? val_peak_replaced :
+                    val_peak_normalized)
+            offset_label_y_plot = is_raw ? offset_label_y_v :
+                offset_label_y_v / val_normalization_v
+            text_y = val_peak_plot + offset_label_y_plot
+            text_value = is_raw ? "V=$(round(val_peak_plot; digits=3)) V" :
+                "A=$(round(val_peak_plot; digits=3))"
+            text_label = "t=$(round(point.time_peak_s; digits=3)) s\nf=$(round(point.freq_peak_mhz; digits=1)) MHz\n$text_value" *
+                (isempty(point.peak_tag) ? "" : "\n$(point.peak_tag)")
+            visible_mode = lift(current_mode -> current_mode == selected_mode, mode)
+            scatter!(ax, [point.freq_marker_mhz], [val_peak_plot];
+                color=point.color_line, marker=point.marker, markersize=8,
+                strokecolor=:black, strokewidth=0.8, visible=visible_mode)
+            text!(ax, point.text_x, text_y;
+                text=text_label, color=:black, fontsize=8,
+                align=point.text_align, strokecolor=:white, strokewidth=0.4,
+                visible=visible_mode)
+        end
     end
 
     axislegend(ax; position=:rt, framevisible=false, labelsize=9.333)
+    fig_detail = nothing
     if !isempty(traces_fine_scan)
-        str_fine_label = normalize_amplitude ?
-            "Fine-scan detail · dashed: full scan · solid: fine scan; each group has a shared 1.0 peak" :
-            "Fine-scan detail · dashed: coarse scan · solid: fine scan (50% opacity)"
+        str_fine_label = lift(mode) do selected_mode
+            if selected_mode == :raw_voltage_overlay
+                "Fine-scan detail · dashed: coarse scan · solid: fine scan (50% opacity)"
+            elseif selected_mode == :normalized_overlay
+                "Fine-scan detail · dashed: full scan · solid: fine scan; each group has a shared 1.0 peak"
+            else
+                "Fine-scan detail · solid: Hann-blended replacement within ±$(frequency_half_width_mhz) MHz"
+            end
+        end
         Label(fig[2, 1], str_fine_label;
             halign=:left, fontsize=14)
         gl_fine_scan = GridLayout()
@@ -1501,28 +1662,39 @@ function plot_calibrated_spectrum_results(
         rowgap!(gl_fine_scan, 4)
         colgap!(gl_fine_scan, 8)
         draw_fine_scan_panels!(gl_fine_scan, traces_fine_scan;
-            compact=true, normalize_amplitude,
-            val_normalization_coarse_v=val_normalization_v,
-            val_normalization_fine_v=val_fine_normalization_v)
-    end
-    resize_to_layout!(fig)
-    mkpath(dirname(abspath(path_png)))
-    save(path_png, fig; px_per_unit=4)
-    println("Saved result spectrum PNG with $(round(axis_width_px; digits=1))×$(round(axis_height_px; digits=1)) px axis to $path_png")
-    if !isempty(traces_fine_scan)
+            compact=true, mode=mode)
         fig_detail = Figure(fontsize=14)
         Label(fig_detail[1, 1], str_fine_label;
             halign=:left, fontsize=14)
         gl_detail = GridLayout()
         fig_detail[2, 1] = gl_detail
-        draw_fine_scan_panels!(gl_detail, traces_fine_scan;
-            normalize_amplitude,
-            val_normalization_coarse_v=val_normalization_v,
-            val_normalization_fine_v=val_fine_normalization_v)
+        draw_fine_scan_panels!(gl_detail, traces_fine_scan; mode=mode)
         resize_to_layout!(fig_detail)
-        path_detail_png = splitext(path_png)[1] * "_fine_scan_detail.png"
-        save(path_detail_png, fig_detail; px_per_unit=3)
-        println("Saved fine-scan detail PNG to $path_detail_png")
+    end
+    resize_to_layout!(fig)
+    mkpath(dirname(abspath(path_png)))
+    path_by_mode = Dict{Symbol,String}()
+    for (idx_mode, (_, selected_mode)) in enumerate(menu_options)
+        menu_mode.i_selected[] = idx_mode
+        mode[] == selected_mode ||
+            throw(ArgumentError("Result-spectrum mode menu did not select $selected_mode"))
+        path_mode_png = splitext(path_png)[1] * "_$(selected_mode).png"
+        save(path_mode_png, fig; px_per_unit=4)
+        path_by_mode[selected_mode] = path_mode_png
+        println("Saved $selected_mode result spectrum to $path_mode_png")
+        if !isnothing(fig_detail)
+            path_detail_png = splitext(path_mode_png)[1] * "_fine_scan_detail.png"
+            save(path_detail_png, fig_detail; px_per_unit=3)
+            println("Saved $selected_mode fine-scan detail to $path_detail_png")
+        end
+    end
+    menu_mode.i_selected[] = idx_initial_mode
+    cp(path_by_mode[initial_mode], path_png; force=true)
+    if !isnothing(fig_detail)
+        path_detail_initial = splitext(path_by_mode[initial_mode])[1] *
+            "_fine_scan_detail.png"
+        cp(path_detail_initial, splitext(path_png)[1] * "_fine_scan_detail.png";
+            force=true)
     end
     return fig
 end
@@ -1582,12 +1754,13 @@ args_data = filter(!=("--calibration-only"), args_data)
 args_data = filter(!=("--display-only"), args_data)
 args_data = filter(!=("--result-voltage"), args_data)
 args_data = filter(!=("--result-normalized"), args_data)
+args_data = filter(!=("--result-replaced"), args_data)
 length(args_data) <= 1 || throw(ArgumentError(
-    "Usage: julia --project=. multidualmot/spectral626.jl [data-folder] [--skip-conversion] [--calibration-only|--display-only] [--result-voltage|--result-normalized]"))
+    "Usage: julia --project=. multidualmot/spectral626.jl [data-folder] [--skip-conversion] [--calibration-only|--display-only] [--result-voltage|--result-normalized|--result-replaced]"))
 !("--calibration-only" in ARGS && "--display-only" in ARGS) ||
     throw(ArgumentError("--calibration-only and --display-only cannot be combined"))
-!("--result-voltage" in ARGS && "--result-normalized" in ARGS) ||
-    throw(ArgumentError("--result-voltage and --result-normalized cannot be combined"))
+count(arg -> arg in ("--result-voltage", "--result-normalized", "--result-replaced"),
+    ARGS) <= 1 || throw(ArgumentError("Choose at most one result-spectrum mode flag"))
 path_data = isempty(args_data) ? path_data_root : abspath(args_data[1])
 path_config = joinpath(path_data, "config.yaml")
 isfile(path_config) || throw(ArgumentError("Spectrum config does not exist: $path_config"))
@@ -1643,7 +1816,9 @@ for entry in entries_calibration
 end
 fig_calibrations = [calibration.fig for calibration in calibration_results]
 path_result_spectrum_png = joinpath(path_data, "spectrum626_calibrated_results.png")
+initial_result_mode = "--result-voltage" in ARGS ? :raw_voltage_overlay :
+    "--result-replaced" in ARGS ? :normalized_replaced : :normalized_overlay
 fig_result_spectrum = plot_calibrated_spectrum_results(
     path_data, path_result_spectrum_png, calibrations_by_tag;
-    normalize_amplitude=true) # ("--result-normalized" in ARGS))
+    initial_mode=initial_result_mode)
 end
