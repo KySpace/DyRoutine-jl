@@ -15,8 +15,8 @@ const path_data_root = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\spectrum 626
 const n_horizontal_divisions = 14
 const val_smoothing_sigma_points = 2.5
 const n_smoothing_window_points = 11 # symmetric kernel spanning ten sample intervals
-const bounds_spectrum_frequency_mhz = (-800.0, 800.0)
-const bounds_result_frequency_mhz = (-750.0, 750.0)
+const bounds_spectrum_frequency_mhz = (-900.0, 900.0)
+const bounds_result_frequency_mhz = (-900.0, 900.0)
 
 function smooth_scope_channel(values::AbstractVector{<:Real})::Vector{Float64}
     kernel_gaussian = Kernel.gaussian(
@@ -1289,7 +1289,7 @@ function plot_calibrated_spectrum_results(
     on(menu_mode.selection) do selected_mode
         isnothing(selected_mode) || (mode[] = selected_mode)
     end
-    Label(controls[1, 2], "Overview traces"; fontsize=12)
+    Label(controls[1, 2], "Overview"; fontsize=12)
     tag_controls = GridLayout()
     controls[1, 3] = tag_controls
     colgap!(controls, 12)
@@ -1303,10 +1303,22 @@ function plot_calibrated_spectrum_results(
             tag_visible_by_tag[tag][] = active
         end
     end
+    idx_peak_control = length(tags_result) + 1
+    row_peak_control = 1 + (idx_peak_control - 1) ÷ 4
+    col_peak_control = 1 + 2 * ((idx_peak_control - 1) % 4)
+    toggle_peaks = Toggle(tag_controls[row_peak_control, col_peak_control]; active=true)
+    Label(tag_controls[row_peak_control, col_peak_control + 1],
+        "Peak markers + labels"; fontsize=12)
     visible_overview_by_tag_mode = Dict(
         (tag, selected_mode) => lift((current_mode, tag_visible) ->
             current_mode == selected_mode && tag_visible,
             mode, tag_visible_by_tag[tag])
+        for tag in tags_result for selected_mode in modes_result)
+    visible_annotations_by_tag_mode = Dict(
+        (tag, selected_mode) => lift((trace_visible, show_peaks) ->
+            trace_visible && show_peaks,
+            visible_overview_by_tag_mode[(tag, selected_mode)],
+            toggle_peaks.active)
         for tag in tags_result for selected_mode in modes_result)
     ax = Axis(fig[1, 1];
         width=axis_width_px,
@@ -1656,7 +1668,7 @@ function plot_calibrated_spectrum_results(
                 "A=$(round(val_peak_plot; digits=3))"
             text_label = "t=$(round(point.time_peak_s; digits=3)) s\nf=$(round(point.freq_peak_mhz; digits=1)) MHz\n$text_value" *
                 (isempty(point.peak_tag) ? "" : "\n$(point.peak_tag)")
-            visible_mode = visible_overview_by_tag_mode[
+            visible_mode = visible_annotations_by_tag_mode[
                 (traces_result[point.idx_result].tag, selected_mode)]
             scatter!(ax, [point.freq_marker_mhz], [val_peak_plot];
                 color=point.color_line, marker=point.marker, markersize=8,
