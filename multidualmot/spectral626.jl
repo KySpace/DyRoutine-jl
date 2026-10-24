@@ -1274,15 +1274,40 @@ function plot_calibrated_spectrum_results(
     axis_height_px = 540
     fig = Figure(fontsize=14)
     mode = Observable(initial_mode)
+    tags_result = unique([String(entry["tag"]) for entry in entries_result])
+    color_by_tag = Dict(String(entry["tag"]) =>
+        parse(Colorant, String(entry["color"])) for entry in entries_result)
+    tag_visible_by_tag = Dict(tag => Observable(true) for tag in tags_result)
+    controls = GridLayout()
+    fig[0, 1] = controls
     menu_options = [("Raw voltage overlay", :raw_voltage_overlay),
         ("Normalized overlay", :normalized_overlay),
         ("Normalized replaced", :normalized_replaced)]
     idx_initial_mode = findfirst(option -> option[2] == initial_mode, menu_options)
-    menu_mode = Menu(fig[0, 1]; options=menu_options,
+    menu_mode = Menu(controls[1, 1]; options=menu_options,
         default=menu_options[idx_initial_mode][1])
     on(menu_mode.selection) do selected_mode
         isnothing(selected_mode) || (mode[] = selected_mode)
     end
+    Label(controls[1, 2], "Overview traces"; fontsize=12)
+    tag_controls = GridLayout()
+    controls[1, 3] = tag_controls
+    colgap!(controls, 12)
+    for (idx_tag, tag) in enumerate(tags_result)
+        row_tag = 1 + (idx_tag - 1) ÷ 4
+        col_tag = 1 + 2 * ((idx_tag - 1) % 4)
+        toggle_tag = Toggle(tag_controls[row_tag, col_tag]; active=true)
+        Label(tag_controls[row_tag, col_tag + 1], tag;
+            color=color_by_tag[tag], fontsize=12)
+        on(toggle_tag.active) do active
+            tag_visible_by_tag[tag][] = active
+        end
+    end
+    visible_overview_by_tag_mode = Dict(
+        (tag, selected_mode) => lift((current_mode, tag_visible) ->
+            current_mode == selected_mode && tag_visible,
+            mode, tag_visible_by_tag[tag])
+        for tag in tags_result for selected_mode in modes_result)
     ax = Axis(fig[1, 1];
         width=axis_width_px,
         height=axis_height_px,
@@ -1559,24 +1584,24 @@ function plot_calibrated_spectrum_results(
     for trace in traces_result
         lines!(ax, trace.frequency_trace, trace.signal_trace_v;
             color=trace.color_line, linewidth=1.2, label=trace.tag,
-            visible=@lift($mode == :raw_voltage_overlay))
+            visible=visible_overview_by_tag_mode[(trace.tag, :raw_voltage_overlay)])
         lines!(ax, trace.frequency_trace, trace.signal_normalized;
             color=trace.color_line, linewidth=1.2,
-            visible=@lift($mode == :normalized_overlay))
+            visible=visible_overview_by_tag_mode[(trace.tag, :normalized_overlay)])
         lines!(ax, trace.frequency_trace, trace.signal_replaced;
             color=trace.color_line, linewidth=1.2,
-            visible=@lift($mode == :normalized_replaced))
+            visible=visible_overview_by_tag_mode[(trace.tag, :normalized_replaced)])
     end
     for trace in traces_fine_scan
         lines!(ax, trace.frequency_fine_mhz, trace.signal_fine_v;
             color=(trace.color_line, 0.5), linewidth=1.2,
-            visible=@lift($mode == :raw_voltage_overlay))
+            visible=visible_overview_by_tag_mode[(trace.tag, :raw_voltage_overlay)])
         lines!(ax, trace.frequency_fine_mhz, trace.signal_fine_normalized;
             color=(trace.color_line, 0.5), linewidth=1.2,
-            visible=@lift($mode == :normalized_overlay))
+            visible=visible_overview_by_tag_mode[(trace.tag, :normalized_overlay)])
         lines!(ax, trace.blend.frequency_mhz, trace.blend.signal_blended;
             color=trace.color_line, linewidth=1.5,
-            visible=@lift($mode == :normalized_replaced))
+            visible=visible_overview_by_tag_mode[(trace.tag, :normalized_replaced)])
     end
     limits_raw = padded_signal_limits(
         [trace.signal_trace_v for trace in traces_result]...,
@@ -1631,7 +1656,8 @@ function plot_calibrated_spectrum_results(
                 "A=$(round(val_peak_plot; digits=3))"
             text_label = "t=$(round(point.time_peak_s; digits=3)) s\nf=$(round(point.freq_peak_mhz; digits=1)) MHz\n$text_value" *
                 (isempty(point.peak_tag) ? "" : "\n$(point.peak_tag)")
-            visible_mode = lift(current_mode -> current_mode == selected_mode, mode)
+            visible_mode = visible_overview_by_tag_mode[
+                (traces_result[point.idx_result].tag, selected_mode)]
             scatter!(ax, [point.freq_marker_mhz], [val_peak_plot];
                 color=point.color_line, marker=point.marker, markersize=8,
                 strokecolor=:black, strokewidth=0.8, visible=visible_mode)
@@ -1642,7 +1668,7 @@ function plot_calibrated_spectrum_results(
         end
     end
 
-    axislegend(ax; position=:rt, framevisible=false, labelsize=9.333)
+    # Colored overview toggles above the axis serve as the trace legend.
     fig_detail = nothing
     if !isempty(traces_fine_scan)
         str_fine_label = lift(mode) do selected_mode
