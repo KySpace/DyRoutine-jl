@@ -1192,7 +1192,7 @@ end
 function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::AbstractVector;
     compact::Bool=false,
     mode::Observable=Observable(:raw_voltage_overlay))
-    isempty(traces_fine_scan) && return nothing
+    isempty(traces_fine_scan) && return Axis[]
     n_rows = maximum(last(trace.rows_grid) for trace in traces_fine_scan)
     n_cols = maximum(last(trace.cols_grid) for trace in traces_fine_scan)
     occupied = falses(n_rows, n_cols)
@@ -1203,6 +1203,7 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
     end
     width_cell = compact ? 190 : 290
     height_cell = compact ? 135 : 230
+    axes_fine_scan = Axis[]
     for trace in traces_fine_scan
         rows_grid, cols_grid = trace.rows_grid, trace.cols_grid
         ax_fine = Axis(gl_fine_scan[rows_grid, cols_grid];
@@ -1216,6 +1217,7 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
             xlabelsize=compact ? 9 : 12, ylabelsize=compact ? 9 : 12,
             xticklabelsize=compact ? 8 : 11,
             yticklabelsize=compact ? 8 : 11)
+        push!(axes_fine_scan, ax_fine)
         if !isempty(trace.frequency_coarse_fine)
             lines!(ax_fine, trace.frequency_coarse_fine, trace.signal_coarse_fine_v;
                 color=(trace.color_line, 0.35), linewidth=1.2, linestyle=:dash,
@@ -1223,6 +1225,9 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
             lines!(ax_fine, trace.frequency_coarse_fine, trace.signal_coarse_normalized;
                 color=(trace.color_line, 0.35), linewidth=1.2, linestyle=:dash,
                 visible=@lift($mode == :normalized_overlay))
+            lines!(ax_fine, trace.frequency_coarse_fine, trace.signal_coarse_normalized;
+                color=trace.color_line, linewidth=2,
+                visible=@lift($mode == :normalized_wide_scan_only))
             lines!(ax_fine, trace.frequency_coarse_fine, trace.signal_coarse_replaced;
                 color=trace.color_line, linewidth=1.5,
                 visible=@lift($mode == :normalized_replaced))
@@ -1233,6 +1238,9 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
         lines!(ax_fine, trace.frequency_fine_mhz, trace.signal_fine_normalized;
             color=(trace.color_line, 0.5), linewidth=2,
             visible=@lift($mode == :normalized_overlay))
+        lines!(ax_fine, trace.frequency_fine_mhz, trace.signal_fine_normalized;
+            color=trace.color_line, linewidth=2,
+            visible=@lift($mode == :normalized_fine_scan_only))
         lines!(ax_fine, trace.blend.frequency_mhz, trace.blend.signal_blended;
             color=trace.color_line, linewidth=2,
             visible=@lift($mode == :normalized_replaced))
@@ -1252,7 +1260,7 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
             fontsize=compact ? 8 : 11,
             color=:black, strokecolor=:white, strokewidth=0.4)
     end
-    return nothing
+    return axes_fine_scan
 end
 
 function calc_calibrated_spectrum_results(
@@ -1531,7 +1539,8 @@ function plot_calibrated_spectrum_results(
     normalize_amplitude::Bool=true,
     initial_mode::Symbol=normalize_amplitude ? :normalized_overlay : :raw_voltage_overlay,
 )
-    modes_result = (:raw_voltage_overlay, :normalized_overlay, :normalized_replaced)
+    modes_result = (:raw_voltage_overlay, :normalized_overlay,
+        :normalized_wide_scan_only, :normalized_fine_scan_only, :normalized_replaced)
     initial_mode in modes_result ||
         throw(ArgumentError("Unknown result-spectrum mode $initial_mode; expected one of $modes_result"))
     traces_result = result_data.traces_result
@@ -1551,6 +1560,8 @@ function plot_calibrated_spectrum_results(
     fig[0, 1] = controls
     menu_options = [("Raw voltage overlay", :raw_voltage_overlay),
         ("Normalized overlay", :normalized_overlay),
+        ("Normalized wide-scan only", :normalized_wide_scan_only),
+        ("Normalized fine-scan only", :normalized_fine_scan_only),
         ("Normalized replaced", :normalized_replaced)]
     idx_initial_mode = findfirst(option -> option[2] == initial_mode, menu_options)
     menu_mode = Menu(controls[1, 1]; options=menu_options,
@@ -1615,6 +1626,9 @@ function plot_calibrated_spectrum_results(
         lines!(ax, trace.frequency_trace, trace.signal_normalized;
             color=trace.color_line, linewidth=1.2,
             visible=visible_overview_by_tag_mode[(trace.tag, :normalized_overlay)])
+        lines!(ax, trace.frequency_trace, trace.signal_normalized;
+            color=trace.color_line, linewidth=1.2,
+            visible=visible_overview_by_tag_mode[(trace.tag, :normalized_wide_scan_only)])
         lines!(ax, trace.frequency_trace, trace.signal_replaced;
             color=trace.color_line, linewidth=1.2,
             visible=visible_overview_by_tag_mode[(trace.tag, :normalized_replaced)])
@@ -1626,6 +1640,9 @@ function plot_calibrated_spectrum_results(
         lines!(ax, trace.frequency_fine_mhz, trace.signal_fine_normalized;
             color=(trace.color_line, 0.5), linewidth=1.2,
             visible=visible_overview_by_tag_mode[(trace.tag, :normalized_overlay)])
+        lines!(ax, trace.frequency_fine_mhz, trace.signal_fine_normalized;
+            color=trace.color_line, linewidth=1.5,
+            visible=visible_overview_by_tag_mode[(trace.tag, :normalized_fine_scan_only)])
         lines!(ax, trace.blend.frequency_mhz, trace.blend.signal_blended;
             color=trace.color_line, linewidth=1.5,
             visible=visible_overview_by_tag_mode[(trace.tag, :normalized_replaced)])
@@ -1671,11 +1688,18 @@ function plot_calibrated_spectrum_results(
             only(interpolate_linear_frequency(traces_fine_scan[idx_fine].blend.frequency_mhz,
                 traces_fine_scan[idx_fine].blend.signal_blended,
                 [point.freq_peak_mhz]))
+        val_peak_fine = isnothing(idx_fine) ? NaN :
+            only(interpolate_linear_frequency(traces_fine_scan[idx_fine].frequency_fine_mhz,
+                traces_fine_scan[idx_fine].signal_fine_normalized,
+                [point.freq_peak_mhz]))
         for selected_mode in modes_result
+            selected_mode == :normalized_fine_scan_only && isnothing(idx_fine) &&
+                continue
             is_raw = selected_mode == :raw_voltage_overlay
             val_peak_plot = is_raw ? point.val_peak_v :
-                (selected_mode == :normalized_replaced ? val_peak_replaced :
-                    val_peak_normalized)
+                selected_mode == :normalized_replaced ? val_peak_replaced :
+                selected_mode == :normalized_fine_scan_only ? val_peak_fine :
+                val_peak_normalized
             offset_label_y_plot = is_raw ? offset_label_y_v :
                 offset_label_y_v / val_normalization_v
             text_y = val_peak_plot + offset_label_y_plot
@@ -1703,19 +1727,41 @@ function plot_calibrated_spectrum_results(
                 "Fine-scan detail · dashed: coarse scan · solid: fine scan (50% opacity)"
             elseif selected_mode == :normalized_overlay
                 "Fine-scan detail · dashed: full scan · solid: fine scan; each group has a shared 1.0 peak"
+            elseif selected_mode == :normalized_wide_scan_only
+                "Fine-scan detail · normalized wide scan only"
+            elseif selected_mode == :normalized_fine_scan_only
+                "Fine-scan detail · normalized fine scan only"
             else
                 "Fine-scan detail · solid: Hann-blended replacement within ±$(frequency_half_width_mhz) MHz"
             end
         end
-        Label(fig[2, 1], str_fine_label;
+        label_fine_scan = Label(fig[2, 1], str_fine_label;
             halign=:left, fontsize=14)
         gl_fine_scan = GridLayout()
         fig[3, 1] = gl_fine_scan
         rowgap!(fig.layout, 8)
         rowgap!(gl_fine_scan, 4)
         colgap!(gl_fine_scan, 8)
-        draw_fine_scan_panels!(gl_fine_scan, traces_fine_scan;
+        axes_fine_scan = draw_fine_scan_panels!(gl_fine_scan, traces_fine_scan;
             compact=true, mode=mode)
+        idx_zoom_control = length(tags_result) + 2
+        row_zoom_control = 1 + (idx_zoom_control - 1) ÷ 4
+        col_zoom_control = 1 + 2 * ((idx_zoom_control - 1) % 4)
+        toggle_zoom = Toggle(tag_controls[row_zoom_control, col_zoom_control];
+            active=true)
+        Label(tag_controls[row_zoom_control, col_zoom_control + 1],
+            "Zoomed-in plots"; fontsize=12)
+        on(toggle_zoom.active) do show_zoom
+            label_fine_scan.visible[] = show_zoom
+            for ax_fine in axes_fine_scan
+                ax_fine.blockscene.visible[] = show_zoom
+            end
+            rowsize!(fig.layout, 2, show_zoom ? Auto() : Fixed(0))
+            rowsize!(fig.layout, 3, show_zoom ? Auto() : Fixed(0))
+            rowgap!(fig.layout, 2, show_zoom ? 8 : 0)
+            rowgap!(fig.layout, 3, show_zoom ? 8 : 0)
+            resize_to_layout!(fig)
+        end
         fig_detail = Figure(fontsize=14)
         Label(fig_detail[1, 1], str_fine_label;
             halign=:left, fontsize=14)
@@ -1754,7 +1800,7 @@ end
 
 function calc_resampled_replaced_spectrum(
     result_data::NamedTuple;
-    frequency_limits_mhz::Tuple{<:Real,<:Real}=(-720.0, 720.0),
+    frequency_limits_mhz::Tuple{<:Real,<:Real}=(-750.0, 750.0),
     step_coarse_mhz::Real=0.5,
     step_peak_mhz::Real=0.05,
     peak_half_width_mhz::Real=2.0,
@@ -1849,7 +1895,7 @@ function plot_normalized_replaced_spectrum(
             width=60 * px_per_mm,
             height=34 * px_per_mm,
             xlabel="Frequency (MHz)",
-            ylabel="Normalized signal (a.u.)",
+            ylabel="Spectrum Signal (a.u.)",
             xlabelfont=font_axis, ylabelfont=font_axis,
             xticklabelfont=font_axis, yticklabelfont=font_axis,
             xlabelsize=8 / 0.75, ylabelsize=8 / 0.75,
@@ -1883,12 +1929,12 @@ function plot_normalized_replaced_spectrum(
                 push!(tags_seen, trace.tag)
             end
         end
-        xlims!(ax, -720, 720)
+        xlims!(ax, -750, 750)
         ylims!(ax, -0.05, 1.05)
         axislegend(ax, legend_lines, legend_tags;
             position=:rt, framevisible=false, backgroundcolor=:transparent,
-            labelsize=6 / 0.75, labelfont=font_axis,
-            patchsize=(8, 6), margin=(1, 1, 1, 1), padding=(2, 2, 2, 2))
+            labelsize=7 / 0.75, labelfont=font_axis,
+            patchsize=(8, 6), margin=(1, 1, 1, 1), padding=(4, 4, 4, 4))
         resize_to_layout!(fig)
         mkpath(dirname(abspath(path_png)))
         CairoMakie.save(path_png, fig; px_per_unit=4)
@@ -1963,12 +2009,15 @@ args_data = filter(!=("--calibration-only"), args_data)
 args_data = filter(!=("--display-only"), args_data)
 args_data = filter(!=("--result-voltage"), args_data)
 args_data = filter(!=("--result-normalized"), args_data)
+args_data = filter(!=("--result-wide-only"), args_data)
+args_data = filter(!=("--result-fine-only"), args_data)
 args_data = filter(!=("--result-replaced"), args_data)
 length(args_data) <= 1 || throw(ArgumentError(
-    "Usage: julia --project=. multidualmot/spectral626.jl [data-folder] [--skip-conversion] [--calibration-only|--display-only] [--result-voltage|--result-normalized|--result-replaced]"))
+    "Usage: julia --project=. multidualmot/spectral626.jl [data-folder] [--skip-conversion] [--calibration-only|--display-only] [--result-voltage|--result-normalized|--result-wide-only|--result-fine-only|--result-replaced]"))
 !("--calibration-only" in ARGS && "--display-only" in ARGS) ||
     throw(ArgumentError("--calibration-only and --display-only cannot be combined"))
-count(arg -> arg in ("--result-voltage", "--result-normalized", "--result-replaced"),
+count(arg -> arg in ("--result-voltage", "--result-normalized",
+    "--result-wide-only", "--result-fine-only", "--result-replaced"),
     ARGS) <= 1 || throw(ArgumentError("Choose at most one result-spectrum mode flag"))
 path_data = isempty(args_data) ? path_data_root : abspath(args_data[1])
 path_config = joinpath(path_data, "config.yaml")
@@ -2026,6 +2075,8 @@ end
 fig_calibrations = [calibration.fig for calibration in calibration_results]
 path_result_spectrum_png = joinpath(path_data, "spectrum626_calibrated_results.png")
 initial_result_mode = "--result-voltage" in ARGS ? :raw_voltage_overlay :
+    "--result-wide-only" in ARGS ? :normalized_wide_scan_only :
+    "--result-fine-only" in ARGS ? :normalized_fine_scan_only :
     "--result-replaced" in ARGS ? :normalized_replaced : :normalized_overlay
 result_spectrum_data = calc_calibrated_spectrum_results(path_data, calibrations_by_tag)
 traces_result = result_spectrum_data.traces_result
