@@ -1,5 +1,6 @@
 using CSV
 using GLMakie
+import CairoMakie
 using Colors
 using DataFrames
 using ImageFiltering
@@ -1254,91 +1255,16 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
     return nothing
 end
 
-function plot_calibrated_spectrum_results(
+function calc_calibrated_spectrum_results(
     path_data::AbstractString,
-    path_png::AbstractString,
-    calibrations_by_tag::AbstractDict;
-    normalize_amplitude::Bool=true,
-    initial_mode::Symbol=normalize_amplitude ? :normalized_overlay : :raw_voltage_overlay,
+    calibrations_by_tag::AbstractDict,
 )
-    modes_result = (:raw_voltage_overlay, :normalized_overlay, :normalized_replaced)
-    initial_mode in modes_result ||
-        throw(ArgumentError("Unknown result-spectrum mode $initial_mode; expected one of $modes_result"))
     config = YAML.load_file(joinpath(path_data, "config.yaml"))
     entries_result = get(config, "result", nothing)
     isnothing(entries_result) && throw(ArgumentError("No 'result' section in config.yaml"))
 
     freq_min_mhz, freq_max_mhz = bounds_result_frequency_mhz
     time_uncertainty_s = 0.001
-    axis_width_px = 1080
-    axis_height_px = 540
-    fig = Figure(fontsize=14)
-    mode = Observable(initial_mode)
-    tags_result = unique([String(entry["tag"]) for entry in entries_result])
-    color_by_tag = Dict(String(entry["tag"]) =>
-        parse(Colorant, String(entry["color"])) for entry in entries_result)
-    tag_visible_by_tag = Dict(tag => Observable(true) for tag in tags_result)
-    controls = GridLayout()
-    fig[0, 1] = controls
-    menu_options = [("Raw voltage overlay", :raw_voltage_overlay),
-        ("Normalized overlay", :normalized_overlay),
-        ("Normalized replaced", :normalized_replaced)]
-    idx_initial_mode = findfirst(option -> option[2] == initial_mode, menu_options)
-    menu_mode = Menu(controls[1, 1]; options=menu_options,
-        default=menu_options[idx_initial_mode][1])
-    on(menu_mode.selection) do selected_mode
-        isnothing(selected_mode) || (mode[] = selected_mode)
-    end
-    Label(controls[1, 2], "Overview"; fontsize=12)
-    tag_controls = GridLayout()
-    controls[1, 3] = tag_controls
-    colgap!(controls, 12)
-    for (idx_tag, tag) in enumerate(tags_result)
-        row_tag = 1 + (idx_tag - 1) ÷ 4
-        col_tag = 1 + 2 * ((idx_tag - 1) % 4)
-        toggle_tag = Toggle(tag_controls[row_tag, col_tag]; active=true)
-        Label(tag_controls[row_tag, col_tag + 1], tag;
-            color=color_by_tag[tag], fontsize=12)
-        on(toggle_tag.active) do active
-            tag_visible_by_tag[tag][] = active
-        end
-    end
-    idx_peak_control = length(tags_result) + 1
-    row_peak_control = 1 + (idx_peak_control - 1) ÷ 4
-    col_peak_control = 1 + 2 * ((idx_peak_control - 1) % 4)
-    toggle_peaks = Toggle(tag_controls[row_peak_control, col_peak_control]; active=true)
-    Label(tag_controls[row_peak_control, col_peak_control + 1],
-        "Peak markers + labels"; fontsize=12)
-    visible_overview_by_tag_mode = Dict(
-        (tag, selected_mode) => lift((current_mode, tag_visible) ->
-            current_mode == selected_mode && tag_visible,
-            mode, tag_visible_by_tag[tag])
-        for tag in tags_result for selected_mode in modes_result)
-    visible_annotations_by_tag_mode = Dict(
-        (tag, selected_mode) => lift((trace_visible, show_peaks) ->
-            trace_visible && show_peaks,
-            visible_overview_by_tag_mode[(tag, selected_mode)],
-            toggle_peaks.active)
-        for tag in tags_result for selected_mode in modes_result)
-    ax = Axis(fig[1, 1];
-        width=axis_width_px,
-        height=axis_height_px,
-        xlabel="Frequency (MHz)",
-        ylabel=initial_mode == :raw_voltage_overlay ?
-            "Spectrum signal (V)" : "Normalized spectrum signal",
-        xlabelsize=10.667,
-        ylabelsize=10.667,
-        xticklabelsize=9.333,
-        yticklabelsize=9.333,
-        xticks=(vmin, vmax) -> begin
-            if vmax - vmin >= 1000
-                return (ceil(Int, vmin / 200) * 200):200:(floor(Int, vmax / 200) * 200)
-            end
-            return GLMakie.Makie.get_tickvalues(WilkinsonTicks(7), vmin, vmax)
-        end,
-        limits=((freq_min_mhz, freq_max_mhz), nothing),
-    )
-
     traces_result = NamedTuple[]
     traces_fine_scan = NamedTuple[]
     mat_data_by_path = Dict{String,Any}()
@@ -1593,6 +1519,95 @@ function plot_calibrated_spectrum_results(
         signal_replaced[abs.(traces_result[trace.idx_result].frequency_trace .-
             trace.target_frequency_mhz) .<= frequency_half_width_mhz] .= NaN
     end
+    return (; traces_result, traces_fine_scan, points_annotations,
+        val_normalization_v, val_fine_normalization_v,
+        frequency_half_width_mhz,
+        frequency_bounds_mhz=(freq_min_mhz, freq_max_mhz))
+end
+
+function plot_calibrated_spectrum_results(
+    result_data::NamedTuple,
+    path_png::AbstractString;
+    normalize_amplitude::Bool=true,
+    initial_mode::Symbol=normalize_amplitude ? :normalized_overlay : :raw_voltage_overlay,
+)
+    modes_result = (:raw_voltage_overlay, :normalized_overlay, :normalized_replaced)
+    initial_mode in modes_result ||
+        throw(ArgumentError("Unknown result-spectrum mode $initial_mode; expected one of $modes_result"))
+    traces_result = result_data.traces_result
+    traces_fine_scan = result_data.traces_fine_scan
+    points_annotations = result_data.points_annotations
+    val_normalization_v = result_data.val_normalization_v
+    frequency_half_width_mhz = result_data.frequency_half_width_mhz
+    freq_min_mhz, freq_max_mhz = result_data.frequency_bounds_mhz
+    axis_width_px = 1080
+    axis_height_px = 540
+    fig = Figure(fontsize=14)
+    mode = Observable(initial_mode)
+    tags_result = unique([trace.tag for trace in traces_result])
+    color_by_tag = Dict(trace.tag => trace.color_line for trace in traces_result)
+    tag_visible_by_tag = Dict(tag => Observable(true) for tag in tags_result)
+    controls = GridLayout()
+    fig[0, 1] = controls
+    menu_options = [("Raw voltage overlay", :raw_voltage_overlay),
+        ("Normalized overlay", :normalized_overlay),
+        ("Normalized replaced", :normalized_replaced)]
+    idx_initial_mode = findfirst(option -> option[2] == initial_mode, menu_options)
+    menu_mode = Menu(controls[1, 1]; options=menu_options,
+        default=menu_options[idx_initial_mode][1])
+    on(menu_mode.selection) do selected_mode
+        isnothing(selected_mode) || (mode[] = selected_mode)
+    end
+    Label(controls[1, 2], "Overview"; fontsize=12)
+    tag_controls = GridLayout()
+    controls[1, 3] = tag_controls
+    colgap!(controls, 12)
+    for (idx_tag, tag) in enumerate(tags_result)
+        row_tag = 1 + (idx_tag - 1) ÷ 4
+        col_tag = 1 + 2 * ((idx_tag - 1) % 4)
+        toggle_tag = Toggle(tag_controls[row_tag, col_tag]; active=true)
+        Label(tag_controls[row_tag, col_tag + 1], tag;
+            color=color_by_tag[tag], fontsize=12)
+        on(toggle_tag.active) do active
+            tag_visible_by_tag[tag][] = active
+        end
+    end
+    idx_peak_control = length(tags_result) + 1
+    row_peak_control = 1 + (idx_peak_control - 1) ÷ 4
+    col_peak_control = 1 + 2 * ((idx_peak_control - 1) % 4)
+    toggle_peaks = Toggle(tag_controls[row_peak_control, col_peak_control]; active=true)
+    Label(tag_controls[row_peak_control, col_peak_control + 1],
+        "Peak markers + labels"; fontsize=12)
+    visible_overview_by_tag_mode = Dict(
+        (tag, selected_mode) => lift((current_mode, tag_visible) ->
+            current_mode == selected_mode && tag_visible,
+            mode, tag_visible_by_tag[tag])
+        for tag in tags_result for selected_mode in modes_result)
+    visible_annotations_by_tag_mode = Dict(
+        (tag, selected_mode) => lift((trace_visible, show_peaks) ->
+            trace_visible && show_peaks,
+            visible_overview_by_tag_mode[(tag, selected_mode)],
+            toggle_peaks.active)
+        for tag in tags_result for selected_mode in modes_result)
+    ax = Axis(fig[1, 1];
+        width=axis_width_px,
+        height=axis_height_px,
+        xlabel="Frequency (MHz)",
+        ylabel=initial_mode == :raw_voltage_overlay ?
+            "Spectrum signal (V)" : "Normalized spectrum signal",
+        xlabelsize=10.667,
+        ylabelsize=10.667,
+        xticklabelsize=9.333,
+        yticklabelsize=9.333,
+        xticks=(vmin, vmax) -> begin
+            if vmax - vmin >= 1000
+                return (ceil(Int, vmin / 200) * 200):200:(floor(Int, vmax / 200) * 200)
+            end
+            return GLMakie.Makie.get_tickvalues(WilkinsonTicks(7), vmin, vmax)
+        end,
+        limits=((freq_min_mhz, freq_max_mhz), nothing),
+    )
+
     for trace in traces_result
         lines!(ax, trace.frequency_trace, trace.signal_trace_v;
             color=trace.color_line, linewidth=1.2, label=trace.tag,
@@ -1737,6 +1752,162 @@ function plot_calibrated_spectrum_results(
     return fig
 end
 
+function calc_resampled_replaced_spectrum(
+    result_data::NamedTuple;
+    frequency_limits_mhz::Tuple{<:Real,<:Real}=(-720.0, 720.0),
+    step_coarse_mhz::Real=0.5,
+    step_peak_mhz::Real=0.05,
+    peak_half_width_mhz::Real=2.0,
+)
+    frequency_min_mhz, frequency_max_mhz = frequency_limits_mhz
+    frequency_min_mhz < frequency_max_mhz ||
+        throw(ArgumentError("Frequency limits must increase; got $frequency_limits_mhz"))
+    all(isfinite, (frequency_min_mhz, frequency_max_mhz, step_coarse_mhz,
+        step_peak_mhz, peak_half_width_mhz)) &&
+        0 < step_peak_mhz < step_coarse_mhz && peak_half_width_mhz > 0 ||
+        throw(ArgumentError("Resampling steps and peak half-width must be positive and finite, with peak step smaller than coarse step"))
+    n_peak_steps = round(Int, peak_half_width_mhz / step_peak_mhz)
+    isapprox(n_peak_steps * step_peak_mhz, peak_half_width_mhz; atol=1e-9) ||
+        throw(ArgumentError("Peak half-width $peak_half_width_mhz MHz must be a multiple of peak step $step_peak_mhz MHz"))
+
+    traces_resampled = NamedTuple[]
+    for (idx_result, trace) in enumerate(result_data.traces_result)
+        ids_valid = findall(isfinite, trace.signal_replaced)
+        frequency_source = Float64.(trace.frequency_trace[ids_valid])
+        signal_source = Float64.(trace.signal_replaced[ids_valid])
+        for fine_trace in result_data.traces_fine_scan
+            fine_trace.idx_result == idx_result || continue
+            append!(frequency_source, fine_trace.blend.frequency_mhz)
+            append!(signal_source, fine_trace.blend.signal_blended)
+        end
+        ids_sorted = sortperm(frequency_source)
+        frequency_source = frequency_source[ids_sorted]
+        signal_source = signal_source[ids_sorted]
+        length(frequency_source) >= 2 && all(diff(frequency_source) .> 0) &&
+            all(isfinite, signal_source) ||
+            throw(ArgumentError("Result trace $(trace.tag) needs at least two distinct, finite replacement samples"))
+
+        frequency_left_mhz = max(frequency_min_mhz, first(frequency_source))
+        frequency_right_mhz = min(frequency_max_mhz, last(frequency_source))
+        frequency_left_mhz < frequency_right_mhz || continue
+        frequency_peaks_mhz = Float64[]
+        for point in result_data.points_annotations
+            point.idx_result == idx_result || continue
+            ids_near = findall(frequency ->
+                abs(frequency - point.freq_peak_mhz) <= peak_half_width_mhz,
+                frequency_source)
+            isempty(ids_near) && throw(ArgumentError(
+                "No replacement samples within $peak_half_width_mhz MHz of labeled peak $(point.peak_tag) at $(point.freq_peak_mhz) MHz"))
+            idx_peak = ids_near[argmax(signal_source[ids_near])]
+            frequency_peak_mhz = frequency_source[idx_peak]
+            frequency_left_mhz <= frequency_peak_mhz <= frequency_right_mhz &&
+                push!(frequency_peaks_mhz, frequency_peak_mhz)
+        end
+        unique!(frequency_peaks_mhz)
+
+        frequency_coarse_mhz = collect((ceil(Int, frequency_left_mhz / step_coarse_mhz):
+            floor(Int, frequency_right_mhz / step_coarse_mhz)) .* step_coarse_mhz)
+        filter!(frequency -> all(peak ->
+            abs(frequency - peak) > peak_half_width_mhz, frequency_peaks_mhz),
+            frequency_coarse_mhz)
+        frequency_dense_mhz = Float64[]
+        for frequency_peak_mhz in frequency_peaks_mhz
+            append!(frequency_dense_mhz, filter(frequency ->
+                frequency_left_mhz <= frequency <= frequency_right_mhz,
+                frequency_peak_mhz .+ (-n_peak_steps:n_peak_steps) .* step_peak_mhz))
+        end
+        frequency_resampled_mhz = sort!(unique(vcat(frequency_coarse_mhz,
+            frequency_dense_mhz)))
+        signal_resampled = interpolate_linear_frequency(frequency_source,
+            signal_source, frequency_resampled_mhz)
+        for frequency_peak_mhz in frequency_peaks_mhz
+            idx_source = searchsortedfirst(frequency_source, frequency_peak_mhz)
+            idx_resampled = searchsortedfirst(frequency_resampled_mhz, frequency_peak_mhz)
+            frequency_resampled_mhz[idx_resampled] == frequency_peak_mhz &&
+                isapprox(signal_resampled[idx_resampled], signal_source[idx_source]; atol=1e-12) ||
+                throw(ArgumentError("Resampling lost the exact peak at $frequency_peak_mhz MHz"))
+        end
+        push!(traces_resampled, (; frequency_mhz=frequency_resampled_mhz,
+            signal_normalized=signal_resampled, frequency_peaks_mhz,
+            tag=trace.tag, color_line=trace.color_line))
+    end
+    return traces_resampled
+end
+
+function plot_normalized_replaced_spectrum(
+    traces_resampled::AbstractVector,
+    path_png::AbstractString,
+)::Figure
+    isempty(traces_resampled) &&
+        throw(ArgumentError("Normalized replaced figure needs at least one result trace"))
+    CairoMakie.activate!()
+    try
+        px_per_mm = 96 / 25.4
+        font_axis = "Times New Roman"
+        fig = Figure(fontsize=8 / 0.75, figure_padding=4)
+        ax = Axis(fig[1, 1];
+            width=60 * px_per_mm,
+            height=34 * px_per_mm,
+            xlabel="Frequency (MHz)",
+            ylabel="Normalized signal (a.u.)",
+            xlabelfont=font_axis, ylabelfont=font_axis,
+            xticklabelfont=font_axis, yticklabelfont=font_axis,
+            xlabelsize=8 / 0.75, ylabelsize=8 / 0.75,
+            xticklabelsize=7 / 0.75, yticklabelsize=7 / 0.75,
+            xticks=-600:200:600,
+            xminorticks=setdiff(collect(-700:100:700), collect(-600:200:600)),
+            yticks=collect(0:2:10) ./ 10,
+            yminorticks=collect(1:2:9) ./ 10,
+            xminorticksvisible=true, yminorticksvisible=true,
+            xticksize=10 / 3, yticksize=10 / 3,
+            xminorticksize=2, yminorticksize=2,
+            xtickalign=1, ytickalign=1,
+            xminortickalign=1, yminortickalign=1,
+            xticksmirrored=true, yticksmirrored=true,
+            xgridvisible=false, ygridvisible=false,
+            xminorgridvisible=false, yminorgridvisible=false,
+            spinewidth=0.75,
+            xtickwidth=0.75, ytickwidth=0.75,
+            xminortickwidth=0.75, yminortickwidth=0.75)
+        line_width_px = 0.24 * px_per_mm
+        legend_lines = Any[]
+        legend_tags = String[]
+        tags_seen = Set{String}()
+        for trace in traces_resampled
+            line = lines!(ax, trace.frequency_mhz, trace.signal_normalized;
+                color=trace.color_line, linewidth=line_width_px,
+                linecap=:round, joinstyle=:round)
+            if !(trace.tag in tags_seen)
+                push!(legend_lines, line)
+                push!(legend_tags, trace.tag)
+                push!(tags_seen, trace.tag)
+            end
+        end
+        xlims!(ax, -720, 720)
+        ylims!(ax, -0.05, 1.05)
+        axislegend(ax, legend_lines, legend_tags;
+            position=:rt, framevisible=false, backgroundcolor=:transparent,
+            labelsize=6 / 0.75, labelfont=font_axis,
+            patchsize=(8, 6), margin=(1, 1, 1, 1), padding=(2, 2, 2, 2))
+        resize_to_layout!(fig)
+        mkpath(dirname(abspath(path_png)))
+        CairoMakie.save(path_png, fig; px_per_unit=4)
+        path_pdf = splitext(path_png)[1] * ".pdf"
+        try
+            CairoMakie.save(path_pdf, fig)
+        catch err
+            err isa Base.IOError && occursin("EBUSY", sprint(showerror, err)) || rethrow()
+            path_pdf = splitext(path_png)[1] * "_resampled.pdf"
+            println("Could not replace the open PDF; saving the resampled figure to $path_pdf")
+            CairoMakie.save(path_pdf, fig)
+        end
+        println("Saved normalized replaced result figures to $path_png and $path_pdf")
+        return fig
+    finally
+        GLMakie.activate!()
+    end
+end
+
 fig = function plot_ch1_spectrum(
     path_jld2::AbstractString,
     path_png::AbstractString,
@@ -1856,7 +2027,17 @@ fig_calibrations = [calibration.fig for calibration in calibration_results]
 path_result_spectrum_png = joinpath(path_data, "spectrum626_calibrated_results.png")
 initial_result_mode = "--result-voltage" in ARGS ? :raw_voltage_overlay :
     "--result-replaced" in ARGS ? :normalized_replaced : :normalized_overlay
+result_spectrum_data = calc_calibrated_spectrum_results(path_data, calibrations_by_tag)
+traces_result = result_spectrum_data.traces_result
+traces_fine_scan = result_spectrum_data.traces_fine_scan
+points_annotations = result_spectrum_data.points_annotations
 fig_result_spectrum = plot_calibrated_spectrum_results(
-    path_data, path_result_spectrum_png, calibrations_by_tag;
+    result_spectrum_data, path_result_spectrum_png;
     initial_mode=initial_result_mode)
+path_result_spectrum_selected_png = joinpath(dirname(path_data), "Result",
+    "spectrum626_normalized_replaced.png")
+result_spectrum_selected_data = calc_resampled_replaced_spectrum(result_spectrum_data)
+fig_result_spectrum_selected = plot_normalized_replaced_spectrum(
+    result_spectrum_selected_data, path_result_spectrum_selected_png)
+isinteractive() && display(fig_result_spectrum_selected)
 end
