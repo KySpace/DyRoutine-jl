@@ -16,8 +16,8 @@ const path_data_root = raw"C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\spectrum 626
 const n_horizontal_divisions = 14
 const val_smoothing_sigma_points = 2.5
 const n_smoothing_window_points = 11 # symmetric kernel spanning ten sample intervals
+const bounds_calibration_frequency_mhz = (-900.0, 900.0)
 const bounds_spectrum_frequency_mhz = (-900.0, 900.0)
-const bounds_result_frequency_mhz = (-900.0, 900.0)
 
 function smooth_scope_channel(values::AbstractVector{<:Real})::Vector{Float64}
     kernel_gaussian = Kernel.gaussian(
@@ -380,13 +380,13 @@ function load_scope_period_data(path_jld2::AbstractString, dead_time_s::Real)
     return (; time_s, ch1_v, ch2_v, idx_minima, idx_maxima)
 end
 
-function plot_ch2_rising_ramps(
+function plot_ch2_signal(
     path_data::AbstractString,
     ids_file::AbstractVector{<:Integer},
     path_png::AbstractString;
     val_min_peak_prominence_v::Float64 = 0.005
 )
-    isempty(ids_file) && throw(ArgumentError("At least one spectrum file is required"))
+    isempty(ids_file) && throw(ArgumentError("At least one signal file is required"))
 
     val_offset_per_file_v = 0.5
     val_fraction_top_excluded = 0.01
@@ -403,7 +403,7 @@ function plot_ch2_rising_ramps(
     px_height = 2160
     fig = Figure(size=(px_width, px_height), fontsize=28)
     ax = Axis(fig[1, 1];
-        title="CH1 and CH2 rising ramps, aligned to CH1 zero-crossings",
+        title="CH1 and CH2 signals, aligned to CH1 zero-crossings",
         xlabel="Time from first rising CH1 zero-crossing (s)",
         ylabel="CH1 and CH2 voltage (V), offset by 0.5 V per file",
         titlesize=36,
@@ -595,10 +595,10 @@ function fit_time_zero_and_scale(
     length(val_p_shape) == 3 || throw(DimensionMismatch("Expected shared p₂–p₄ coefficients"))
     val_time_centered_s = Float64.(time_peak_s .- time_center_s)
 
-    function model_result(x, theta)
+    function model_fit(x, theta)
         return [calc_frequency_from_time(theta[2], val_p_shape, x[idx] - theta[1]) for idx in eachindex(x)]
     end
-    function jacobian_result(x, theta)
+    function jacobian_fit(x, theta)
         jac = zeros(Float64, length(x), 2)
         alpha_mhz_per_s = theta[2]
         for idx in eachindex(x)
@@ -613,7 +613,7 @@ function fit_time_zero_and_scale(
     end
 
     fit = LsqFit.curve_fit(
-        model_result, jacobian_result, val_time_centered_s, Float64.(freq_mhz), [0.0, -472.0])
+        model_fit, jacobian_fit, val_time_centered_s, Float64.(freq_mhz), [0.0, -472.0])
     fit.converged || @warn "Per-index t₀/α fit did not report convergence"
     return (time_zero_s=Float64(time_center_s + fit.param[1]),
         alpha_mhz_per_s=Float64(fit.param[2]), fit)
@@ -827,7 +827,7 @@ function plot_monotone_cubic_calibration(
     time_zero_by_file = Dict{Int,Float64}()
     fig = Figure(fontsize=24)
     ax = Axis(fig[1, 1]; width=1200, height=850,
-        title="Spectrum 626 time–frequency calibration: $tag_calibration",
+        title="Signal 626 time–frequency calibration: $tag_calibration",
         xlabel="Time from zero-frequency t₀ (s)", ylabel="Reference frequency (MHz)",
         titlesize=32, xlabelsize=28, ylabelsize=28,
         xticklabelsize=22, yticklabelsize=22)
@@ -849,7 +849,7 @@ function plot_monotone_cubic_calibration(
         color_file = oklch_to_rgb(mod(24 + (idx_file - 1) * 360 / length(ids_file), 360), 0.60, 0.15)
         marker = get(marker_by_file, id_file, :circle)
         time_min_s, time_max_s = find_monotone_cubic_model_limits(
-            spline, bounds_spectrum_frequency_mhz...)
+            spline, bounds_calibration_frequency_mhz...)
         for (time_start_s, time_stop_s) in ((time_min_s, first(spline.time_s)),
             (last(spline.time_s), time_max_s))
             time_start_s < time_stop_s || continue
@@ -886,7 +886,7 @@ function plot_monotone_cubic_calibration(
         extrapolation, splines_by_file, time_zero_by_file)
 end
 
-function plot_spectrum_frequency_calibration(
+function plot_signal_frequency_calibration(
     path_data::AbstractString,
     path_png::AbstractString,
     entry_calibration::AbstractDict,
@@ -1009,7 +1009,7 @@ function plot_spectrum_frequency_calibration(
     ax = Axis(fig[1, 1];
         width=1200,
         height=850,
-        title="Spectrum 626 time–frequency calibration: $tag_calibration",
+        title="Signal 626 time–frequency calibration: $tag_calibration",
         xlabel="Time from zero-frequency t₀ (s)",
         ylabel="Reference frequency (MHz)",
         titlesize=32,
@@ -1028,7 +1028,7 @@ function plot_spectrum_frequency_calibration(
         alpha_mhz_per_s = alpha_by_file[id_file]
         u_min_ref, u_max_ref = extrema(val_u_file)
         u_min_model, u_max_model = find_monotonic_model_limits(
-            alpha_mhz_per_s, val_p_shape, bounds_spectrum_frequency_mhz...)
+            alpha_mhz_per_s, val_p_shape, bounds_calibration_frequency_mhz...)
         for (u_start, u_stop) in ((u_min_model, u_min_ref), (u_max_ref, u_max_model))
             u_start < u_stop || continue
             u_extrap = range(u_start, u_stop; length=400)
@@ -1211,7 +1211,7 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
             title="$(trace.tag): $(round(trace.target_frequency_mhz; digits=1)) MHz",
             xlabel=compact && last(rows_grid) < n_rows ? "" : "Frequency (MHz)",
             ylabel=compact && first(cols_grid) > 1 ? "" :
-                (mode[] == :raw_voltage_overlay ? "Signal (V)" : "Signal (a.u.)"),
+                (mode[] == :raw_voltage_overlay ? "Amplitude (V)" : "Normalized amplitude (a.u.)"),
             titlesize=compact ? 11 : 15,
             xlabelsize=compact ? 9 : 12, ylabelsize=compact ? 9 : 12,
             xticklabelsize=compact ? 8 : 11,
@@ -1248,7 +1248,7 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
             trace.signal_fine_normalized, trace.blend.signal_blended)
         on(mode) do selected_mode
             ax_fine.ylabel[] = compact && first(cols_grid) > 1 ? "" :
-                (selected_mode == :raw_voltage_overlay ? "Signal (V)" : "Signal (a.u.)")
+                (selected_mode == :raw_voltage_overlay ? "Amplitude (V)" : "Normalized amplitude (a.u.)")
             ylims!(ax_fine, (selected_mode == :raw_voltage_overlay ?
                 limits_raw : limits_normalized)...)
         end
@@ -1261,24 +1261,24 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
     return nothing
 end
 
-function calc_calibrated_spectrum_results(
+function calc_calibrated_spectrum(
     path_data::AbstractString,
     calibrations_by_tag::AbstractDict,
 )
     config = YAML.load_file(joinpath(path_data, "config.yaml"))
-    entries_result = get(config, "result", nothing)
-    isnothing(entries_result) && throw(ArgumentError("No 'result' section in config.yaml"))
+    entries_spectrum = get(config, "spectrum", nothing)
+    isnothing(entries_spectrum) && throw(ArgumentError("No 'spectrum' section in config.yaml"))
 
-    freq_min_mhz, freq_max_mhz = bounds_result_frequency_mhz
+    freq_min_mhz, freq_max_mhz = bounds_spectrum_frequency_mhz
     time_uncertainty_s = 0.001
-    traces_result = NamedTuple[]
+    traces_spectrum = NamedTuple[]
     traces_fine_scan = NamedTuple[]
     mat_data_by_path = Dict{String,Any}()
     points_annotations = NamedTuple[]
-    for entry in entries_result
+    for entry in entries_spectrum
         tag_calibration = String(entry["calibration"])
         haskey(calibrations_by_tag, tag_calibration) ||
-            throw(ArgumentError("Result '$(entry["tag"])' selects unknown calibration '$tag_calibration'"))
+            throw(ArgumentError("Spectrum '$(entry["tag"])' selects unknown calibration '$tag_calibration'"))
         calibration = calibrations_by_tag[tag_calibration]
         is_spline = calibration.model == :cubicspline
         val_p_shape = is_spline ? nothing : calibration.val_p_shape
@@ -1309,7 +1309,7 @@ function calc_calibrated_spectrum_results(
         isempty(points_reference) && throw(ArgumentError("No ref: true frequency references configured for $name_file"))
         points_zero = filter(point -> iszero(point.freq_mhz), points_reference)
         length(points_zero) <= 1 ||
-            throw(ArgumentError("Expected at most one 0 MHz result reference for $name_file; found $(length(points_zero))"))
+            throw(ArgumentError("Expected at most one 0 MHz spectrum reference for $name_file; found $(length(points_zero))"))
         if is_spline
             spline = if haskey(calibration.splines_by_file, id_file)
                 calibration.splines_by_file[id_file]
@@ -1327,22 +1327,22 @@ function calc_calibrated_spectrum_results(
         elseif isempty(points_zero)
             time_center_guess_s = mean(
                 point.time_peak_s - point.freq_mhz / -472.0 for point in points_reference)
-            fit_result = fit_time_zero_and_scale(
+            fit_data = fit_time_zero_and_scale(
                 time_center_guess_s,
                 [point.time_peak_s for point in points_reference],
                 [point.freq_mhz for point in points_reference],
                 val_p_shape)
-            time_zero_s = fit_result.time_zero_s
-            alpha_mhz_per_s = fit_result.alpha_mhz_per_s
+            time_zero_s = fit_data.time_zero_s
+            alpha_mhz_per_s = fit_data.alpha_mhz_per_s
             println("$name_file ($tag): fitted t₀=$(round(time_zero_s; digits=6)) s and α=$(round(alpha_mhz_per_s; digits=3)) MHz/s from $(length(points_reference)) ref: true peaks")
         else
             time_zero_s = only(points_zero).time_peak_s
-            fit_result = fit_scale_with_fixed_time_zero(
+            fit_data = fit_scale_with_fixed_time_zero(
                 time_zero_s,
                 [point.time_peak_s for point in points_reference],
                 [point.freq_mhz for point in points_reference],
                 val_p_shape)
-            alpha_mhz_per_s = fit_result.alpha_mhz_per_s
+            alpha_mhz_per_s = fit_data.alpha_mhz_per_s
             println("$name_file ($tag): fixed t₀ to detected aligned 0 MHz peak at $(round(time_zero_s; digits=6)) s; fitted α=$(round(alpha_mhz_per_s; digits=3)) MHz/s")
         end
         for point in points_reference
@@ -1363,7 +1363,7 @@ function calc_calibrated_spectrum_results(
             idx_first = searchsortedfirst(time_aligned_s, time_min_plot_s)
             idx_last = searchsortedlast(time_aligned_s, time_max_plot_s)
             idx_first <= idx_last ||
-                throw(ArgumentError("Spline result for $name_file does not intersect the plotted frequency range"))
+                throw(ArgumentError("Spline spectrum for $name_file does not intersect the plotted frequency range"))
             ids_trace = idx_first:idx_last
         else
             frequency_mhz = alpha_mhz_per_s .* time_relative_s .* (
@@ -1376,8 +1376,8 @@ function calc_calibrated_spectrum_results(
         signal_trace_v = ch2_v[ids_trace]
         val_ch2_baseline_v = calc_mean_excluding_top_fraction(signal_trace_v, 0.01)
         color_line = parse(Colorant, String(entry["color"]))
-        idx_result = length(traces_result) + 1
-        push!(traces_result, (; name_file, tag, frequency_trace, signal_trace_v,
+        idx_spectrum = length(traces_spectrum) + 1
+        push!(traces_spectrum, (; name_file, tag, frequency_trace, signal_trace_v,
             val_ch2_baseline_v, color_line))
         for peak_config in entry["peaks"]
             peak_tag = String(get(peak_config, "tag", ""))
@@ -1422,7 +1422,7 @@ function calc_calibrated_spectrum_results(
                     frequency_coarse_fine, signal_coarse_fine_v, val_ch2_baseline_v,
                     val_fine_baseline_v,
                     color_line, tag, peak_tag, target_frequency_mhz,
-                    rows_grid, cols_grid, idx_result))
+                    rows_grid, cols_grid, idx_spectrum))
                 println("$name_file ($tag): overlaying $name_mat group_data.$name_case over $(round(extrema(frequency_fine_mhz)[1]; digits=3))…$(round(extrema(frequency_fine_mhz)[2]; digits=3)) MHz")
             end
             is_reference = get(peak_config, "ref", false) === true
@@ -1467,7 +1467,7 @@ function calc_calibrated_spectrum_results(
             end
             offset_label_y_v = val_peak_v > 0.45 ? -0.008 : 0.008
             push!(points_annotations, (; freq_marker_mhz, val_peak_v, val_ch2_baseline_v,
-                time_peak_s, freq_peak_mhz, peak_tag, color_line, idx_result,
+                time_peak_s, freq_peak_mhz, peak_tag, color_line, idx_spectrum,
                 marker=is_reference ? :utriangle : :circle,
                 text_x=freq_marker_mhz + offset_label_x_mhz,
                 offset_label_y_v,
@@ -1480,15 +1480,15 @@ function calc_calibrated_spectrum_results(
         GC.gc()
     end
 
-    val_peak_by_result_v = [maximum(trace.signal_trace_v) - trace.val_ch2_baseline_v
-        for trace in traces_result]
-    all(isfinite, val_peak_by_result_v) ||
-        throw(ArgumentError("Result traces contain a nonfinite baseline-corrected maximum"))
-    pos_normalization = argmax(val_peak_by_result_v)
-    val_normalization_v = val_peak_by_result_v[pos_normalization]
+    val_peak_by_spectrum_v = [maximum(trace.signal_trace_v) - trace.val_ch2_baseline_v
+        for trace in traces_spectrum]
+    all(isfinite, val_peak_by_spectrum_v) ||
+        throw(ArgumentError("Spectrum traces contain a nonfinite baseline-corrected maximum"))
+    pos_normalization = argmax(val_peak_by_spectrum_v)
+    val_normalization_v = val_peak_by_spectrum_v[pos_normalization]
     val_normalization_v > 0 ||
-        throw(ArgumentError("The largest baseline-corrected result signal must be positive; got $val_normalization_v V"))
-    println("Normalizing result spectra by $(traces_result[pos_normalization].name_file) ($(traces_result[pos_normalization].tag)) maximum $(round(val_normalization_v; sigdigits=6)) V above its baseline")
+        throw(ArgumentError("The largest baseline-corrected spectrum amplitude must be positive; got $val_normalization_v V"))
+    println("Normalizing spectrum traces by $(traces_spectrum[pos_normalization].name_file) ($(traces_spectrum[pos_normalization].tag)) maximum $(round(val_normalization_v; sigdigits=6)) V above its baseline")
     val_fine_normalization_v = 1.0
     if !isempty(traces_fine_scan)
         val_peak_by_fine_v = [maximum(trace.signal_fine_v) - trace.val_fine_baseline_v
@@ -1501,10 +1501,10 @@ function calc_calibrated_spectrum_results(
     end
 
     frequency_half_width_mhz = 4.0
-    traces_result = [merge(trace, (;
+    traces_spectrum = [merge(trace, (;
         signal_normalized=(trace.signal_trace_v .- trace.val_ch2_baseline_v) ./ val_normalization_v,
         signal_replaced=(trace.signal_trace_v .- trace.val_ch2_baseline_v) ./ val_normalization_v))
-        for trace in traces_result]
+        for trace in traces_spectrum]
     traces_fine_scan = [begin
         signal_coarse_normalized = (trace.signal_coarse_fine_v .-
             trace.val_ch2_baseline_v) ./ val_normalization_v
@@ -1521,41 +1521,41 @@ function calc_calibrated_spectrum_results(
             signal_coarse_replaced, blend))
     end for trace in traces_fine_scan]
     for trace in traces_fine_scan
-        signal_replaced = traces_result[trace.idx_result].signal_replaced
-        signal_replaced[abs.(traces_result[trace.idx_result].frequency_trace .-
+        signal_replaced = traces_spectrum[trace.idx_spectrum].signal_replaced
+        signal_replaced[abs.(traces_spectrum[trace.idx_spectrum].frequency_trace .-
             trace.target_frequency_mhz) .<= frequency_half_width_mhz] .= NaN
     end
-    return (; traces_result, traces_fine_scan, points_annotations,
+    return (; traces_spectrum, traces_fine_scan, points_annotations,
         val_normalization_v, val_fine_normalization_v,
         frequency_half_width_mhz,
         frequency_bounds_mhz=(freq_min_mhz, freq_max_mhz))
 end
 
-function plot_calibrated_spectrum_results(
-    result_data::NamedTuple,
+function plot_calibrated_spectrum(
+    spectrum_data::NamedTuple,
     path_png::AbstractString;
     normalize_amplitude::Bool=true,
     initial_mode::Symbol=normalize_amplitude ? :normalized_overlay : :raw_voltage_overlay,
 )
-    modes_result = (:raw_voltage_overlay, :normalized_overlay,
+    modes_spectrum = (:raw_voltage_overlay, :normalized_overlay,
         :normalized_wide_scan_only, :normalized_fine_scan_only, :normalized_replaced)
-    initial_mode in modes_result ||
-        throw(ArgumentError("Unknown result-spectrum mode $initial_mode; expected one of $modes_result"))
-    traces_result = result_data.traces_result
-    traces_fine_scan = result_data.traces_fine_scan
-    points_annotations = result_data.points_annotations
-    val_normalization_v = result_data.val_normalization_v
-    frequency_half_width_mhz = result_data.frequency_half_width_mhz
-    freq_min_mhz, freq_max_mhz = result_data.frequency_bounds_mhz
+    initial_mode in modes_spectrum ||
+        throw(ArgumentError("Unknown spectrum mode $initial_mode; expected one of $modes_spectrum"))
+    traces_spectrum = spectrum_data.traces_spectrum
+    traces_fine_scan = spectrum_data.traces_fine_scan
+    points_annotations = spectrum_data.points_annotations
+    val_normalization_v = spectrum_data.val_normalization_v
+    frequency_half_width_mhz = spectrum_data.frequency_half_width_mhz
+    freq_min_mhz, freq_max_mhz = spectrum_data.frequency_bounds_mhz
     axis_width_px = 1080
     n_rows_fine_scan = isempty(traces_fine_scan) ? 0 :
         maximum(last(trace.rows_grid) for trace in traces_fine_scan)
     axis_height_px = max(720, 175 * n_rows_fine_scan + 140)
     fig = Figure(fontsize=14)
     mode = Observable(initial_mode)
-    tags_result = unique([trace.tag for trace in traces_result])
-    color_by_tag = Dict(trace.tag => trace.color_line for trace in traces_result)
-    tag_visible_by_tag = Dict(tag => Observable(true) for tag in tags_result)
+    tags_spectrum = unique([trace.tag for trace in traces_spectrum])
+    color_by_tag = Dict(trace.tag => trace.color_line for trace in traces_spectrum)
+    tag_visible_by_tag = Dict(tag => Observable(true) for tag in tags_spectrum)
     controls = GridLayout()
     fig[1, 1] = controls
     menu_options = [("Raw voltage overlay", :raw_voltage_overlay),
@@ -1573,7 +1573,7 @@ function plot_calibrated_spectrum_results(
     tag_controls = GridLayout()
     controls[1, 3] = tag_controls
     colgap!(controls, 12)
-    for (idx_tag, tag) in enumerate(tags_result)
+    for (idx_tag, tag) in enumerate(tags_spectrum)
         row_tag = 1 + (idx_tag - 1) ÷ 4
         col_tag = 1 + 2 * ((idx_tag - 1) % 4)
         toggle_tag = Toggle(tag_controls[row_tag, col_tag]; active=true)
@@ -1583,7 +1583,7 @@ function plot_calibrated_spectrum_results(
             tag_visible_by_tag[tag][] = active
         end
     end
-    idx_peak_control = length(tags_result) + 1
+    idx_peak_control = length(tags_spectrum) + 1
     row_peak_control = 1 + (idx_peak_control - 1) ÷ 4
     col_peak_control = 1 + 2 * ((idx_peak_control - 1) % 4)
     toggle_peaks = Toggle(tag_controls[row_peak_control, col_peak_control]; active=true)
@@ -1593,19 +1593,19 @@ function plot_calibrated_spectrum_results(
         (tag, selected_mode) => lift((current_mode, tag_visible) ->
             current_mode == selected_mode && tag_visible,
             mode, tag_visible_by_tag[tag])
-        for tag in tags_result for selected_mode in modes_result)
+        for tag in tags_spectrum for selected_mode in modes_spectrum)
     visible_annotations_by_tag_mode = Dict(
         (tag, selected_mode) => lift((trace_visible, show_peaks) ->
             trace_visible && show_peaks,
             visible_overview_by_tag_mode[(tag, selected_mode)],
             toggle_peaks.active)
-        for tag in tags_result for selected_mode in modes_result)
+        for tag in tags_spectrum for selected_mode in modes_spectrum)
     ax = Axis(fig[2, 1];
         width=axis_width_px,
         height=axis_height_px, valign=:top,
         xlabel="Frequency (MHz)",
         ylabel=initial_mode == :raw_voltage_overlay ?
-            "Spectrum signal (V)" : "Normalized spectrum signal",
+            "Amplitude (V)" : "Normalized amplitude (a.u.)",
         xlabelsize=10.667,
         ylabelsize=10.667,
         xticklabelsize=9.333,
@@ -1619,7 +1619,7 @@ function plot_calibrated_spectrum_results(
         limits=((freq_min_mhz, freq_max_mhz), nothing),
     )
 
-    for trace in traces_result
+    for trace in traces_spectrum
         lines!(ax, trace.frequency_trace, trace.signal_trace_v;
             color=trace.color_line, linewidth=1.2, label=trace.tag,
             visible=visible_overview_by_tag_mode[(trace.tag, :raw_voltage_overlay)])
@@ -1648,14 +1648,14 @@ function plot_calibrated_spectrum_results(
             visible=visible_overview_by_tag_mode[(trace.tag, :normalized_replaced)])
     end
     limits_raw = padded_signal_limits(
-        [trace.signal_trace_v for trace in traces_result]...,
+        [trace.signal_trace_v for trace in traces_spectrum]...,
         [trace.signal_fine_v for trace in traces_fine_scan]...)
     limits_normalized = padded_signal_limits(
-        [trace.signal_normalized for trace in traces_result]...,
+        [trace.signal_normalized for trace in traces_spectrum]...,
         [trace.signal_fine_normalized for trace in traces_fine_scan]...)
     on(mode) do selected_mode
         ax.ylabel[] = selected_mode == :raw_voltage_overlay ?
-            "Spectrum signal (V)" : "Normalized spectrum signal"
+            "Amplitude (V)" : "Normalized amplitude (a.u.)"
         ylims!(ax, (selected_mode == :raw_voltage_overlay ?
             limits_raw : limits_normalized)...)
     end
@@ -1681,7 +1681,7 @@ function plot_calibrated_spectrum_results(
         offset_label_y_v = point.offset_label_y_v + 0.032 * label_lane_by_point[idx_point]
         val_peak_normalized = (point.val_peak_v - point.val_ch2_baseline_v) /
             val_normalization_v
-        idx_fine = findfirst(trace -> trace.idx_result == point.idx_result &&
+        idx_fine = findfirst(trace -> trace.idx_spectrum == point.idx_spectrum &&
             abs(point.freq_peak_mhz - trace.target_frequency_mhz) <=
             frequency_half_width_mhz, traces_fine_scan)
         val_peak_replaced = isnothing(idx_fine) ? val_peak_normalized :
@@ -1692,7 +1692,7 @@ function plot_calibrated_spectrum_results(
             only(interpolate_linear_frequency(traces_fine_scan[idx_fine].frequency_fine_mhz,
                 traces_fine_scan[idx_fine].signal_fine_normalized,
                 [point.freq_peak_mhz]))
-        for selected_mode in modes_result
+        for selected_mode in modes_spectrum
             selected_mode == :normalized_fine_scan_only && isnothing(idx_fine) &&
                 continue
             is_raw = selected_mode == :raw_voltage_overlay
@@ -1708,7 +1708,7 @@ function plot_calibrated_spectrum_results(
             text_label = "t=$(round(point.time_peak_s; digits=3)) s\nf=$(round(point.freq_peak_mhz; digits=1)) MHz\n$text_value" *
                 (isempty(point.peak_tag) ? "" : "\n$(point.peak_tag)")
             visible_mode = visible_annotations_by_tag_mode[
-                (traces_result[point.idx_result].tag, selected_mode)]
+                (traces_spectrum[point.idx_spectrum].tag, selected_mode)]
             scatter!(ax, [point.freq_marker_mhz], [val_peak_plot];
                 color=point.color_line, marker=point.marker, markersize=8,
                 strokecolor=:black, strokewidth=0.8, visible=visible_mode)
@@ -1761,12 +1761,12 @@ function plot_calibrated_spectrum_results(
     for (idx_mode, (_, selected_mode)) in enumerate(menu_options)
         menu_mode.i_selected[] = idx_mode
         mode[] == selected_mode ||
-            throw(ArgumentError("Result-spectrum mode menu did not select $selected_mode"))
+            throw(ArgumentError("Spectrum mode menu did not select $selected_mode"))
         resize_to_layout!(fig)
         path_mode_png = splitext(path_png)[1] * "_$(selected_mode).png"
         save(path_mode_png, fig; px_per_unit=4)
         path_by_mode[selected_mode] = path_mode_png
-        println("Saved $selected_mode result spectrum to $path_mode_png")
+        println("Saved $selected_mode spectrum to $path_mode_png")
         if !isnothing(fig_detail)
             path_detail_png = splitext(path_mode_png)[1] * "_fine_scan_detail.png"
             save(path_detail_png, fig_detail; px_per_unit=3)
@@ -1784,8 +1784,8 @@ function plot_calibrated_spectrum_results(
     return fig
 end
 
-function calc_resampled_replaced_spectrum(
-    result_data::NamedTuple;
+function calc_resampled_result(
+    spectrum_data::NamedTuple;
     frequency_limits_mhz::Tuple{<:Real,<:Real}=(-750.0, 750.0),
     step_coarse_mhz::Real=0.5,
     step_peak_mhz::Real=0.05,
@@ -1803,12 +1803,12 @@ function calc_resampled_replaced_spectrum(
         throw(ArgumentError("Peak half-width $peak_half_width_mhz MHz must be a multiple of peak step $step_peak_mhz MHz"))
 
     traces_resampled = NamedTuple[]
-    for (idx_result, trace) in enumerate(result_data.traces_result)
+    for (idx_spectrum, trace) in enumerate(spectrum_data.traces_spectrum)
         ids_valid = findall(isfinite, trace.signal_replaced)
         frequency_source = Float64.(trace.frequency_trace[ids_valid])
         signal_source = Float64.(trace.signal_replaced[ids_valid])
-        for fine_trace in result_data.traces_fine_scan
-            fine_trace.idx_result == idx_result || continue
+        for fine_trace in spectrum_data.traces_fine_scan
+            fine_trace.idx_spectrum == idx_spectrum || continue
             append!(frequency_source, fine_trace.blend.frequency_mhz)
             append!(signal_source, fine_trace.blend.signal_blended)
         end
@@ -1817,14 +1817,14 @@ function calc_resampled_replaced_spectrum(
         signal_source = signal_source[ids_sorted]
         length(frequency_source) >= 2 && all(diff(frequency_source) .> 0) &&
             all(isfinite, signal_source) ||
-            throw(ArgumentError("Result trace $(trace.tag) needs at least two distinct, finite replacement samples"))
+            throw(ArgumentError("Spectrum trace $(trace.tag) needs at least two distinct, finite replacement samples"))
 
         frequency_left_mhz = max(frequency_min_mhz, first(frequency_source))
         frequency_right_mhz = min(frequency_max_mhz, last(frequency_source))
         frequency_left_mhz < frequency_right_mhz || continue
         frequency_peaks_mhz = Float64[]
-        for point in result_data.points_annotations
-            point.idx_result == idx_result || continue
+        for point in spectrum_data.points_annotations
+            point.idx_spectrum == idx_spectrum || continue
             ids_near = findall(frequency ->
                 abs(frequency - point.freq_peak_mhz) <= peak_half_width_mhz,
                 frequency_source)
@@ -1866,12 +1866,12 @@ function calc_resampled_replaced_spectrum(
     return traces_resampled
 end
 
-function plot_normalized_replaced_spectrum(
+function plot_normalized_replaced_result(
     traces_resampled::AbstractVector,
     path_png::AbstractString,
 )::Figure
     isempty(traces_resampled) &&
-        throw(ArgumentError("Normalized replaced figure needs at least one result trace"))
+        throw(ArgumentError("Normalized replaced result needs at least one trace"))
     CairoMakie.activate!()
     try
         px_per_mm = 96 / 25.4
@@ -1881,7 +1881,7 @@ function plot_normalized_replaced_spectrum(
             width=60 * px_per_mm,
             height=34 * px_per_mm,
             xlabel="Frequency (MHz)",
-            ylabel="Spectrum Signal (a.u.)",
+            ylabel="Normalized amplitude (a.u.)",
             xlabelfont=font_axis, ylabelfont=font_axis,
             xticklabelfont=font_axis, yticklabelfont=font_axis,
             xlabelsize=8 / 0.75, ylabelsize=8 / 0.75,
@@ -1940,7 +1940,7 @@ function plot_normalized_replaced_spectrum(
     end
 end
 
-fig = function plot_ch1_spectrum(
+function plot_ch1_signal(
     path_jld2::AbstractString,
     path_png::AbstractString,
     path_period_csv::AbstractString,
@@ -1966,7 +1966,7 @@ fig = function plot_ch1_spectrum(
     time_maxima = time_s[idx_maxima]
     fig = Figure(size=(px_width, px_height), fontsize=28)
     ax = Axis(fig[1, 1];
-        title="SDS00014 — Channel 1",
+        title="SDS00014 — CH1 signal",
         xlabel="Time (s)",
         ylabel="CH1 voltage (V)",
         titlesize=36,
@@ -1987,24 +1987,24 @@ fig = function plot_ch1_spectrum(
     println("Minimum separation: $(length(time_minima) > 1 ? minimum(diff(time_minima)) : NaN) s minima; $(length(time_maxima) > 1 ? minimum(diff(time_maxima)) : NaN) s maxima")
     println("Saved $(px_width)×$(px_height) PNG to $path_png")
     write_ch1_periods_csv(path_period_csv, time_s, ch1_v, idx_minima, idx_maxima)
-    return nothing
+    return fig
 end
 
 args_data = filter(!=("--skip-conversion"), ARGS)
 args_data = filter(!=("--calibration-only"), args_data)
-args_data = filter(!=("--display-only"), args_data)
-args_data = filter(!=("--result-voltage"), args_data)
-args_data = filter(!=("--result-normalized"), args_data)
-args_data = filter(!=("--result-wide-only"), args_data)
-args_data = filter(!=("--result-fine-only"), args_data)
-args_data = filter(!=("--result-replaced"), args_data)
+args_data = filter(!=("--signal-only"), args_data)
+args_data = filter(!=("--spectrum-voltage"), args_data)
+args_data = filter(!=("--spectrum-normalized"), args_data)
+args_data = filter(!=("--spectrum-wide-only"), args_data)
+args_data = filter(!=("--spectrum-fine-only"), args_data)
+args_data = filter(!=("--spectrum-replaced"), args_data)
 length(args_data) <= 1 || throw(ArgumentError(
-    "Usage: julia --project=. multidualmot/spectral626.jl [data-folder] [--skip-conversion] [--calibration-only|--display-only] [--result-voltage|--result-normalized|--result-wide-only|--result-fine-only|--result-replaced]"))
-!("--calibration-only" in ARGS && "--display-only" in ARGS) ||
-    throw(ArgumentError("--calibration-only and --display-only cannot be combined"))
-count(arg -> arg in ("--result-voltage", "--result-normalized",
-    "--result-wide-only", "--result-fine-only", "--result-replaced"),
-    ARGS) <= 1 || throw(ArgumentError("Choose at most one result-spectrum mode flag"))
+    "Usage: julia --project=. multidualmot/spectral626.jl [data-folder] [--skip-conversion] [--calibration-only|--signal-only] [--spectrum-voltage|--spectrum-normalized|--spectrum-wide-only|--spectrum-fine-only|--spectrum-replaced]"))
+!("--calibration-only" in ARGS && "--signal-only" in ARGS) ||
+    throw(ArgumentError("--calibration-only and --signal-only cannot be combined"))
+count(arg -> arg in ("--spectrum-voltage", "--spectrum-normalized",
+    "--spectrum-wide-only", "--spectrum-fine-only", "--spectrum-replaced"),
+    ARGS) <= 1 || throw(ArgumentError("Choose at most one spectrum mode flag"))
 path_data = isempty(args_data) ? path_data_root : abspath(args_data[1])
 path_config = joinpath(path_data, "config.yaml")
 isfile(path_config) || throw(ArgumentError("Spectrum config does not exist: $path_config"))
@@ -2016,32 +2016,32 @@ else
 end
 
 # The CH1 overview and period table remain specific to SDS00014.
-if !("--calibration-only" in ARGS || "--display-only" in ARGS)
+if !("--calibration-only" in ARGS || "--signal-only" in ARGS)
     path_jld2 = joinpath(path_data, "SDS00014.jld2")
     isfile(path_jld2) || throw(ArgumentError("SDS00014 JLD2 cache is missing after conversion: $path_jld2"))
-    path_png = joinpath(path_data, "SDS00014_CH1_vs_time.png")
-    path_period_csv = joinpath(path_data, "SDS00014_CH1_periods.csv")
-    plot_ch1_spectrum(path_jld2, path_png, path_period_csv)
+    path_png = joinpath(path_data, "SDS00014_CH1_signal.png")
+    path_period_csv = joinpath(path_data, "SDS00014_CH1_signal_periods.csv")
+    fig_signal_ch1 = plot_ch1_signal(path_jld2, path_png, path_period_csv)
 end
 if !("--calibration-only" in ARGS)
     entries_display = get(config, "display", nothing)
     isnothing(entries_display) && throw(ArgumentError("No 'display' section in $path_config"))
-    fig_spectra = []
+    fig_signals = []
     for entry in entries_display
         ids_display = Int.(entry["indices"])
         isempty(ids_display) && throw(ArgumentError("A display entry has no indices"))
         name_display = join([lpad(string(id), idx == 1 ? 5 : 2, '0')
             for (idx, id) in enumerate(ids_display)], "_")
-        path_ch2_png = joinpath(path_data, "SDS$(name_display)_CH2_aligned_periods.png")
-        push!(fig_spectra, plot_ch2_rising_ramps(path_data, ids_display, path_ch2_png; val_min_peak_prominence_v=0.003))
+        path_ch2_png = joinpath(path_data, "SDS$(name_display)_CH2_signal_aligned.png")
+        push!(fig_signals, plot_ch2_signal(path_data, ids_display, path_ch2_png; val_min_peak_prominence_v=0.003))
     end
-    length(fig_spectra) == 1 && (fig_spectrum = only(fig_spectra))
+    length(fig_signals) == 1 && (fig_signal = only(fig_signals))
 end
 
-if !("--display-only" in ARGS)
+if !("--signal-only" in ARGS)
 entries_calibration = get(config, "calibration", nothing)
 isnothing(entries_calibration) && throw(ArgumentError("No 'calibration' section in $path_config"))
-calibration_results = []
+signal_calibration_data = []
 calibrations_by_tag = Dict{String,Any}()
 names_calibration_png = Set{String}()
 for entry in entries_calibration
@@ -2053,28 +2053,28 @@ for entry in entries_calibration
     name_tag_png in names_calibration_png &&
         throw(ArgumentError("Calibration tags must produce unique output filenames; '$tag_calibration' conflicts with another tag"))
     push!(names_calibration_png, name_tag_png)
-    path_calibration_png = joinpath(path_data, "spectrum626_time_frequency_calibration_$(name_tag_png).png")
-    calibration_result = plot_spectrum_frequency_calibration(path_data, path_calibration_png, entry)
-    push!(calibration_results, calibration_result)
-    calibrations_by_tag[tag_calibration] = calibration_result
+    path_calibration_png = joinpath(path_data, "signal626_time_frequency_calibration_$(name_tag_png).png")
+    calibration = plot_signal_frequency_calibration(path_data, path_calibration_png, entry)
+    push!(signal_calibration_data, calibration)
+    calibrations_by_tag[tag_calibration] = calibration
 end
-fig_calibrations = [calibration.fig for calibration in calibration_results]
-path_result_spectrum_png = joinpath(path_data, "spectrum626_calibrated_results.png")
-initial_result_mode = "--result-voltage" in ARGS ? :raw_voltage_overlay :
-    "--result-wide-only" in ARGS ? :normalized_wide_scan_only :
-    "--result-fine-only" in ARGS ? :normalized_fine_scan_only :
-    "--result-replaced" in ARGS ? :normalized_replaced : :normalized_overlay
-result_spectrum_data = calc_calibrated_spectrum_results(path_data, calibrations_by_tag)
-traces_result = result_spectrum_data.traces_result
-traces_fine_scan = result_spectrum_data.traces_fine_scan
-points_annotations = result_spectrum_data.points_annotations
-fig_result_spectrum = plot_calibrated_spectrum_results(
-    result_spectrum_data, path_result_spectrum_png;
-    initial_mode=initial_result_mode)
-path_result_spectrum_selected_png = joinpath(dirname(path_data), "Result",
-    "spectrum626_normalized_replaced.png")
-result_spectrum_selected_data = calc_resampled_replaced_spectrum(result_spectrum_data)
-fig_result_spectrum_selected = plot_normalized_replaced_spectrum(
-    result_spectrum_selected_data, path_result_spectrum_selected_png)
-isinteractive() && display(fig_result_spectrum_selected)
+fig_signal_calibrations = [calibration.fig for calibration in signal_calibration_data]
+path_spectrum_png = joinpath(path_data, "spectrum626_calibrated_spectrum.png")
+initial_spectrum_mode = "--spectrum-voltage" in ARGS ? :raw_voltage_overlay :
+    "--spectrum-wide-only" in ARGS ? :normalized_wide_scan_only :
+    "--spectrum-fine-only" in ARGS ? :normalized_fine_scan_only :
+    "--spectrum-replaced" in ARGS ? :normalized_replaced : :normalized_overlay
+spectrum_data = calc_calibrated_spectrum(path_data, calibrations_by_tag)
+traces_spectrum = spectrum_data.traces_spectrum
+traces_fine_scan = spectrum_data.traces_fine_scan
+points_annotations = spectrum_data.points_annotations
+fig_spectrum = plot_calibrated_spectrum(
+    spectrum_data, path_spectrum_png;
+    initial_mode=initial_spectrum_mode)
+path_result_png = joinpath(dirname(path_data), "Result",
+    "result626_normalized_replaced.png")
+result_data = calc_resampled_result(spectrum_data)
+fig_result = plot_normalized_replaced_result(
+    result_data, path_result_png)
+isinteractive() && display(fig_result)
 end
