@@ -1192,7 +1192,7 @@ end
 function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::AbstractVector;
     compact::Bool=false,
     mode::Observable=Observable(:raw_voltage_overlay))
-    isempty(traces_fine_scan) && return Axis[]
+    isempty(traces_fine_scan) && return nothing
     n_rows = maximum(last(trace.rows_grid) for trace in traces_fine_scan)
     n_cols = maximum(last(trace.cols_grid) for trace in traces_fine_scan)
     occupied = falses(n_rows, n_cols)
@@ -1202,8 +1202,7 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
         occupied[trace.rows_grid, trace.cols_grid] .= true
     end
     width_cell = compact ? 190 : 290
-    height_cell = compact ? 135 : 230
-    axes_fine_scan = Axis[]
+    height_cell = compact ? 175 : 230
     for trace in traces_fine_scan
         rows_grid, cols_grid = trace.rows_grid, trace.cols_grid
         ax_fine = Axis(gl_fine_scan[rows_grid, cols_grid];
@@ -1217,7 +1216,6 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
             xlabelsize=compact ? 9 : 12, ylabelsize=compact ? 9 : 12,
             xticklabelsize=compact ? 8 : 11,
             yticklabelsize=compact ? 8 : 11)
-        push!(axes_fine_scan, ax_fine)
         if !isempty(trace.frequency_coarse_fine)
             lines!(ax_fine, trace.frequency_coarse_fine, trace.signal_coarse_fine_v;
                 color=(trace.color_line, 0.35), linewidth=1.2, linestyle=:dash,
@@ -1260,7 +1258,7 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
             fontsize=compact ? 8 : 11,
             color=:black, strokecolor=:white, strokewidth=0.4)
     end
-    return axes_fine_scan
+    return nothing
 end
 
 function calc_calibrated_spectrum_results(
@@ -1550,14 +1548,16 @@ function plot_calibrated_spectrum_results(
     frequency_half_width_mhz = result_data.frequency_half_width_mhz
     freq_min_mhz, freq_max_mhz = result_data.frequency_bounds_mhz
     axis_width_px = 1080
-    axis_height_px = 540
+    n_rows_fine_scan = isempty(traces_fine_scan) ? 0 :
+        maximum(last(trace.rows_grid) for trace in traces_fine_scan)
+    axis_height_px = max(720, 175 * n_rows_fine_scan + 140)
     fig = Figure(fontsize=14)
     mode = Observable(initial_mode)
     tags_result = unique([trace.tag for trace in traces_result])
     color_by_tag = Dict(trace.tag => trace.color_line for trace in traces_result)
     tag_visible_by_tag = Dict(tag => Observable(true) for tag in tags_result)
     controls = GridLayout()
-    fig[0, 1] = controls
+    fig[1, 1] = controls
     menu_options = [("Raw voltage overlay", :raw_voltage_overlay),
         ("Normalized overlay", :normalized_overlay),
         ("Normalized wide-scan only", :normalized_wide_scan_only),
@@ -1600,9 +1600,9 @@ function plot_calibrated_spectrum_results(
             visible_overview_by_tag_mode[(tag, selected_mode)],
             toggle_peaks.active)
         for tag in tags_result for selected_mode in modes_result)
-    ax = Axis(fig[1, 1];
+    ax = Axis(fig[2, 1];
         width=axis_width_px,
-        height=axis_height_px,
+        height=axis_height_px, valign=:top,
         xlabel="Frequency (MHz)",
         ylabel=initial_mode == :raw_voltage_overlay ?
             "Spectrum signal (V)" : "Normalized spectrum signal",
@@ -1735,33 +1735,18 @@ function plot_calibrated_spectrum_results(
                 "Fine-scan detail · solid: Hann-blended replacement within ±$(frequency_half_width_mhz) MHz"
             end
         end
-        label_fine_scan = Label(fig[2, 1], str_fine_label;
+        zoom_panel = GridLayout()
+        fig[2, 2] = zoom_panel
+        Label(zoom_panel[1, 1], str_fine_label;
             halign=:left, fontsize=14)
         gl_fine_scan = GridLayout()
-        fig[3, 1] = gl_fine_scan
-        rowgap!(fig.layout, 8)
+        zoom_panel[2, 1] = gl_fine_scan
+        rowgap!(zoom_panel, 8)
         rowgap!(gl_fine_scan, 4)
         colgap!(gl_fine_scan, 8)
-        axes_fine_scan = draw_fine_scan_panels!(gl_fine_scan, traces_fine_scan;
+        colgap!(fig.layout, 24)
+        draw_fine_scan_panels!(gl_fine_scan, traces_fine_scan;
             compact=true, mode=mode)
-        idx_zoom_control = length(tags_result) + 2
-        row_zoom_control = 1 + (idx_zoom_control - 1) ÷ 4
-        col_zoom_control = 1 + 2 * ((idx_zoom_control - 1) % 4)
-        toggle_zoom = Toggle(tag_controls[row_zoom_control, col_zoom_control];
-            active=true)
-        Label(tag_controls[row_zoom_control, col_zoom_control + 1],
-            "Zoomed-in plots"; fontsize=12)
-        on(toggle_zoom.active) do show_zoom
-            label_fine_scan.visible[] = show_zoom
-            for ax_fine in axes_fine_scan
-                ax_fine.blockscene.visible[] = show_zoom
-            end
-            rowsize!(fig.layout, 2, show_zoom ? Auto() : Fixed(0))
-            rowsize!(fig.layout, 3, show_zoom ? Auto() : Fixed(0))
-            rowgap!(fig.layout, 2, show_zoom ? 8 : 0)
-            rowgap!(fig.layout, 3, show_zoom ? 8 : 0)
-            resize_to_layout!(fig)
-        end
         fig_detail = Figure(fontsize=14)
         Label(fig_detail[1, 1], str_fine_label;
             halign=:left, fontsize=14)
@@ -1777,6 +1762,7 @@ function plot_calibrated_spectrum_results(
         menu_mode.i_selected[] = idx_mode
         mode[] == selected_mode ||
             throw(ArgumentError("Result-spectrum mode menu did not select $selected_mode"))
+        resize_to_layout!(fig)
         path_mode_png = splitext(path_png)[1] * "_$(selected_mode).png"
         save(path_mode_png, fig; px_per_unit=4)
         path_by_mode[selected_mode] = path_mode_png
