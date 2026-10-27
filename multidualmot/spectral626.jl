@@ -1995,6 +1995,70 @@ function plot_normalized_replaced_result(
     end
 end
 
+function plot_cs_dsb_fine_scan_result(
+    fine_scan_data::NamedTuple,
+    path_png::AbstractString,
+)::Figure
+    frequency_mhz = fine_scan_data.frequency_mhz
+    amplitude_au = fine_scan_data.amplitude_au
+    length(frequency_mhz) == length(amplitude_au) && length(frequency_mhz) >= 2 ||
+        throw(DimensionMismatch("CS-DSB fine-scan frequency and amplitude arrays must match and contain at least two points"))
+    all(isfinite, frequency_mhz) && all(isfinite, amplitude_au) ||
+        throw(ArgumentError("CS-DSB fine-scan data must be finite"))
+    CairoMakie.activate!()
+    try
+        px_per_mm = 96 / 25.4
+        font_axis = "Times New Roman"
+        fig = Figure(fontsize=7 / 0.75, figure_padding=4)
+        ax = Axis(fig[1, 1];
+            width=14 * px_per_mm,
+            height=11 * px_per_mm,
+            xlabelfont=font_axis, ylabelfont=font_axis,
+            xticklabelfont=font_axis, yticklabelfont=font_axis,
+            xticklabelsize=6 / 0.75, yticklabelsize=6 / 0.75,
+            xticks=-2:2:2,
+            xminorticks=[-3, -1, 1, 3],
+            yticks=(collect(0:4:8) .* 0.0001, ["0", "4", "8"]),
+            yminorticks=collect([-2, 2, 6]) .* 0.0001,
+            xminorticksvisible=true, yminorticksvisible=true,
+            xticksize=10 / 3, yticksize=10 / 3,
+            xminorticksize=2, yminorticksize=2,
+            xtickalign=1, ytickalign=1,
+            xminortickalign=1, yminortickalign=1,
+            xticksmirrored=true, yticksmirrored=true,
+            xgridvisible=false, ygridvisible=false,
+            xminorgridvisible=false, yminorgridvisible=false,
+            spinewidth=0.75,
+            xtickwidth=0.75, ytickwidth=0.75,
+            xminortickwidth=0.75, yminortickwidth=0.75)
+        Label(fig[0, 1], rich("×10", superscript("−4"));
+            tellwidth=false, tellheight=true,
+            halign=:left, valign=:bottom,
+            color=:black, font=font_axis, fontsize=6 / 0.75)
+        lines!(ax, frequency_mhz, amplitude_au;
+            color=fine_scan_data.color_line, linewidth=0.24 * px_per_mm,
+            linecap=:round, joinstyle=:round)
+        xlims!(ax, -3.5, 3.5)
+        ylims!(ax, -0.0002, 0.001)
+        resize_to_layout!(fig)
+        mkpath(dirname(abspath(path_png)))
+        CairoMakie.save(path_png, fig; px_per_unit=4)
+        path_pdf = splitext(path_png)[1] * ".pdf"
+        try
+            CairoMakie.save(path_pdf, fig)
+        catch err
+            err isa Base.IOError && occursin("EBUSY", sprint(showerror, err)) || rethrow()
+            path_pdf = splitext(path_png)[1] * "_new.pdf"
+            println("Could not replace the open PDF; saving the fine-scan result to $path_pdf")
+            CairoMakie.save(path_pdf, fig)
+        end
+        println("Saved CS-DSB fine-scan result figures to $path_png and $path_pdf")
+        return fig
+    finally
+        GLMakie.activate!()
+    end
+end
+
 function plot_ch1_signal(
     path_jld2::AbstractString,
     path_png::AbstractString,
@@ -2133,5 +2197,19 @@ isnothing(entries_result) && throw(ArgumentError("No 'result' section in $path_c
 result_data = calc_resampled_result(spectrum_data, entries_result)
 fig_result = plot_normalized_replaced_result(
     result_data, path_result_png)
+traces_cs_dsb_center = filter(trace ->
+    trace.tag == "CS-DSB" && iszero(trace.target_frequency_mhz),
+    traces_fine_scan)
+length(traces_cs_dsb_center) == 1 ||
+    throw(ArgumentError("Expected one CS-DSB fine scan centered at 0 MHz; found $(length(traces_cs_dsb_center))"))
+trace_cs_dsb_center = only(traces_cs_dsb_center)
+result_cs_dsb_fine_scan_data = (;
+    frequency_mhz=trace_cs_dsb_center.frequency_fine_mhz,
+    amplitude_au=trace_cs_dsb_center.signal_fine_normalized,
+    color_line=trace_cs_dsb_center.color_line)
+path_result_cs_dsb_fine_scan_png = joinpath(dirname(path_data), "Result",
+    "result626_cs_dsb_fine_scan.png")
+fig_result_cs_dsb_fine_scan = plot_cs_dsb_fine_scan_result(
+    result_cs_dsb_fine_scan_data, path_result_cs_dsb_fine_scan_png)
 isinteractive() && display(fig_spectrum)
 end
