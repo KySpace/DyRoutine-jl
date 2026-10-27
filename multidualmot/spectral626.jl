@@ -1785,7 +1785,8 @@ function plot_calibrated_spectrum(
 end
 
 function calc_resampled_result(
-    spectrum_data::NamedTuple;
+    spectrum_data::NamedTuple,
+    entries_result::AbstractVector;
     frequency_limits_mhz::Tuple{<:Real,<:Real}=(-750.0, 750.0),
     step_coarse_mhz::Real=0.5,
     step_peak_mhz::Real=0.05,
@@ -1801,9 +1802,42 @@ function calc_resampled_result(
     n_peak_steps = round(Int, peak_half_width_mhz / step_peak_mhz)
     isapprox(n_peak_steps * step_peak_mhz, peak_half_width_mhz; atol=1e-9) ||
         throw(ArgumentError("Peak half-width $peak_half_width_mhz MHz must be a multiple of peak step $step_peak_mhz MHz"))
+    isempty(entries_result) && throw(ArgumentError("The result section needs at least one tagged entry"))
 
     traces_resampled = NamedTuple[]
-    for (idx_spectrum, trace) in enumerate(spectrum_data.traces_spectrum)
+    tags_seen = Set{String}()
+    for entry in entries_result
+        entry isa AbstractDict && haskey(entry, "tag") ||
+            throw(ArgumentError("Every result entry needs a spectrum tag"))
+        tag = String(entry["tag"])
+        isempty(strip(tag)) && throw(ArgumentError("Result tags cannot be empty"))
+        tag in tags_seen && throw(ArgumentError("Duplicate result tag '$tag'"))
+        push!(tags_seen, tag)
+        idx_spectrum = findfirst(trace -> trace.tag == tag, spectrum_data.traces_spectrum)
+        isnothing(idx_spectrum) &&
+            throw(ArgumentError("Result tag '$tag' has no matching spectrum trace"))
+        trace = spectrum_data.traces_spectrum[idx_spectrum]
+        shift_config = get(entry, "shift", 0.0)
+        shift_config isa Real && isfinite(shift_config) ||
+            throw(ArgumentError("Result shift for '$tag' must be finite; got $shift_config"))
+        shift_au = Float64(shift_config)
+        peaks_config = get(entry, "peaks", [])
+        peaks_config isa AbstractVector ||
+            throw(ArgumentError("Result peaks for '$tag' must be a list"))
+        peaks_result = NamedTuple[]
+        for peak_config in peaks_config
+            peak_config isa AbstractDict &&
+                haskey(peak_config, "freq") && haskey(peak_config, "tag") ||
+                throw(ArgumentError("Every result peak for '$tag' needs freq and tag"))
+            frequency_config = peak_config["freq"]
+            frequency_config isa Real && isfinite(frequency_config) ||
+                throw(ArgumentError("Result peak frequency for '$tag' must be finite"))
+            peak_tag = String(peak_config["tag"])
+            isempty(strip(peak_tag)) &&
+                throw(ArgumentError("Result peak tag for '$tag' cannot be empty"))
+            push!(peaks_result, (frequency_mhz=Float64(frequency_config), tag=peak_tag))
+        end
+
         ids_valid = findall(isfinite, trace.signal_replaced)
         frequency_source = Float64.(trace.frequency_trace[ids_valid])
         signal_source = Float64.(trace.signal_replaced[ids_valid])
@@ -1817,23 +1851,24 @@ function calc_resampled_result(
         signal_source = signal_source[ids_sorted]
         length(frequency_source) >= 2 && all(diff(frequency_source) .> 0) &&
             all(isfinite, signal_source) ||
-            throw(ArgumentError("Spectrum trace $(trace.tag) needs at least two distinct, finite replacement samples"))
+            throw(ArgumentError("Spectrum trace $tag needs at least two distinct, finite replacement samples"))
 
         frequency_left_mhz = max(frequency_min_mhz, first(frequency_source))
         frequency_right_mhz = min(frequency_max_mhz, last(frequency_source))
-        frequency_left_mhz < frequency_right_mhz || continue
+        frequency_left_mhz < frequency_right_mhz ||
+            throw(ArgumentError("Result trace '$tag' does not intersect $frequency_limits_mhz MHz"))
         frequency_peaks_mhz = Float64[]
-        for point in spectrum_data.points_annotations
-            point.idx_spectrum == idx_spectrum || continue
+        for peak in peaks_result
             ids_near = findall(frequency ->
-                abs(frequency - point.freq_peak_mhz) <= peak_half_width_mhz,
+                abs(frequency - peak.frequency_mhz) <= peak_half_width_mhz,
                 frequency_source)
             isempty(ids_near) && throw(ArgumentError(
-                "No replacement samples within $peak_half_width_mhz MHz of labeled peak $(point.peak_tag) at $(point.freq_peak_mhz) MHz"))
+                "No replacement samples within $peak_half_width_mhz MHz of result peak $(peak.tag) at $(peak.frequency_mhz) MHz"))
             idx_peak = ids_near[argmax(signal_source[ids_near])]
             frequency_peak_mhz = frequency_source[idx_peak]
-            frequency_left_mhz <= frequency_peak_mhz <= frequency_right_mhz &&
-                push!(frequency_peaks_mhz, frequency_peak_mhz)
+            frequency_left_mhz <= frequency_peak_mhz <= frequency_right_mhz ||
+                throw(ArgumentError("Result peak $(peak.tag) at $(peak.frequency_mhz) MHz lies outside $frequency_limits_mhz MHz"))
+            push!(frequency_peaks_mhz, frequency_peak_mhz)
         end
         unique!(frequency_peaks_mhz)
 
@@ -1860,8 +1895,8 @@ function calc_resampled_result(
                 throw(ArgumentError("Resampling lost the exact peak at $frequency_peak_mhz MHz"))
         end
         push!(traces_resampled, (; frequency_mhz=frequency_resampled_mhz,
-            signal_normalized=signal_resampled, frequency_peaks_mhz,
-            tag=trace.tag, color_line=trace.color_line))
+            amplitude_au=signal_resampled .+ shift_au, shift_au, peaks_result,
+            frequency_peaks_mhz, tag, color_line=trace.color_line))
     end
     return traces_resampled
 end
@@ -1881,7 +1916,7 @@ function plot_normalized_replaced_result(
             width=60 * px_per_mm,
             height=34 * px_per_mm,
             xlabel="Frequency (MHz)",
-            ylabel="Normalized amplitude (a.u.)",
+            ylabel="Spectrum signal (a.u.)",
             xlabelfont=font_axis, ylabelfont=font_axis,
             xticklabelfont=font_axis, yticklabelfont=font_axis,
             xlabelsize=8 / 0.75, ylabelsize=8 / 0.75,
@@ -1902,21 +1937,41 @@ function plot_normalized_replaced_result(
             xtickwidth=0.75, ytickwidth=0.75,
             xminortickwidth=0.75, yminortickwidth=0.75)
         line_width_px = 0.24 * px_per_mm
+        for trace in traces_resampled, peak in trace.peaks_result
+            vlines!(ax, [peak.frequency_mhz];
+                color=(trace.color_line, 0.4), linestyle=:dash,
+                linewidth=0.18 * px_per_mm)
+        end
         legend_lines = Any[]
         legend_tags = String[]
-        tags_seen = Set{String}()
         for trace in traces_resampled
-            line = lines!(ax, trace.frequency_mhz, trace.signal_normalized;
+            line = lines!(ax, trace.frequency_mhz, trace.amplitude_au;
                 color=trace.color_line, linewidth=line_width_px,
                 linecap=:round, joinstyle=:round)
-            if !(trace.tag in tags_seen)
-                push!(legend_lines, line)
-                push!(legend_tags, trace.tag)
-                push!(tags_seen, trace.tag)
+            push!(legend_lines, line)
+            push!(legend_tags, trace.tag)
+        end
+        peaks_marked = [(trace=trace, peak=peak) for trace in traces_resampled
+            for peak in trace.peaks_result]
+        sort!(peaks_marked; by=item -> item.peak.frequency_mhz)
+        last_frequency_by_lane = Float64[]
+        for item in peaks_marked
+            frequency_mhz = item.peak.frequency_mhz
+            lane = findfirst(last_frequency ->
+                frequency_mhz - last_frequency >= 60, last_frequency_by_lane)
+            if isnothing(lane)
+                push!(last_frequency_by_lane, frequency_mhz)
+                lane = length(last_frequency_by_lane)
+            else
+                last_frequency_by_lane[lane] = frequency_mhz
             end
+            text!(ax, frequency_mhz, 0.07 + 0.32 * (lane - 1);
+                text=item.peak.tag, rotation=π / 2,
+                align=(:left, :center), color=item.trace.color_line,
+                font=font_axis, fontsize=5 / 0.75)
         end
         xlims!(ax, -750, 750)
-        ylims!(ax, -0.05, 1.05)
+        ylims!(ax, -0.05, 1.10)
         axislegend(ax, legend_lines, legend_tags;
             position=:rt, framevisible=false, backgroundcolor=:transparent,
             labelsize=7 / 0.75, labelfont=font_axis,
@@ -2073,8 +2128,10 @@ fig_spectrum = plot_calibrated_spectrum(
     initial_mode=initial_spectrum_mode)
 path_result_png = joinpath(dirname(path_data), "Result",
     "result626_normalized_replaced.png")
-result_data = calc_resampled_result(spectrum_data)
+entries_result = get(config, "result", nothing)
+isnothing(entries_result) && throw(ArgumentError("No 'result' section in $path_config"))
+result_data = calc_resampled_result(spectrum_data, entries_result)
 fig_result = plot_normalized_replaced_result(
     result_data, path_result_png)
-isinteractive() && display(fig_result)
+isinteractive() && display(fig_spectrum)
 end
