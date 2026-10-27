@@ -2059,6 +2059,171 @@ function plot_cs_dsb_fine_scan_result(
     end
 end
 
+function calc_calibration_error_estimate(
+    calibration::NamedTuple;
+    ids_source::Tuple{Int,Int}=(7, 8),
+    frequency_limits_mhz::Tuple{<:Real,<:Real}=(-750.0, 750.0),
+    n_samples::Int=1201,
+)
+    freq_min_mhz, freq_max_mhz = frequency_limits_mhz
+    isfinite(freq_min_mhz) && isfinite(freq_max_mhz) &&
+        freq_min_mhz < 0 < freq_max_mhz ||
+        throw(ArgumentError("Calibration error frequency limits must be finite and span zero; got $frequency_limits_mhz"))
+    n_samples >= 2 || throw(ArgumentError("Calibration error needs at least two samples; got $n_samples"))
+    id_reference, id_comparison = ids_source
+    id_reference != id_comparison ||
+        throw(ArgumentError("Calibration error source indices must differ; got $ids_source"))
+
+    if calibration.model == :cubicspline
+        all(id -> haskey(calibration.splines_by_file, id), ids_source) ||
+            throw(ArgumentError("Calibration '$(calibration.tag)' needs splines for indices $ids_source"))
+        spline_reference = calibration.splines_by_file[id_reference]
+        spline_comparison = calibration.splines_by_file[id_comparison]
+        time_endpoints_s = (find_monotone_cubic_time(spline_reference, freq_min_mhz),
+            find_monotone_cubic_time(spline_reference, freq_max_mhz))
+        calc_freq_reference = t -> calc_monotone_cubic_frequency(spline_reference, t)
+        calc_freq_comparison = t -> calc_monotone_cubic_frequency(spline_comparison, t)
+    elseif calibration.model == :p4
+        all(id -> haskey(calibration.alpha_by_file, id), ids_source) ||
+            throw(ArgumentError("Calibration '$(calibration.tag)' needs fitted scales for indices $ids_source"))
+        time_zero_reference_s = calibration.time_zero_by_file[id_reference]
+        time_zero_comparison_s = calibration.time_zero_by_file[id_comparison]
+        alpha_reference = calibration.alpha_by_file[id_reference]
+        alpha_comparison = calibration.alpha_by_file[id_comparison]
+        u_min_s, u_max_s = find_monotonic_model_limits(
+            alpha_reference, calibration.val_p_shape, freq_min_mhz, freq_max_mhz)
+        time_endpoints_s = (time_zero_reference_s + u_min_s,
+            time_zero_reference_s + u_max_s)
+        calc_freq_reference = t -> calc_frequency_from_time(
+            alpha_reference, calibration.val_p_shape, t - time_zero_reference_s)
+        calc_freq_comparison = t -> calc_frequency_from_time(
+            alpha_comparison, calibration.val_p_shape, t - time_zero_comparison_s)
+    else
+        throw(ArgumentError("Unsupported calibration model '$(calibration.model)'"))
+    end
+
+    time_s = collect(range(minimum(time_endpoints_s), maximum(time_endpoints_s);
+        length=n_samples))
+    frequency_reference_mhz = calc_freq_reference.(time_s)
+    frequency_comparison_mhz = calc_freq_comparison.(time_s)
+    all(isfinite, frequency_reference_mhz) && all(isfinite, frequency_comparison_mhz) ||
+        throw(ArgumentError("Calibration error frequencies must be finite"))
+    ids_sorted = sortperm(frequency_reference_mhz)
+    return (;
+        frequency_mhz=frequency_reference_mhz[ids_sorted],
+        error_mhz=(frequency_comparison_mhz .- frequency_reference_mhz)[ids_sorted],
+        time_s=time_s[ids_sorted], ids_source, tag=calibration.tag)
+end
+
+function plot_calibration_error_estimate(
+    error_data::NamedTuple,
+    path_png::AbstractString,
+)::Figure
+    CairoMakie.activate!()
+    try
+        px_per_mm = 96 / 25.4
+        font_axis = "Times New Roman"
+        font_math = "NewComputerModern Math"
+        fig = Figure(fontsize=8 / 0.75, figure_padding=4)
+        ax = Axis(fig[1, 1];
+            width=60 * px_per_mm, height=34 * px_per_mm,
+            xlabel=rich(rich("𝑓", subscript("7"), "(𝑡)"; font=font_math),
+                rich(" (MHz)"; font=font_math)),
+            ylabel=rich(rich("𝑓", subscript("8"), "(𝑡) − 𝑓", subscript("7"), "(𝑡)"; font=font_math),
+                rich(" (MHz)"; font=font_math)),
+            xlabelfont=font_math, ylabelfont=font_math,
+            xticklabelfont=font_math, yticklabelfont=font_math,
+            xlabelsize=8 / 0.75, ylabelsize=8 / 0.75,
+            xticklabelsize=7 / 0.75, yticklabelsize=7 / 0.75,
+            xticks=-600:200:600,
+            xminorticks=setdiff(collect(-700:100:700), collect(-600:200:600)),
+            yticks=-4:2:4,
+            xminorticksvisible=true, yminorticksvisible=true,
+            yminorticks=IntervalsBetween(2),
+            xticksize=10 / 3, yticksize=10 / 3,
+            xminorticksize=2, yminorticksize=2,
+            xtickalign=1, ytickalign=1,
+            xminortickalign=1, yminortickalign=1,
+            xticksmirrored=true, yticksmirrored=true,
+            xgridvisible=false, ygridvisible=false,
+            xminorgridvisible=false, yminorgridvisible=false,
+            spinewidth=0.75,
+            xtickwidth=0.75, ytickwidth=0.75,
+            xminortickwidth=0.75, yminortickwidth=0.75)
+        freq_guides = (
+            (-688.9, rich("+2", superscript("−")), 1),
+            (-652.3, rich("+1", superscript("−"), subscript("02")), 2),
+            (625.8, rich("+1", subscript("01")), 1),
+            (688.9, rich("−2", superscript("+")), 2),
+        )
+        error_min_mhz, error_max_mhz = extrema(error_data.error_mhz)
+        label_step_mhz = max(0.5, 0.12 * (error_max_mhz - error_min_mhz))
+        frequency_guides_mhz = [guide[1] for guide in freq_guides]
+        error_guides_mhz = interpolate_linear_frequency(
+            error_data.frequency_mhz, error_data.error_mhz, frequency_guides_mhz)
+        y_axis_min_mhz = min(-4.2, error_min_mhz - 0.3 * label_step_mhz)
+        y_axis_max_mhz = max(4.2, error_max_mhz + 3.2 * label_step_mhz)
+        for ((frequency_mhz, label, lane), error_mhz) in zip(freq_guides, error_guides_mhz)
+            vlines!(ax, [frequency_mhz];
+                color=(:gray, 0.55), linewidth=0.16 * px_per_mm)
+            y_label_mhz = error_max_mhz + (3 - lane) * label_step_mhz
+            text!(ax, frequency_mhz, y_label_mhz;
+                text=label, align=(:center, :bottom),
+                color=:gray25, font=font_axis, fontsize=6 / 0.75)
+            println("Calibration error at f7=$frequency_mhz MHz: $(round(error_mhz; digits=3)) MHz")
+        end
+        guide_key = GridLayout()
+        fig[1, 2] = guide_key
+        Label(guide_key[1, 1:2], "𝛥𝑓 (MHz)";
+            font=font_math, fontsize=6 / 0.75,
+            halign=:left, valign=:top)
+        for (idx, ((_, label, _), error_mhz)) in
+            enumerate(zip(freq_guides, error_guides_mhz))
+            Label(guide_key[idx + 1, 1], label;
+                font=font_math, fontsize=6 / 0.75,
+                halign=:left, valign=:top)
+            error_label = string(error_mhz >= 0 ? "+" : "−",
+                round(abs(error_mhz); digits=2))
+            Label(guide_key[idx + 1, 2], error_label;
+                font=font_math, fontsize=6 / 0.75,
+                color=:firebrick, halign=:right, valign=:top)
+        end
+        colgap!(guide_key, 7)
+        rowgap!(guide_key, 4)
+        colgap!(fig.layout, 10)
+        hlines!(ax, [0.0]; color=(:gray, 0.5), linewidth=0.15 * px_per_mm)
+        lines!(ax, error_data.frequency_mhz, error_data.error_mhz;
+            color=:black, linewidth=0.24 * px_per_mm,
+            linecap=:round, joinstyle=:round)
+        for (frequency_mhz, error_mhz) in zip(frequency_guides_mhz, error_guides_mhz)
+            lines!(ax, [frequency_mhz, frequency_mhz + error_mhz],
+                fill(y_axis_min_mhz + 0.15 * label_step_mhz, 2);
+                color=(:red, 0.5), linewidth=1.0 * px_per_mm,
+                linecap=:butt)
+        end
+        xlims!(ax, -750, 750)
+        ylims!(ax, y_axis_min_mhz, y_axis_max_mhz)
+        resize_to_layout!(fig)
+        mkpath(dirname(abspath(path_png)))
+        CairoMakie.save(path_png, fig; px_per_unit=4)
+        path_pdf = splitext(path_png)[1] * ".pdf"
+        try
+            CairoMakie.save(path_pdf, fig)
+        catch err
+            err isa Base.IOError &&
+                (occursin("EBUSY", sprint(showerror, err)) ||
+                 occursin("EACCES", sprint(showerror, err))) || rethrow()
+            path_pdf = splitext(path_png)[1] * "_new.pdf"
+            println("Could not replace the open PDF; saving the updated calibration error estimate to $path_pdf")
+            CairoMakie.save(path_pdf, fig)
+        end
+        println("Saved calibration error estimate to $path_png and $path_pdf")
+        return fig
+    finally
+        GLMakie.activate!()
+    end
+end
+
 function plot_ch1_signal(
     path_jld2::AbstractString,
     path_png::AbstractString,
@@ -2178,6 +2343,13 @@ for entry in entries_calibration
     calibrations_by_tag[tag_calibration] = calibration
 end
 fig_signal_calibrations = [calibration.fig for calibration in signal_calibration_data]
+haskey(calibrations_by_tag, "dsb") ||
+    throw(ArgumentError("Calibration error estimate needs calibration tag 'dsb'"))
+result_calibration_error_data = calc_calibration_error_estimate(calibrations_by_tag["dsb"])
+path_result_calibration_error_png = joinpath(dirname(path_data), "Result",
+    "result626_calibration_error_estimate.png")
+fig_result_calibration_error = plot_calibration_error_estimate(
+    result_calibration_error_data, path_result_calibration_error_png)
 path_spectrum_png = joinpath(path_data, "spectrum626_calibrated_spectrum.png")
 initial_spectrum_mode = "--spectrum-voltage" in ARGS ? :raw_voltage_overlay :
     "--spectrum-wide-only" in ARGS ? :normalized_wide_scan_only :

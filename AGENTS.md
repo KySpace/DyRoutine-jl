@@ -91,6 +91,7 @@ While a task is still in progress, mostly edit the latest relevant log entry ins
 - Prefer standard library or established package functions over custom implementations when they fit the task.
 - Use `@view` for non-copying array regions and broadcasting for elementwise operations.
 - For plotting, use mutating Makie-style helpers ending in `!` when they alter axes, figures, or layouts, such as `set_panel_solo_essn_2d!` and `draw_solo_essn_2d!`.
+- For Makie plot text, always typeset subscripts with `rich(..., subscript(...))`; do not use Unicode subscript characters, including for numbers.
 - Keep comments sparse and practical: short section comments for analysis stages are useful, while old exploratory plotting blocks may remain commented in scripts when they document active workflows.
 - For now, scripts may `include(joinpath(@__DIR__, "..", "src", "..."))`; future packaging should move these relationships behind modules.
 - In scripts, keep one-time workflow steps inline when they are short and their main purpose is to show the analysis flow. This includes simple conversion, packing/unpacking, selection masks, one-off cropping/centering passes, and final visualization steps. Prefer a named function only when the logic is reused, belongs in `src/`, or hiding it improves rather than obscures the script narrative.
