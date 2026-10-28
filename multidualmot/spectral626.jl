@@ -1,13 +1,16 @@
 using CSV
+using BSplineKit
 using GLMakie
 import CairoMakie
 using Colors
 using DataFrames
 using ImageFiltering
 using JLD2
+using LinearAlgebra
 using LsqFit
 using MAT
 using Peaks
+using Printf
 using Statistics
 using YAML
 
@@ -818,6 +821,191 @@ function find_monotone_cubic_time(spline, target_freq_mhz::Real)::Float64
     return (time_left_s + time_right_s) / 2
 end
 
+function calc_spline_value_with_linear_tails(spline, time_s::Real, bounds_time_s::Tuple{<:Real,<:Real})::Float64
+    time_min_s, time_max_s = bounds_time_s
+    if time_s < time_min_s
+        return spline(time_min_s) + (time_s - time_min_s) * (Derivative(1) * spline)(time_min_s)
+    elseif time_s > time_max_s
+        return spline(time_max_s) + (time_s - time_max_s) * (Derivative(1) * spline)(time_max_s)
+    end
+    return spline(time_s)
+end
+
+function calc_spline_calibrated_frequency(calibration, id_file::Integer, time_s::Real)::Float64
+    haskey(calibration.offset_by_file, id_file) ||
+        throw(ArgumentError("SDS$(lpad(string(id_file), 5, '0')) is absent from calibration '$(calibration.tag)'"))
+    freq_common_mhz = calc_spline_value_with_linear_tails(
+        calibration.spline_common, time_s, calibration.bounds_knots_s)
+    spline_error = calibration.error_splines_by_file[id_file]
+    freq_error_mhz = calc_spline_value_with_linear_tails(
+        spline_error, time_s, calibration.bounds_reference_by_file[id_file])
+    return freq_common_mhz + calibration.offset_by_file[id_file] + freq_error_mhz
+end
+
+function interpolate_natural_residual(
+    time_s::AbstractVector{<:Real}, residual_mhz::AbstractVector{<:Real})
+    if length(time_s) == 3
+        # BSplineKit 0.19.3 cannot evaluate a natural cubic with only three sites.
+        # Add a point on that same natural cubic, leaving its interpolation unchanged.
+        h_left_s, h_right_s = diff(time_s)
+        slope_left = (residual_mhz[2] - residual_mhz[1]) / h_left_s
+        slope_right = (residual_mhz[3] - residual_mhz[2]) / h_right_s
+        curvature_mid = 3(slope_right - slope_left) / (h_left_s + h_right_s)
+        time_mid_s = (time_s[1] + time_s[2]) / 2
+        residual_mid_mhz = (residual_mhz[1] + residual_mhz[2]) / 2 -
+            curvature_mid * h_left_s^2 / 16
+        return interpolate(
+            [time_s[1], time_mid_s, time_s[2], time_s[3]],
+            [residual_mhz[1], residual_mid_mhz, residual_mhz[2], residual_mhz[3]],
+            BSplineOrder(4), Natural())
+    end
+    return interpolate(time_s, residual_mhz, BSplineOrder(4), Natural())
+end
+
+function fit_spline_with_offset_and_error(
+    points_reference::AbstractVector, ids_file::AbstractVector{<:Integer},
+    knots_s::AbstractVector{<:Real}, regularisation::Real,
+)
+    length(knots_s) >= 2 && all(>(0), diff(knots_s)) ||
+        throw(ArgumentError("Calibration knots must be strictly increasing; got $knots_s"))
+    isfinite(regularisation) && regularisation >= 0 ||
+        throw(ArgumentError("Calibration regularisation must be finite and nonnegative; got $regularisation"))
+    length(unique(ids_file)) == length(ids_file) ||
+        throw(ArgumentError("Calibration source indices must be unique; got $ids_file"))
+    isempty(points_reference) && throw(ArgumentError("Calibration needs reference points"))
+    val_time_s = Float64[point.time_peak_s for point in points_reference]
+    val_freq_mhz = Float64[point.freq_mhz for point in points_reference]
+    all(isfinite, val_time_s) && all(isfinite, val_freq_mhz) ||
+        throw(ArgumentError("Calibration references must have finite times and frequencies"))
+    all(first(knots_s) <= time_s <= last(knots_s) for time_s in val_time_s) ||
+        throw(ArgumentError("Calibration knots $(extrema(knots_s)) must contain all detected reference times $(extrema(val_time_s))"))
+
+    basis_common = BSplineBasis(BSplineOrder(4), Float64.(knots_s))
+    n_basis = length(basis_common)
+    n_sources = length(ids_file)
+    mat_collocation = collocation_matrix(
+        basis_common, val_time_s, Derivative(0), Matrix{Float64})
+    flag_source = zeros(Float64, length(points_reference), n_sources - 1)
+    for (idx_point, point) in enumerate(points_reference)
+        idx_source = findfirst(==(point.id_file), ids_file)
+        isnothing(idx_source) && throw(ArgumentError("Unknown calibration source $(point.id_file)"))
+        idx_source > 1 && (flag_source[idx_point, idx_source - 1] = 1.0)
+    end
+    mat_design = hcat(mat_collocation, flag_source)
+    mat_curvature = Matrix(galerkin_matrix(
+        basis_common, (Derivative(2), Derivative(2))))
+    mat_normal = mat_design' * mat_design
+    @views mat_normal[1:n_basis, 1:n_basis] .+= regularisation .* mat_curvature
+    val_parameters = try
+        Symmetric(mat_normal) \ (mat_design' * val_freq_mhz)
+    catch err
+        throw(ArgumentError("Joint spline and source-offset fit failed: $err"))
+    end
+    all(isfinite, val_parameters) || throw(ArgumentError("Joint spline fit produced nonfinite coefficients"))
+    spline_common = Spline(basis_common, val_parameters[1:n_basis])
+    offset_by_file = Dict(id_file => (idx_source == 1 ? 0.0 : val_parameters[n_basis + idx_source - 1])
+        for (idx_source, id_file) in enumerate(ids_file))
+    error_splines_by_file = Dict{Int,Any}()
+    bounds_reference_by_file = Dict{Int,Tuple{Float64,Float64}}()
+    residual_by_file = Dict{Int,Vector{Float64}}()
+    for id_file in ids_file
+        points_file = sort(filter(point -> point.id_file == id_file, points_reference);
+            by=point -> point.time_peak_s)
+        val_time_file_s = Float64[point.time_peak_s for point in points_file]
+        length(val_time_file_s) >= 3 && all(>(0), diff(val_time_file_s)) ||
+            throw(ArgumentError("SDS$(lpad(string(id_file), 5, '0')) needs at least three distinct reference times for a natural cubic residual spline"))
+        val_residual_mhz = Float64[point.freq_mhz - spline_common(point.time_peak_s) - offset_by_file[id_file]
+            for point in points_file]
+        error_splines_by_file[id_file] = interpolate_natural_residual(
+            val_time_file_s, val_residual_mhz)
+        bounds_reference_by_file[id_file] = (first(val_time_file_s), last(val_time_file_s))
+        residual_by_file[id_file] = val_residual_mhz
+    end
+    return (; spline_common, offset_by_file, error_splines_by_file,
+        bounds_reference_by_file, residual_by_file,
+        bounds_knots_s=(Float64(first(knots_s)), Float64(last(knots_s))),
+        val_parameters, mat_collocation, flag_source, mat_curvature)
+end
+
+function plot_spline_with_offset_and_error_calibration(
+    path_png::AbstractString, tag_calibration::AbstractString,
+    points_reference::AbstractVector, ids_file::AbstractVector{<:Integer},
+    knots_s::AbstractVector{<:Real}, regularisation::Real,
+)
+    fit = fit_spline_with_offset_and_error(points_reference, ids_file, knots_s, regularisation)
+    calibration = (; tag=String(tag_calibration), model=:spline_with_offset_and_error,
+        points_reference, ids_file, fit...)
+    fig = Figure(size=(1450, 1600), fontsize=20)
+    ax_common = Axis(fig[1, 1]; width=1150, height=570,
+        title="Signal 626 time–frequency calibration: $tag_calibration",
+        xlabel="Aligned time (s)", ylabel="Offset-compensated frequency (MHz)")
+    ax_error = Axis(fig[2, 1]; width=1150, height=260,
+        xlabel="Aligned time (s)", ylabel="Source residual (MHz)")
+    ax_disagreement = Axis(fig[3, 1]; width=1150, height=230,
+        xlabel="First-source frequency (MHz)", ylabel="Maximum source disagreement (MHz)")
+    val_time_plot_s = range(first(knots_s), last(knots_s); length=900)
+    lines!(ax_common, val_time_plot_s, fit.spline_common.(val_time_plot_s);
+        color=:black, linewidth=3, label="Common cubic B-spline")
+    hlines!(ax_error, [0.0]; color=(:black, 0.35), linewidth=1)
+    bounds_reference_s = extrema(point.time_peak_s for point in points_reference)
+    for (idx_source, id_file) in enumerate(ids_file)
+        points_file = sort(filter(point -> point.id_file == id_file, points_reference);
+            by=point -> point.time_peak_s)
+        val_time_file_s = [point.time_peak_s for point in points_file]
+        val_freq_file_mhz = [point.freq_mhz for point in points_file]
+        color_file = oklch_to_rgb(mod(24 + (idx_source - 1) * 360 / length(ids_file), 360), 0.60, 0.15)
+        name_file = "SDS$(lpad(string(id_file), 5, '0'))"
+        str_offset_mhz = @sprintf("%+.3f", fit.offset_by_file[id_file])
+        scatter!(ax_common, val_time_file_s, val_freq_file_mhz .- fit.offset_by_file[id_file];
+            color=color_file, markersize=18, label="$name_file  a=$str_offset_mhz MHz")
+        val_time_error_s = range(first(val_time_file_s), last(val_time_file_s); length=350)
+        lines!(ax_error, val_time_error_s,
+            fit.error_splines_by_file[id_file].(val_time_error_s);
+            color=color_file, linewidth=2)
+        scatter!(ax_error, val_time_file_s, fit.residual_by_file[id_file];
+            color=color_file, markersize=13)
+        for (time_start_s, time_stop_s) in (
+            (first(bounds_reference_s), first(val_time_file_s)),
+            (last(val_time_file_s), last(bounds_reference_s)))
+            time_start_s < time_stop_s || continue
+            val_time_tail_s = range(time_start_s, time_stop_s; length=160)
+            val_residual_tail_mhz = [calc_spline_value_with_linear_tails(
+                fit.error_splines_by_file[id_file], time_s,
+                fit.bounds_reference_by_file[id_file]) for time_s in val_time_tail_s]
+            lines!(ax_error, val_time_tail_s, val_residual_tail_mhz;
+                color=color_file, linewidth=1.5, linestyle=:dash)
+        end
+        println("Calibration '$tag_calibration' $name_file: offset=$(fit.offset_by_file[id_file]) MHz; $(length(points_file)) exact references")
+    end
+    text!(ax_error, 0.98, 0.95; text="Dashed: linear extrapolation",
+        space=:relative, align=(:right, :top), fontsize=14)
+    val_time_disagreement_s = range(bounds_reference_s...; length=900)
+    mat_residual_mhz = [calc_spline_value_with_linear_tails(
+        fit.error_splines_by_file[id_file], time_s,
+        fit.bounds_reference_by_file[id_file])
+        for time_s in val_time_disagreement_s, id_file in ids_file]
+    val_offset_mhz = [fit.offset_by_file[id_file] for id_file in ids_file]
+    mat_correction_mhz = mat_residual_mhz .+ reshape(val_offset_mhz, 1, :)
+    val_disagreement_residual_mhz = vec(
+        maximum(mat_residual_mhz; dims=2) .- minimum(mat_residual_mhz; dims=2))
+    val_disagreement_full_mhz = vec(
+        maximum(mat_correction_mhz; dims=2) .- minimum(mat_correction_mhz; dims=2))
+    val_freq_first_mhz = [calc_spline_calibrated_frequency(
+        calibration, first(ids_file), time_s) for time_s in val_time_disagreement_s]
+    lines!(ax_disagreement, val_freq_first_mhz, val_disagreement_full_mhz;
+        color=:black, linewidth=2.5, label="Full model: offset + residual")
+    lines!(ax_disagreement, val_freq_first_mhz, val_disagreement_residual_mhz;
+        color=:royalblue, linewidth=2.5, linestyle=:dash, label="Residual only")
+    axislegend(ax_common; position=:rt, framevisible=false)
+    axislegend(ax_disagreement; position=:ct, framevisible=false)
+    mkpath(dirname(abspath(path_png)))
+    save(path_png, fig; backend=CairoMakie, px_per_unit=2)
+    println("Calibration '$tag_calibration': $(length(fit.val_parameters)) parameters, regularisation=$regularisation; maximum full-model disagreement=$(maximum(val_disagreement_full_mhz)) MHz; maximum residual-only disagreement=$(maximum(val_disagreement_residual_mhz)) MHz")
+    val_disagreement_mhz = val_disagreement_full_mhz
+    return (; calibration..., fig, val_time_disagreement_s, val_freq_first_mhz,
+        val_disagreement_mhz, val_disagreement_full_mhz, val_disagreement_residual_mhz)
+end
+
 function plot_monotone_cubic_calibration(
     path_png::AbstractString, tag_calibration::AbstractString,
     points_reference::AbstractVector, ids_file::AbstractVector{<:Integer},
@@ -893,8 +1081,8 @@ function plot_signal_frequency_calibration(
 )
     tag_calibration = String(entry_calibration["tag"])
     model = Symbol(lowercase(String(get(entry_calibration, "model", "p4"))))
-    model in (:p4, :cubicspline) ||
-        throw(ArgumentError("Calibration '$tag_calibration' has unknown model '$model'; expected p4 or cubicspline"))
+    model in (:p4, :cubicspline, :spline_with_offset_and_error) ||
+        throw(ArgumentError("Calibration '$tag_calibration' has unknown model '$model'; expected p4, cubicspline, or spline_with_offset_and_error"))
     entries_source = entry_calibration["source"]
     isempty(entries_source) && throw(ArgumentError("Calibration '$tag_calibration' has no sources"))
 
@@ -927,6 +1115,14 @@ function plot_signal_frequency_calibration(
     end
 
     ids_file = unique([point.id_file for point in points_reference])
+    length(ids_file) == length(entries_source) ||
+        throw(ArgumentError("Calibration '$tag_calibration' has duplicate or empty source indices"))
+    if model == :spline_with_offset_and_error
+        knots_s = Float64.(entry_calibration["knots"])
+        regularisation = Float64(entry_calibration["regularisation"])
+        return plot_spline_with_offset_and_error_calibration(
+            path_png, tag_calibration, points_reference, ids_file, knots_s, regularisation)
+    end
     if model == :cubicspline
         extrapolation = Symbol(lowercase(String(get(entry_calibration, "extrapolation", "linear"))))
         return plot_monotone_cubic_calibration(
@@ -1280,12 +1476,15 @@ function calc_calibrated_spectrum(
         haskey(calibrations_by_tag, tag_calibration) ||
             throw(ArgumentError("Spectrum '$(entry["tag"])' selects unknown calibration '$tag_calibration'"))
         calibration = calibrations_by_tag[tag_calibration]
+        is_joint_spline = calibration.model == :spline_with_offset_and_error
         is_spline = calibration.model == :cubicspline
-        val_p_shape = is_spline ? nothing : calibration.val_p_shape
-        alpha_by_file = is_spline ? nothing : calibration.alpha_by_file
+        val_p_shape = is_spline || is_joint_spline ? nothing : calibration.val_p_shape
+        alpha_by_file = is_spline || is_joint_spline ? nothing : calibration.alpha_by_file
         id_file = Int(entry["index"])
         name_file = "SDS$(lpad(string(id_file), 5, '0'))"
         tag = String(entry["tag"])
+        is_joint_spline && !haskey(calibration.offset_by_file, id_file) &&
+            throw(ArgumentError("Spectrum '$tag' uses $name_file, which is absent from calibration '$tag_calibration'"))
         path_jld2 = joinpath(path_data, "$name_file.jld2")
         isfile(path_jld2) || throw(ArgumentError("JLD2 cache does not exist: $path_jld2"))
         payload = JLD2.load(path_jld2)
@@ -1294,6 +1493,16 @@ function calc_calibrated_spectrum(
         time_s = calc_time_axis(payload["metadata_lines"], length(ch2_v))
         time_alignment_zero_s = find_ch1_alignment_zero_crossing(ch1_v, time_s)
         time_aligned_s = time_s .- time_alignment_zero_s
+        if is_joint_spline
+            frequency_mhz = [calc_spline_calibrated_frequency(calibration, id_file, t)
+                for t in time_aligned_s]
+            ids_in_range = findall(freq -> freq_min_mhz <= freq <= freq_max_mhz, frequency_mhz)
+            isempty(ids_in_range) && throw(ArgumentError("Calibrated spectrum for $name_file misses the plotted frequency range"))
+            ids_trace = first(ids_in_range):last(ids_in_range)
+            all(<(0), diff(@view frequency_mhz[ids_trace])) ||
+                throw(ArgumentError("Calibrated frequency for $name_file is not strictly decreasing over the plotted range"))
+            println("$name_file ($tag): using common spline, offset $(calibration.offset_by_file[id_file]) MHz, and its natural residual spline")
+        else
         points_reference = NamedTuple[]
         for peak_config in entry["peaks"]
             get(peak_config, "ref", false) === true || continue
@@ -1372,6 +1581,7 @@ function calc_calibrated_spectrum(
             ids_trace = find_monotonic_frequency_indices(
                 time_relative_s, frequency_mhz, val_p_shape, freq_min_mhz, freq_max_mhz)
         end
+        end
         frequency_trace = frequency_mhz[ids_trace]
         signal_trace_v = ch2_v[ids_trace]
         val_ch2_baseline_v = calc_mean_excluding_top_fraction(signal_trace_v, 0.01)
@@ -1425,11 +1635,20 @@ function calc_calibrated_spectrum(
                     rows_grid, cols_grid, idx_spectrum))
                 println("$name_file ($tag): overlaying $name_mat group_data.$name_case over $(round(extrema(frequency_fine_mhz)[1]; digits=3))…$(round(extrema(frequency_fine_mhz)[2]; digits=3)) MHz")
             end
-            is_reference = get(peak_config, "ref", false) === true
+            is_reference = !is_joint_spline && get(peak_config, "ref", false) === true
             time_config = get(peak_config, "time", nothing)
             has_time = !is_missing_config_value(time_config)
             is_exact_time = time_config isa AbstractString && lowercase(strip(time_config)) == "exact"
-            if is_reference
+            if is_joint_spline
+                haskey(peak_config, "freq") ||
+                    throw(ArgumentError("Spectrum peak for $name_file needs a frequency: $peak_config"))
+                target_frequency_mhz = Float64(peak_config["freq"])
+                idx_trace_peak = find_local_peak_near_frequency(
+                    @view(ch2_v[ids_trace]),
+                    @view(frequency_mhz[ids_trace]),
+                    target_frequency_mhz, 5.0)
+                idx_peak = first(ids_trace) - 1 + idx_trace_peak
+            elseif is_reference
                 has_time && !is_exact_time ||
                     throw(ArgumentError("Reference peak for $name_file needs a numeric time: $peak_config"))
                 time_config_s = Float64(time_config)
@@ -2178,6 +2397,7 @@ for entry in entries_calibration
     calibrations_by_tag[tag_calibration] = calibration
 end
 fig_signal_calibrations = [calibration.fig for calibration in signal_calibration_data]
+fig_calibration = fig_signal_calibrations
 path_spectrum_png = joinpath(path_data, "spectrum626_calibrated_spectrum.png")
 initial_spectrum_mode = "--spectrum-voltage" in ARGS ? :raw_voltage_overlay :
     "--spectrum-wide-only" in ARGS ? :normalized_wide_scan_only :
