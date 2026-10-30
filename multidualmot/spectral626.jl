@@ -1513,11 +1513,17 @@ function draw_fine_scan_panels!(gl_fine_scan::GridLayout, traces_fine_scan::Abst
     return nothing
 end
 
+function read_spectrum_config(path_config::AbstractString)
+    source = read(path_config, String)
+    source = replace(source, r"(\b(?:xlims|ylims)\s*:\s*)(\([^()\r\n]*,[^()\r\n]*\))" => s"\1'\2'")
+    return YAML.load(source)
+end
+
 function calc_calibrated_spectrum(
     path_data::AbstractString,
     calibrations_by_tag::AbstractDict,
 )
-    config = YAML.load_file(joinpath(path_data, "config.yaml"))
+    config = read_spectrum_config(joinpath(path_data, "config.yaml"))
     entries_spectrum = get(config, "spectrum", nothing)
     isnothing(entries_spectrum) && throw(ArgumentError("No 'spectrum' section in config.yaml"))
 
@@ -2433,16 +2439,31 @@ function calc_result_fine_data(path_data::AbstractString, spectrum_data::NamedTu
     plots = get(entry_result_fine, "plots", nothing)
     plots isa AbstractVector && !isempty(plots) ||
         throw(ArgumentError("result_fine needs a nonempty plots list"))
-    xlimits_relative_mhz = parse_result_fine_limits(config_common["xlims"], "xlims")
-    width_mm = parse_result_fine_mm(config_common["width"], "width")
-    xticks_relative_mhz = [parse_result_fine_number(value, "xticks")
-        for value in config_common["xticks"]]
-    isempty(xticks_relative_mhz) &&
-        throw(ArgumentError("result_fine xticks cannot be empty"))
-
     result_fine_data = NamedTuple[]
-    for entry in plots
+    columns_config = Tuple{Symbol,Any}[]
+    for group in plots
+        group isa AbstractDict && length(group) == 1 ||
+            throw(ArgumentError("Each result_fine group must have exactly one solo or pair key"))
+        key, entries = only(collect(pairs(group)))
+        key in ("solo", "pair") && entries isa AbstractVector && !isempty(entries) ||
+            throw(ArgumentError("Result fine groups need a nonempty solo or pair list"))
+        if key == "solo"
+            append!(columns_config, [(:solo, [entry]) for entry in entries])
+        else
+            length(entries) == 2 || throw(ArgumentError("Each result fine pair needs exactly two plots"))
+            push!(columns_config, (:pair, entries))
+        end
+    end
+    for (kind, entries) in columns_config
+      axes_data = NamedTuple[]
+      for entry_original in entries
+        entry_original isa AbstractDict || throw(ArgumentError("Each result_fine plot must be a mapping"))
+        entry = merge(config_common, entry_original)
         entry isa AbstractDict || throw(ArgumentError("Each result_fine plot must be a mapping"))
+        xlimits_relative_mhz = parse_result_fine_limits(entry, "xlims")
+        width_mm = parse_result_fine_mm(entry["width"], "width")
+        xticks_relative_mhz = [parse_result_fine_number(value, "xticks") for value in entry["xticks"]]
+        isempty(xticks_relative_mhz) && throw(ArgumentError("result_fine xticks cannot be empty"))
         frequency_center_mhz = parse_result_fine_number(entry["freq_cent"], "freq_cent")
         tag = String(entry["tag"])
         isempty(strip(tag)) && throw(ArgumentError("Result fine plot tag cannot be empty"))
@@ -2474,7 +2495,7 @@ function calc_result_fine_data(path_data::AbstractString, spectrum_data::NamedTu
             for value in get(entry, "yminorticks", get(config_common, "yminorticks", []))]
         isempty(yticks_display) &&
             throw(ArgumentError("Result fine '$tag' yticks cannot be empty"))
-        push!(result_fine_data, (; tag, frequency_center_mhz, name_mat, name_case,
+        push!(axes_data, (; tag, frequency_center_mhz, name_mat, name_case,
             frequency_mhz=frequency_resampled_mhz,
             amplitude_au=amplitude_resampled_au,
             color_line=trace.color_line, width_mm, height_mm, yscale, exponent,
@@ -2487,6 +2508,8 @@ function calc_result_fine_data(path_data::AbstractString, spectrum_data::NamedTu
             yticks_au=yticks_display .* yscale,
             yminorticks_au=yminorticks_display .* yscale,
             ytick_labels=[replace(string(value), '-' => '−') for value in entry["yticks"]]))
+      end
+      push!(result_fine_data, (; kind, axes=axes_data))
     end
     return result_fine_data
 end
@@ -2496,37 +2519,42 @@ function plot_result_fine_grid(result_fine_data::AbstractVector,
     isempty(result_fine_data) && throw(ArgumentError("Result fine grid needs at least one plot"))
     CairoMakie.activate!()
     try
-        px_per_mm = 96 / 25.4
+        px_per_mm = 100.0
+        scale_layout = px_per_mm / (96 / 25.4)
         font_axis = "Times New Roman"
-        fig = Figure(fontsize=7 / 0.75, figure_padding=(4, 4, 4, 18), rowgap=18)
-        n_cols = 3
+        fig = Figure(fontsize=7 / 0.75 * scale_layout,
+            figure_padding=Tuple(value * scale_layout for value in (20, 4, 4, 18)),
+            rowgap=30 * scale_layout, colgap=24 * scale_layout)
         axes_scale = []
-        for (idx, data) in enumerate(result_fine_data)
-            idx_row = cld(idx, n_cols)
-            idx_col = mod1(idx, n_cols)
-            ax = Axis(fig[idx_row, idx_col];
+        for (idx_col, column) in enumerate(result_fine_data)
+            grid_column = GridLayout()
+            fig[1, idx_col] = grid_column
+            for (idx_row, data) in enumerate(column.axes)
+            ax = Axis(grid_column[idx_row, 1];
                 width=data.width_mm * px_per_mm,
                 height=data.height_mm * px_per_mm,
                 valign=:top,
+                xticklabelsvisible=!(column.kind == :pair && idx_row == 1),
                 xlabelfont=font_axis, ylabelfont=font_axis,
                 xticklabelfont=font_axis, yticklabelfont=font_axis,
-                xticklabelsize=6 / 0.75, yticklabelsize=6 / 0.75,
+                xticklabelsize=6 / 0.75 * scale_layout, yticklabelsize=6 / 0.75 * scale_layout,
+                xticklabelpad=3 * scale_layout, yticklabelpad=3 * scale_layout,
                 xticks=(data.xticks_mhz, data.xtick_labels),
                 xminorticks=data.xminorticks_mhz,
                 yticks=(data.yticks_au, data.ytick_labels),
                 yminorticks=data.yminorticks_au,
                 xminorticksvisible=!isempty(data.xminorticks_mhz),
                 yminorticksvisible=!isempty(data.yminorticks_au),
-                xticksize=10 / 3, yticksize=10 / 3,
-                xminorticksize=2, yminorticksize=2,
+                xticksize=10 / 3 * scale_layout, yticksize=10 / 3 * scale_layout,
+                xminorticksize=2 * scale_layout, yminorticksize=2 * scale_layout,
                 xtickalign=1, ytickalign=1,
                 xminortickalign=1, yminortickalign=1,
                 xticksmirrored=true, yticksmirrored=true,
                 xgridvisible=false, ygridvisible=false,
                 xminorgridvisible=false, yminorgridvisible=false,
-                spinewidth=0.75,
-                xtickwidth=0.75, ytickwidth=0.75,
-                xminortickwidth=0.75, yminortickwidth=0.75)
+                spinewidth=0.75 * scale_layout,
+                xtickwidth=0.75 * scale_layout, ytickwidth=0.75 * scale_layout,
+                xminortickwidth=0.75 * scale_layout, yminortickwidth=0.75 * scale_layout)
             lines!(ax, data.frequency_mhz, data.amplitude_au;
                 color=data.color_line, linewidth=0.24 * px_per_mm,
                 linecap=:round, joinstyle=:round)
@@ -2535,19 +2563,24 @@ function plot_result_fine_grid(result_fine_data::AbstractVector,
             if data.exponent != 0
                 push!(axes_scale, (ax=ax, exponent=data.exponent))
             end
+            end
+            rowgap!(grid_column, 9 * scale_layout)
         end
+        rowgap!(fig.layout, 30 * scale_layout)
+        colgap!(fig.layout, 24 * scale_layout)
         resize_to_layout!(fig)
         for item in axes_scale
             area_axis = item.ax.scene.viewport[]
-            text!(fig.scene, area_axis.origin[1] - 4, area_axis.origin[2] + area_axis.widths[2] + 2;
+            text!(fig.scene, area_axis.origin[1] - 4 * scale_layout,
+                area_axis.origin[2] + area_axis.widths[2] + 0 * scale_layout;
                 text=rich("10", superscript(replace(string(item.exponent), '-' => '−'))),
                 space=:pixel, align=(:right, :bottom),
-                color=:black, font=font_axis, fontsize=6 / 0.75)
+                color=:black, font=font_axis, fontsize=6 / 0.75 * scale_layout)
         end
         mkpath(dirname(abspath(path_png)))
-        CairoMakie.save(path_png, fig; px_per_unit=4)
+        CairoMakie.save(path_png, fig; px_per_unit=4 / scale_layout)
         path_pdf = splitext(path_png)[1] * ".pdf"
-        CairoMakie.save(path_pdf, fig)
+        CairoMakie.save(path_pdf, fig; pt_per_unit=0.75 / scale_layout)
         println("Saved result fine grid to $path_png and $path_pdf")
         return fig
     finally
@@ -2679,7 +2712,7 @@ count(arg -> arg in ("--spectrum-voltage", "--spectrum-normalized",
 path_data = isempty(args_data) ? path_data_root : abspath(args_data[1])
 path_config = joinpath(path_data, "config.yaml")
 isfile(path_config) || throw(ArgumentError("Spectrum config does not exist: $path_config"))
-config = YAML.load_file(path_config)
+config = read_spectrum_config(path_config)
 if "--skip-conversion" in ARGS
     println("Skipping CSV conversion; using existing JLD2 caches in $path_data")
 else

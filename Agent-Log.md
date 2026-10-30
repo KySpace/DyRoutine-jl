@@ -637,3 +637,9 @@
 
 - Request: Remove the multiplication sign from fine-scan power-of-ten labels, place them above the y tick labels outside each axis, resample fine scans at 0.05 MHz while retaining each maximum, omit panel titles, and use mathematical minus signs.
   Brief: Updated `multidualmot/spectral626.jl` to linearly resample each normalized fine scan with its original maximum and endpoint included, draw right-aligned scale labels outside the axes, omit titles, and normalize negative tick labels. Updated `multidualmot/Note.Spectral626.md`. Verified maximum preservation for all 19 configured real scans, visually checked the grid, and regenerated the PNG/PDF in Data/Result.
+
+- Request: Fix inconsistent fine-scan grid axis dimensions and explain Makie's rounding.
+  Brief: Increased the fine-grid layout coordinate scale to 100 units/mm and adjusted Cairo export and styling to retain physical sizes, with explicitly scaled grid spacing. Viewport checks across all 19 configured real scans showed 2000 × 1600 or 2000 × 600 units, corresponding to 20 × 16 or 20 × 6 mm. Visually checked and exported the updated grid PNG/PDF to Data/Result; updated `multidualmot/Note.Spectral626.md`.
+
+- Request: Arrange result_fine solo plots and two-axis pairs as individual columns in one row, hide upper pair x tick labels, and allow each plot to override config_common.
+  Brief: Updated spectrum configuration loading to preserve unquoted parenthesized limit pairs in YAML flow mappings, expanded solo and pair groups into ordered columns, merged per-plot settings over common defaults, and drew pairs in nested grids with fixed configured axis dimensions. Updated `multidualmot/Note.Spectral626.md`. Generated and visually inspected the real-data grid; verified 11 columns, eight pairs, 19 fixed axis frames, upper-label visibility, and the configured 12 mm width and x-limit overrides. Exported the PNG/PDF to Data/Result.
