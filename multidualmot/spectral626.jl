@@ -831,6 +831,13 @@ function calc_spline_value_with_linear_tails(spline, time_s::Real, bounds_time_s
     return spline(time_s)
 end
 
+function calc_spline_slope_with_linear_tails(spline, time_s::Real,
+    bounds_time_s::Tuple{<:Real,<:Real})::Float64
+    time_min_s, time_max_s = bounds_time_s
+    time_eval_s = clamp(time_s, time_min_s, time_max_s)
+    return (Derivative(1) * spline)(time_eval_s)
+end
+
 function calc_spline_calibrated_frequency(calibration, id_file::Integer, time_s::Real)::Float64
     haskey(calibration.offset_by_file, id_file) ||
         throw(ArgumentError("SDS$(lpad(string(id_file), 5, '0')) is absent from calibration '$(calibration.tag)'"))
@@ -840,6 +847,41 @@ function calc_spline_calibrated_frequency(calibration, id_file::Integer, time_s:
     freq_error_mhz = calc_spline_value_with_linear_tails(
         spline_error, time_s, calibration.bounds_reference_by_file[id_file])
     return freq_common_mhz + calibration.offset_by_file[id_file] + freq_error_mhz
+end
+
+function calc_spline_calibrated_slope(calibration, id_file::Integer, time_s::Real)::Float64
+    haskey(calibration.offset_by_file, id_file) ||
+        throw(ArgumentError("SDS$(lpad(string(id_file), 5, '0')) is absent from calibration '$(calibration.tag)'"))
+    slope_common_mhz_per_s = calc_spline_slope_with_linear_tails(
+        calibration.spline_common, time_s, calibration.bounds_knots_s)
+    slope_error_mhz_per_s = calc_spline_slope_with_linear_tails(
+        calibration.error_splines_by_file[id_file], time_s,
+        calibration.bounds_reference_by_file[id_file])
+    return slope_common_mhz_per_s + slope_error_mhz_per_s
+end
+
+function calc_reference_source_uncertainty(calibration::NamedTuple)::Vector{NamedTuple}
+    points_by_frequency = Dict{Float64,Vector{NamedTuple}}()
+    for point in calibration.points_reference
+        push!(get!(points_by_frequency, point.freq_mhz, NamedTuple[]), point)
+    end
+    source_uncertainty = NamedTuple[]
+    for (frequency_mhz, points) in points_by_frequency
+        length(unique(point.id_file for point in points)) >= 2 || continue
+        point_first = first(points)
+        bounds_time_s = extrema(point.time_peak_s for point in points)
+        spread_time_s = bounds_time_s[2] - bounds_time_s[1]
+        slope_mhz_per_s = calc_spline_calibrated_slope(
+            calibration, point_first.id_file, point_first.time_peak_s)
+        uncertainty_mhz = spread_time_s * abs(slope_mhz_per_s)
+        frequency_first_mhz = calc_spline_calibrated_frequency(
+            calibration, point_first.id_file, point_first.time_peak_s)
+        push!(source_uncertainty, (; frequency_mhz, frequency_first_mhz,
+            spread_time_s, slope_mhz_per_s, uncertainty_mhz,
+            ids_source=sort!(unique(point.id_file for point in points))))
+    end
+    sort!(source_uncertainty; by=item -> item.frequency_first_mhz)
+    return source_uncertainty
 end
 
 function interpolate_natural_residual(
@@ -935,6 +977,7 @@ function plot_spline_with_offset_and_error_calibration(
     fit = fit_spline_with_offset_and_error(points_reference, ids_file, knots_s, regularisation)
     calibration = (; tag=String(tag_calibration), model=:spline_with_offset_and_error,
         points_reference, ids_file, fit...)
+    source_uncertainty = calc_reference_source_uncertainty(calibration)
     fig = Figure(size=(1450, 1600), fontsize=20)
     ax_common = Axis(fig[1, 1]; width=1150, height=570,
         title="Signal 626 time–frequency calibration: $tag_calibration",
@@ -996,6 +1039,18 @@ function plot_spline_with_offset_and_error_calibration(
         color=:black, linewidth=2.5, label="Full model: offset + residual")
     lines!(ax_disagreement, val_freq_first_mhz, val_disagreement_residual_mhz;
         color=:royalblue, linewidth=2.5, linestyle=:dash, label="Residual only")
+    if !isempty(source_uncertainty)
+        vlines!(ax_disagreement, [item.frequency_first_mhz for item in source_uncertainty];
+            color=(:gray50, 0.45), linewidth=1.5)
+        scatter!(ax_disagreement,
+            [item.frequency_first_mhz for item in source_uncertainty],
+            [item.uncertainty_mhz for item in source_uncertainty];
+            color=:darkorange, markersize=12,
+            label="Reference time spread × |model slope|")
+        for item in source_uncertainty
+            println("Calibration '$tag_calibration' $(item.frequency_mhz) MHz: sources $(item.ids_source), timestamp spread=$(item.spread_time_s) s, first-source slope=$(item.slope_mhz_per_s) MHz/s, frequency uncertainty=$(item.uncertainty_mhz) MHz")
+        end
+    end
     axislegend(ax_common; position=:rt, framevisible=false)
     axislegend(ax_disagreement; position=:ct, framevisible=false)
     mkpath(dirname(abspath(path_png)))
@@ -1003,7 +1058,8 @@ function plot_spline_with_offset_and_error_calibration(
     println("Calibration '$tag_calibration': $(length(fit.val_parameters)) parameters, regularisation=$regularisation; maximum full-model disagreement=$(maximum(val_disagreement_full_mhz)) MHz; maximum residual-only disagreement=$(maximum(val_disagreement_residual_mhz)) MHz")
     val_disagreement_mhz = val_disagreement_full_mhz
     return (; calibration..., fig, val_time_disagreement_s, val_freq_first_mhz,
-        val_disagreement_mhz, val_disagreement_full_mhz, val_disagreement_residual_mhz)
+        val_disagreement_mhz, val_disagreement_full_mhz, val_disagreement_residual_mhz,
+        source_uncertainty)
 end
 
 function plot_monotone_cubic_calibration(
@@ -2054,7 +2110,16 @@ function calc_resampled_result(
             peak_tag = String(peak_config["tag"])
             isempty(strip(peak_tag)) &&
                 throw(ArgumentError("Result peak tag for '$tag' cannot be empty"))
-            push!(peaks_result, (frequency_mhz=Float64(frequency_config), tag=peak_tag))
+            tag_symb_config = get(peak_config, "tag_symb", nothing)
+            tag_symb_config === nothing ||
+                (tag_symb_config isa AbstractVector &&
+                1 <= length(tag_symb_config) <= 2 &&
+                all(value -> value isa AbstractString && !isempty(strip(value)), tag_symb_config)) ||
+                throw(ArgumentError("Result peak tag_symb for '$tag' at $frequency_config MHz must be one or two nonempty strings"))
+            tag_symb = isnothing(tag_symb_config) ? nothing :
+                String.(replace.(tag_symb_config, '-' => '−'))
+            push!(peaks_result, (frequency_mhz=Float64(frequency_config),
+                tag=peak_tag, tag_symb))
         end
 
         ids_valid = findall(isfinite, trace.signal_replaced)
@@ -2130,7 +2195,8 @@ function plot_normalized_replaced_result(
     try
         px_per_mm = 96 / 25.4
         font_axis = "Times New Roman"
-        fig = Figure(fontsize=8 / 0.75, figure_padding=4)
+        font_math = "NewComputerModern Math"
+        fig = Figure(fontsize=8 / 0.75, figure_padding=(4, 4, 4, 20))
         ax = Axis(fig[1, 1];
             width=60 * px_per_mm,
             height=34 * px_per_mm,
@@ -2157,8 +2223,9 @@ function plot_normalized_replaced_result(
             xminortickwidth=0.75, yminortickwidth=0.75)
         line_width_px = 0.24 * px_per_mm
         for trace in traces_resampled, peak in trace.peaks_result
+            isnothing(peak.tag_symb) && continue
             vlines!(ax, [peak.frequency_mhz];
-                color=(trace.color_line, 0.4), linestyle=:dash,
+                color=(colorant"#939dac", 0.4), linestyle=:dash,
                 linewidth=0.18 * px_per_mm)
         end
         legend_lines = Any[]
@@ -2171,24 +2238,8 @@ function plot_normalized_replaced_result(
             push!(legend_tags, trace.tag)
         end
         peaks_marked = [(trace=trace, peak=peak) for trace in traces_resampled
-            for peak in trace.peaks_result]
+            for peak in trace.peaks_result if !isnothing(peak.tag_symb)]
         sort!(peaks_marked; by=item -> item.peak.frequency_mhz)
-        last_frequency_by_lane = Float64[]
-        for item in peaks_marked
-            frequency_mhz = item.peak.frequency_mhz
-            lane = findfirst(last_frequency ->
-                frequency_mhz - last_frequency >= 60, last_frequency_by_lane)
-            if isnothing(lane)
-                push!(last_frequency_by_lane, frequency_mhz)
-                lane = length(last_frequency_by_lane)
-            else
-                last_frequency_by_lane[lane] = frequency_mhz
-            end
-            text!(ax, frequency_mhz, 0.07 + 0.32 * (lane - 1);
-                text=item.peak.tag, rotation=π / 2,
-                align=(:left, :center), color=item.trace.color_line,
-                font=font_axis, fontsize=5 / 0.75)
-        end
         xlims!(ax, -750, 750)
         ylims!(ax, -0.05, 1.10)
         axislegend(ax, legend_lines, legend_tags;
@@ -2196,6 +2247,18 @@ function plot_normalized_replaced_result(
             labelsize=7 / 0.75, labelfont=font_axis,
             patchsize=(8, 6), margin=(1, 1, 1, 1), padding=(4, 4, 4, 4))
         resize_to_layout!(fig)
+        area_axis = ax.scene.viewport[]
+        for item in peaks_marked
+            tag_symb = item.peak.tag_symb
+            label = length(tag_symb) == 1 ? rich(tag_symb[1]) :
+                rich(tag_symb[1], superscript(tag_symb[2]))
+            pos_x = area_axis.origin[1] +
+                (item.peak.frequency_mhz + 750) / 1500 * area_axis.widths[1]
+            pos_y = area_axis.origin[2] + area_axis.widths[2] + 3
+            text!(fig.scene, pos_x, pos_y;
+                text=label, space=:pixel, align=(:center, :bottom),
+                color=:black, font=font_math, fontsize=7 / 0.75)
+        end
         mkpath(dirname(abspath(path_png)))
         CairoMakie.save(path_png, fig; px_per_unit=4)
         path_pdf = splitext(path_png)[1] * ".pdf"
