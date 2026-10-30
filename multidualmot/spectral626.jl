@@ -1688,7 +1688,7 @@ function calc_calibrated_spectrum(
                     frequency_coarse_fine, signal_coarse_fine_v, val_ch2_baseline_v,
                     val_fine_baseline_v,
                     color_line, tag, peak_tag, target_frequency_mhz,
-                    rows_grid, cols_grid, idx_spectrum))
+                    rows_grid, cols_grid, idx_spectrum, name_mat, name_case))
                 println("$name_file ($tag): overlaying $name_mat group_data.$name_case over $(round(extrema(frequency_fine_mhz)[1]; digits=3))…$(round(extrema(frequency_fine_mhz)[2]; digits=3)) MHz")
             end
             is_reference = !is_joint_spline && get(peak_config, "ref", false) === true
@@ -2188,9 +2188,12 @@ end
 function plot_normalized_replaced_result(
     traces_resampled::AbstractVector,
     path_png::AbstractString,
+    ; axis_width_mm::Real=60, axis_height_mm::Real=34,
 )::Figure
     isempty(traces_resampled) &&
         throw(ArgumentError("Normalized replaced result needs at least one trace"))
+    all(value -> isfinite(value) && value > 0, (axis_width_mm, axis_height_mm)) ||
+        throw(ArgumentError("Result axis dimensions must be finite and positive; got $(axis_width_mm) × $(axis_height_mm) mm"))
     CairoMakie.activate!()
     try
         px_per_mm = 96 / 25.4
@@ -2198,8 +2201,8 @@ function plot_normalized_replaced_result(
         font_math = "NewComputerModern Math"
         fig = Figure(fontsize=8 / 0.75, figure_padding=(4, 4, 4, 20))
         ax = Axis(fig[1, 1];
-            width=60 * px_per_mm,
-            height=34 * px_per_mm,
+            width=axis_width_mm * px_per_mm,
+            height=axis_height_mm * px_per_mm,
             xlabel="Frequency (MHz)",
             ylabel="Spectrum signal (a.u.)",
             xlabelfont=font_axis, ylabelfont=font_axis,
@@ -2335,6 +2338,217 @@ function plot_cs_dsb_fine_scan_result(
             CairoMakie.save(path_pdf, fig)
         end
         println("Saved CS-DSB fine-scan result figures to $path_png and $path_pdf")
+        return fig
+    finally
+        GLMakie.activate!()
+    end
+end
+
+function parse_result_fine_number(value, name::AbstractString)::Float64
+    number = value isa Real ? Float64(value) :
+        value isa AbstractString ? tryparse(Float64, strip(value)) : nothing
+    number isa Float64 && isfinite(number) ||
+        throw(ArgumentError("Result fine $name must be a finite number; got $value"))
+    return number
+end
+
+function parse_result_fine_limits(value, name::AbstractString)::Tuple{Float64,Float64}
+    values = if value isa AbstractVector
+        value
+    elseif value isa AbstractString && startswith(strip(value), "(") && endswith(strip(value), ")")
+        split(strip(strip(value)[2:end-1]), ',')
+    else
+        throw(ArgumentError("Result fine $name must contain two limits; got $value"))
+    end
+    length(values) == 2 ||
+        throw(ArgumentError("Result fine $name must contain two limits; got $value"))
+    limits = (parse_result_fine_number(values[1], name),
+        parse_result_fine_number(values[2], name))
+    limits[1] < limits[2] ||
+        throw(ArgumentError("Result fine $name must increase; got $limits"))
+    return limits
+end
+
+function parse_result_fine_limits(entry::AbstractDict, name::AbstractString)::Tuple{Float64,Float64}
+    value = entry[name]
+    if value isa AbstractString && startswith(strip(value), "(") && !endswith(strip(value), ")")
+        # In a YAML flow mapping, an unquoted parenthesized pair is split at its comma.
+        keys_tail = [key for (key, tail_value) in entry if key isa AbstractString &&
+            tail_value === nothing && endswith(strip(key), ")") &&
+            !isnothing(tryparse(Float64, strip(strip(key)[1:end-1])))]
+        length(keys_tail) == 1 ||
+            throw(ArgumentError("Result fine $name needs one second limit after $value; found $keys_tail"))
+        return parse_result_fine_limits(value * "," * only(keys_tail), name)
+    end
+    return parse_result_fine_limits(value, name)
+end
+
+function parse_result_fine_mm(value, name::AbstractString)::Float64
+    matched = value isa AbstractString ?
+        match(r"^\s*([0-9]+(?:\.[0-9]+)?)\s*mm\s*$", value) : nothing
+    isnothing(matched) &&
+        throw(ArgumentError("Result fine $name must be a length in mm; got $value"))
+    length_mm = parse(Float64, matched.captures[1])
+    length_mm > 0 || throw(ArgumentError("Result fine $name must be positive; got $value"))
+    return length_mm
+end
+
+function load_result_fine_source(path_data::AbstractString, spectrum_data::NamedTuple,
+    name_mat::AbstractString, name_case::AbstractString)::NamedTuple
+    idx_trace = findfirst(trace -> trace.name_mat == name_mat && trace.name_case == name_case,
+        spectrum_data.traces_fine_scan)
+    if !isnothing(idx_trace)
+        trace = spectrum_data.traces_fine_scan[idx_trace]
+        return (; frequency_mhz=trace.frequency_fine_mhz,
+            amplitude_au=trace.signal_fine_normalized, color_line=trace.color_line)
+    end
+
+    path_mat = joinpath(path_data, "individual reprocess", name_mat)
+    isfile(path_mat) || throw(ArgumentError("Fine-scan MAT file does not exist: $path_mat"))
+    mat_data = MAT.matread(path_mat)
+    haskey(mat_data, "group_data") && haskey(mat_data["group_data"], name_case) ||
+        throw(ArgumentError("$path_mat has no group_data.$name_case"))
+    case_data = mat_data["group_data"][name_case]
+    all(haskey(case_data, key) for key in ("frequency", "voltage", "absFreq0")) ||
+        throw(ArgumentError("$path_mat group_data.$name_case needs frequency, voltage and absFreq0 fields"))
+    frequency_mhz = vec(Float64.(case_data["frequency"]))
+    signal_v = smooth_scope_channel(vec(Float64.(case_data["voltage"])))
+    length(frequency_mhz) == length(signal_v) && length(frequency_mhz) >= 2 ||
+        throw(DimensionMismatch("$path_mat group_data.$name_case needs matching frequency and voltage arrays with at least two samples"))
+    all(isfinite, frequency_mhz) && all(isfinite, signal_v) ||
+        throw(ArgumentError("$path_mat group_data.$name_case contains nonfinite values"))
+    baseline_v = calc_fine_scan_baseline(frequency_mhz, signal_v, Float64(case_data["absFreq0"]))
+    amplitude_au = (signal_v .- baseline_v) ./ spectrum_data.val_fine_normalization_v
+    idx_case = findfirst(trace -> trace.name_case == name_case, spectrum_data.traces_fine_scan)
+    color_line = isnothing(idx_case) ? colorant"#d46262" :
+        spectrum_data.traces_fine_scan[idx_case].color_line
+    return (; frequency_mhz, amplitude_au, color_line)
+end
+
+function calc_result_fine_data(path_data::AbstractString, spectrum_data::NamedTuple,
+    entry_result_fine::AbstractDict)::Vector{NamedTuple}
+    config_common = get(entry_result_fine, "config_common", nothing)
+    config_common isa AbstractDict ||
+        throw(ArgumentError("result_fine needs a config_common mapping"))
+    plots = get(entry_result_fine, "plots", nothing)
+    plots isa AbstractVector && !isempty(plots) ||
+        throw(ArgumentError("result_fine needs a nonempty plots list"))
+    xlimits_relative_mhz = parse_result_fine_limits(config_common["xlims"], "xlims")
+    width_mm = parse_result_fine_mm(config_common["width"], "width")
+    xticks_relative_mhz = [parse_result_fine_number(value, "xticks")
+        for value in config_common["xticks"]]
+    isempty(xticks_relative_mhz) &&
+        throw(ArgumentError("result_fine xticks cannot be empty"))
+
+    result_fine_data = NamedTuple[]
+    for entry in plots
+        entry isa AbstractDict || throw(ArgumentError("Each result_fine plot must be a mapping"))
+        frequency_center_mhz = parse_result_fine_number(entry["freq_cent"], "freq_cent")
+        tag = String(entry["tag"])
+        isempty(strip(tag)) && throw(ArgumentError("Result fine plot tag cannot be empty"))
+        source = entry["source"]
+        source isa AbstractVector && length(source) == 2 &&
+            all(value -> value isa AbstractString && !isempty(strip(value)), source) ||
+            throw(ArgumentError("Result fine '$tag' source must be [MAT filename, group_data field]"))
+        name_mat, name_case = String.(source)
+        trace = load_result_fine_source(path_data, spectrum_data, name_mat, name_case)
+        frequency_min_mhz, frequency_max_mhz = extrema(trace.frequency_mhz)
+        frequency_peak_mhz = trace.frequency_mhz[argmax(trace.amplitude_au)]
+        frequency_resampled_mhz = sort!(unique(vcat(
+            collect(frequency_min_mhz:0.05:frequency_max_mhz),
+            frequency_max_mhz, frequency_peak_mhz)))
+        amplitude_resampled_au = interpolate_linear_frequency(
+            trace.frequency_mhz, trace.amplitude_au, frequency_resampled_mhz)
+        height_mm = parse_result_fine_mm(entry["height"], "height")
+        yscale = parse_result_fine_number(get(entry, "yscale", 1), "yscale")
+        yscale > 0 || throw(ArgumentError("Result fine '$tag' yscale must be positive"))
+        exponent = round(Int, log10(yscale))
+        isapprox(yscale, 10.0^exponent; rtol=1e-8) ||
+            throw(ArgumentError("Result fine '$tag' yscale must be a power of ten; got $yscale"))
+        ylimits_display = parse_result_fine_limits(entry, "ylims")
+        yticks_display = [parse_result_fine_number(value, "yticks")
+            for value in entry["yticks"]]
+        xminorticks_relative_mhz = [parse_result_fine_number(value, "xminorticks")
+            for value in get(entry, "xminorticks", get(config_common, "xminorticks", []))]
+        yminorticks_display = [parse_result_fine_number(value, "yminorticks")
+            for value in get(entry, "yminorticks", get(config_common, "yminorticks", []))]
+        isempty(yticks_display) &&
+            throw(ArgumentError("Result fine '$tag' yticks cannot be empty"))
+        push!(result_fine_data, (; tag, frequency_center_mhz, name_mat, name_case,
+            frequency_mhz=frequency_resampled_mhz,
+            amplitude_au=amplitude_resampled_au,
+            color_line=trace.color_line, width_mm, height_mm, yscale, exponent,
+            xlimits_mhz=xlimits_relative_mhz .+ frequency_center_mhz,
+            xticks_mhz=xticks_relative_mhz .+ frequency_center_mhz,
+            xtick_labels=[replace(@sprintf("%.10g", frequency_center_mhz + value), '-' => '−')
+                for value in xticks_relative_mhz],
+            xminorticks_mhz=xminorticks_relative_mhz .+ frequency_center_mhz,
+            ylimits_au=ylimits_display .* yscale,
+            yticks_au=yticks_display .* yscale,
+            yminorticks_au=yminorticks_display .* yscale,
+            ytick_labels=[replace(string(value), '-' => '−') for value in entry["yticks"]]))
+    end
+    return result_fine_data
+end
+
+function plot_result_fine_grid(result_fine_data::AbstractVector,
+    path_png::AbstractString)::Figure
+    isempty(result_fine_data) && throw(ArgumentError("Result fine grid needs at least one plot"))
+    CairoMakie.activate!()
+    try
+        px_per_mm = 96 / 25.4
+        font_axis = "Times New Roman"
+        fig = Figure(fontsize=7 / 0.75, figure_padding=(4, 4, 4, 18), rowgap=18)
+        n_cols = 3
+        axes_scale = []
+        for (idx, data) in enumerate(result_fine_data)
+            idx_row = cld(idx, n_cols)
+            idx_col = mod1(idx, n_cols)
+            ax = Axis(fig[idx_row, idx_col];
+                width=data.width_mm * px_per_mm,
+                height=data.height_mm * px_per_mm,
+                valign=:top,
+                xlabelfont=font_axis, ylabelfont=font_axis,
+                xticklabelfont=font_axis, yticklabelfont=font_axis,
+                xticklabelsize=6 / 0.75, yticklabelsize=6 / 0.75,
+                xticks=(data.xticks_mhz, data.xtick_labels),
+                xminorticks=data.xminorticks_mhz,
+                yticks=(data.yticks_au, data.ytick_labels),
+                yminorticks=data.yminorticks_au,
+                xminorticksvisible=!isempty(data.xminorticks_mhz),
+                yminorticksvisible=!isempty(data.yminorticks_au),
+                xticksize=10 / 3, yticksize=10 / 3,
+                xminorticksize=2, yminorticksize=2,
+                xtickalign=1, ytickalign=1,
+                xminortickalign=1, yminortickalign=1,
+                xticksmirrored=true, yticksmirrored=true,
+                xgridvisible=false, ygridvisible=false,
+                xminorgridvisible=false, yminorgridvisible=false,
+                spinewidth=0.75,
+                xtickwidth=0.75, ytickwidth=0.75,
+                xminortickwidth=0.75, yminortickwidth=0.75)
+            lines!(ax, data.frequency_mhz, data.amplitude_au;
+                color=data.color_line, linewidth=0.24 * px_per_mm,
+                linecap=:round, joinstyle=:round)
+            xlims!(ax, data.xlimits_mhz...)
+            ylims!(ax, data.ylimits_au...)
+            if data.exponent != 0
+                push!(axes_scale, (ax=ax, exponent=data.exponent))
+            end
+        end
+        resize_to_layout!(fig)
+        for item in axes_scale
+            area_axis = item.ax.scene.viewport[]
+            text!(fig.scene, area_axis.origin[1] - 4, area_axis.origin[2] + area_axis.widths[2] + 2;
+                text=rich("10", superscript(replace(string(item.exponent), '-' => '−'))),
+                space=:pixel, align=(:right, :bottom),
+                color=:black, font=font_axis, fontsize=6 / 0.75)
+        end
+        mkpath(dirname(abspath(path_png)))
+        CairoMakie.save(path_png, fig; px_per_unit=4)
+        path_pdf = splitext(path_png)[1] * ".pdf"
+        CairoMakie.save(path_pdf, fig)
+        println("Saved result fine grid to $path_png and $path_pdf")
         return fig
     finally
         GLMakie.activate!()
@@ -2536,6 +2750,11 @@ isnothing(entries_result) && throw(ArgumentError("No 'result' section in $path_c
 result_data = calc_resampled_result(spectrum_data, entries_result)
 fig_result = plot_normalized_replaced_result(
     result_data, path_result_png)
+path_result_large_png = joinpath(dirname(path_data), "Result",
+    "result626_normalized_replaced_large.png")
+fig_result_large = plot_normalized_replaced_result(
+    result_data, path_result_large_png;
+    axis_width_mm=96, axis_height_mm=44)
 traces_cs_dsb_center = filter(trace ->
     trace.tag == "CS-DSB" && iszero(trace.target_frequency_mhz),
     traces_fine_scan)
@@ -2550,5 +2769,12 @@ path_result_cs_dsb_fine_scan_png = joinpath(dirname(path_data), "Result",
     "result626_cs_dsb_fine_scan.png")
 fig_result_cs_dsb_fine_scan = plot_cs_dsb_fine_scan_result(
     result_cs_dsb_fine_scan_data, path_result_cs_dsb_fine_scan_png)
+entries_result_fine = get(config, "result_fine", nothing)
+isnothing(entries_result_fine) && throw(ArgumentError("No 'result_fine' section in $path_config"))
+result_fine_data = calc_result_fine_data(path_data, spectrum_data, entries_result_fine)
+path_result_fine_grid_png = joinpath(dirname(path_data), "Result",
+    "result626_fine_grid.png")
+fig_result_fine_grid = plot_result_fine_grid(result_fine_data,
+    path_result_fine_grid_png)
 isinteractive() && display(fig_spectrum)
 end
