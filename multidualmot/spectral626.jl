@@ -2286,6 +2286,22 @@ function plot_normalized_replaced_result(
     end
 end
 
+function resample_result_fine_scan(frequency_mhz::AbstractVector{<:Real},
+    amplitude_au::AbstractVector{<:Real})::NamedTuple
+    length(frequency_mhz) == length(amplitude_au) && length(frequency_mhz) >= 2 ||
+        throw(DimensionMismatch("Fine-scan frequency and amplitude arrays must match and contain at least two points"))
+    all(isfinite, frequency_mhz) && all(isfinite, amplitude_au) ||
+        throw(ArgumentError("Fine-scan frequency and amplitude arrays must be finite"))
+    frequency_min_mhz, frequency_max_mhz = extrema(frequency_mhz)
+    frequency_peak_mhz = frequency_mhz[argmax(amplitude_au)]
+    frequency_resampled_mhz = sort!(unique(vcat(
+        collect(frequency_min_mhz:0.05:frequency_max_mhz),
+        frequency_max_mhz, frequency_peak_mhz)))
+    amplitude_resampled_au = interpolate_linear_frequency(
+        frequency_mhz, amplitude_au, frequency_resampled_mhz)
+    return (; frequency_mhz=frequency_resampled_mhz, amplitude_au=amplitude_resampled_au)
+end
+
 function plot_cs_dsb_fine_scan_result(
     fine_scan_data::NamedTuple,
     path_png::AbstractString,
@@ -2300,14 +2316,14 @@ function plot_cs_dsb_fine_scan_result(
     try
         px_per_mm = 96 / 25.4
         font_axis = "Times New Roman"
-        fig = Figure(fontsize=7 / 0.75, figure_padding=4)
+        fig = Figure(fontsize=7 / 0.75, figure_padding=(20, 4, 4, 18))
         ax = Axis(fig[1, 1];
             width=14 * px_per_mm,
             height=11 * px_per_mm,
             xlabelfont=font_axis, ylabelfont=font_axis,
             xticklabelfont=font_axis, yticklabelfont=font_axis,
             xticklabelsize=6 / 0.75, yticklabelsize=6 / 0.75,
-            xticks=-2:2:2,
+            xticks=([-2, 0, 2], ["−2", "0", "2"]),
             xminorticks=[-3, -1, 1, 3],
             yticks=(collect(0:4:8) .* 0.0001, ["0", "4", "8"]),
             yminorticks=collect([-2, 2, 6]) .* 0.0001,
@@ -2322,16 +2338,17 @@ function plot_cs_dsb_fine_scan_result(
             spinewidth=0.75,
             xtickwidth=0.75, ytickwidth=0.75,
             xminortickwidth=0.75, yminortickwidth=0.75)
-        Label(fig[0, 1], rich("×10", superscript("−4"));
-            tellwidth=false, tellheight=true,
-            halign=:left, valign=:bottom,
-            color=:black, font=font_axis, fontsize=6 / 0.75)
         lines!(ax, frequency_mhz, amplitude_au;
             color=fine_scan_data.color_line, linewidth=0.24 * px_per_mm,
             linecap=:round, joinstyle=:round)
         xlims!(ax, -3.5, 3.5)
         ylims!(ax, -0.0002, 0.001)
         resize_to_layout!(fig)
+        area_axis = ax.scene.viewport[]
+        text!(fig.scene, area_axis.origin[1] - 4,
+            area_axis.origin[2] + area_axis.widths[2];
+            text=rich("10", superscript("−4")), space=:pixel,
+            align=(:right, :bottom), color=:black, font=font_axis, fontsize=6 / 0.75)
         mkpath(dirname(abspath(path_png)))
         CairoMakie.save(path_png, fig; px_per_unit=4)
         path_pdf = splitext(path_png)[1] * ".pdf"
@@ -2473,14 +2490,15 @@ function calc_result_fine_data(path_data::AbstractString, spectrum_data::NamedTu
             throw(ArgumentError("Result fine '$tag' source must be [MAT filename, group_data field]"))
         name_mat, name_case = String.(source)
         trace = load_result_fine_source(path_data, spectrum_data, name_mat, name_case)
-        frequency_min_mhz, frequency_max_mhz = extrema(trace.frequency_mhz)
-        frequency_peak_mhz = trace.frequency_mhz[argmax(trace.amplitude_au)]
-        frequency_resampled_mhz = sort!(unique(vcat(
-            collect(frequency_min_mhz:0.05:frequency_max_mhz),
-            frequency_max_mhz, frequency_peak_mhz)))
-        amplitude_resampled_au = interpolate_linear_frequency(
-            trace.frequency_mhz, trace.amplitude_au, frequency_resampled_mhz)
+        resampled = resample_result_fine_scan(trace.frequency_mhz, trace.amplitude_au)
+        frequency_resampled_mhz = resampled.frequency_mhz
+        amplitude_resampled_au = resampled.amplitude_au
         height_mm = parse_result_fine_mm(entry["height"], "height")
+        yoffset = parse_result_fine_number(get(entry, "yoffset", 0), "yoffset")
+        yscaletype = Symbol(lowercase(String(get(entry, "yscaletype", "linear"))))
+        yscaletype in (:linear, :log) ||
+            throw(ArgumentError("Result fine '$tag' yscaletype must be linear or log; got $yscaletype"))
+        amplitude_resampled_au .+= yoffset
         yscale = parse_result_fine_number(get(entry, "yscale", 1), "yscale")
         yscale > 0 || throw(ArgumentError("Result fine '$tag' yscale must be positive"))
         exponent = round(Int, log10(yscale))
@@ -2495,10 +2513,24 @@ function calc_result_fine_data(path_data::AbstractString, spectrum_data::NamedTu
             for value in get(entry, "yminorticks", get(config_common, "yminorticks", []))]
         isempty(yticks_display) &&
             throw(ArgumentError("Result fine '$tag' yticks cannot be empty"))
+        if yscaletype == :log
+            ylimits_display[1] > 0 && all(>(0), yticks_display) && all(>(0), yminorticks_display) ||
+                throw(ArgumentError("Result fine '$tag' log y limits and ticks must be positive"))
+        end
+        ytick_labels = if yscaletype == :log
+            [begin
+                power = round(Int, log10(value))
+                isapprox(value, 10.0^power; rtol=1e-8) ?
+                    rich("10", superscript(replace(string(power), '-' => '−'))) :
+                    rich(replace(@sprintf("%.10g", value), '-' => '−'))
+            end for value in yticks_display]
+        else
+            [replace(string(value), '-' => '−') for value in entry["yticks"]]
+        end
         push!(axes_data, (; tag, frequency_center_mhz, name_mat, name_case,
             frequency_mhz=frequency_resampled_mhz,
             amplitude_au=amplitude_resampled_au,
-            color_line=trace.color_line, width_mm, height_mm, yscale, exponent,
+            color_line=trace.color_line, width_mm, height_mm, yscale, exponent, yoffset, yscaletype,
             xlimits_mhz=xlimits_relative_mhz .+ frequency_center_mhz,
             xticks_mhz=xticks_relative_mhz .+ frequency_center_mhz,
             xtick_labels=[replace(@sprintf("%.10g", frequency_center_mhz + value), '-' => '−')
@@ -2507,7 +2539,7 @@ function calc_result_fine_data(path_data::AbstractString, spectrum_data::NamedTu
             ylimits_au=ylimits_display .* yscale,
             yticks_au=yticks_display .* yscale,
             yminorticks_au=yminorticks_display .* yscale,
-            ytick_labels=[replace(string(value), '-' => '−') for value in entry["yticks"]]))
+            ytick_labels))
       end
       push!(result_fine_data, (; kind, axes=axes_data))
     end
@@ -2534,6 +2566,7 @@ function plot_result_fine_grid(result_fine_data::AbstractVector,
                 width=data.width_mm * px_per_mm,
                 height=data.height_mm * px_per_mm,
                 valign=:top,
+                yscale=data.yscaletype == :log ? log10 : identity,
                 xticklabelsvisible=!(column.kind == :pair && idx_row == 1),
                 xlabelfont=font_axis, ylabelfont=font_axis,
                 xticklabelfont=font_axis, yticklabelfont=font_axis,
@@ -2555,7 +2588,9 @@ function plot_result_fine_grid(result_fine_data::AbstractVector,
                 spinewidth=0.75 * scale_layout,
                 xtickwidth=0.75 * scale_layout, ytickwidth=0.75 * scale_layout,
                 xminortickwidth=0.75 * scale_layout, yminortickwidth=0.75 * scale_layout)
-            lines!(ax, data.frequency_mhz, data.amplitude_au;
+            amplitude_plot_au = data.yscaletype == :log ?
+                [value > 0 ? value : NaN for value in data.amplitude_au] : data.amplitude_au
+            lines!(ax, data.frequency_mhz, amplitude_plot_au;
                 color=data.color_line, linewidth=0.24 * px_per_mm,
                 linecap=:round, joinstyle=:round)
             xlims!(ax, data.xlimits_mhz...)
@@ -2795,8 +2830,8 @@ length(traces_cs_dsb_center) == 1 ||
     throw(ArgumentError("Expected one CS-DSB fine scan centered at 0 MHz; found $(length(traces_cs_dsb_center))"))
 trace_cs_dsb_center = only(traces_cs_dsb_center)
 result_cs_dsb_fine_scan_data = (;
-    frequency_mhz=trace_cs_dsb_center.frequency_fine_mhz,
-    amplitude_au=trace_cs_dsb_center.signal_fine_normalized,
+    resample_result_fine_scan(trace_cs_dsb_center.frequency_fine_mhz,
+        trace_cs_dsb_center.signal_fine_normalized)...,
     color_line=trace_cs_dsb_center.color_line)
 path_result_cs_dsb_fine_scan_png = joinpath(dirname(path_data), "Result",
     "result626_cs_dsb_fine_scan.png")

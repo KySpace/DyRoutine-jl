@@ -643,3 +643,12 @@
 
 - Request: Arrange result_fine solo plots and two-axis pairs as individual columns in one row, hide upper pair x tick labels, and allow each plot to override config_common.
   Brief: Updated spectrum configuration loading to preserve unquoted parenthesized limit pairs in YAML flow mappings, expanded solo and pair groups into ordered columns, merged per-plot settings over common defaults, and drew pairs in nested grids with fixed configured axis dimensions. Updated `multidualmot/Note.Spectral626.md`. Generated and visually inspected the real-data grid; verified 11 columns, eight pairs, 19 fixed axis frames, upper-label visibility, and the configured 12 mm width and x-limit overrides. Exported the PNG/PDF to Data/Result.
+
+- Request: Support `yscaletype: log` for the configured solo fine scans, adding `yoffset` to normalized data before logarithmic display and inheriting common y-axis settings.
+  Brief: Added linear/log y-axis selection, a finite normalized-unit offset applied after resampling, positive log-limit/tick validation, and gaps for samples that remain nonpositive. Common settings continue to be overridden by individual plots. Updated `multidualmot/Note.Spectral626.md`; verified the offset and logarithmic limits for all ten configured real scans, visually checked the rendered figure, and exported its PNG/PDF to Data/Result.
+
+- Request: Display logarithmic fine-scan y tick labels as powers of ten.
+  Brief: Decade ticks in `multidualmot/spectral626.jl` now use rich-text powers with mathematical minus signs; non-decade ticks retain numeric labels. Updated the workflow note and regenerated the PNG/PDF with all ten real scans; visually verified the logarithmic labels.
+
+- Request: Resample the standalone central CS-DSB fine-scan result like the other fine scans, use matching power-of-ten scale notation, and retain its axis size and limits.
+  Brief: Extracted a shared 0.05 MHz fine-scan resampler that preserves the original maximum and endpoint, and used it for both the standalone and configured fine-scan results. The standalone plot now uses a 10⁻⁴ marker above its y tick labels without the multiplication sign and a mathematical minus on its x ticks. Retained the 14 × 11 mm axis and existing limits. Verified against real MAT data, checked the peak and sampling, visually inspected the result, and exported the PNG/PDF to Data/Result.
