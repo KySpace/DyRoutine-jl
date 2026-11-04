@@ -1812,18 +1812,37 @@ function calc_calibrated_spectrum(
         frequency_bounds_mhz=(freq_min_mhz, freq_max_mhz))
 end
 
+function scale_spectrum_for_display(spectrum_data::NamedTuple, scale_signal_by_tag::AbstractDict)::NamedTuple
+    get_scale(tag) = parse_result_signal_scale(get(scale_signal_by_tag, tag, 1), "Spectrum '$tag'")
+    traces_spectrum = [begin
+        scale = get_scale(trace.tag)
+        merge(trace, (; signal_normalized=trace.signal_normalized .* scale,
+            signal_replaced=trace.signal_replaced .* scale))
+    end for trace in spectrum_data.traces_spectrum]
+    traces_fine_scan = [begin
+        scale = get_scale(trace.tag)
+        blend = merge(trace.blend, (; signal_blended=trace.blend.signal_blended .* scale))
+        merge(trace, (; signal_coarse_normalized=trace.signal_coarse_normalized .* scale,
+            signal_coarse_replaced=trace.signal_coarse_replaced .* scale,
+            signal_fine_normalized=trace.signal_fine_normalized .* scale, blend))
+    end for trace in spectrum_data.traces_fine_scan]
+    return merge(spectrum_data, (; traces_spectrum, traces_fine_scan))
+end
+
 function plot_calibrated_spectrum(
     spectrum_data::NamedTuple,
     path_png::AbstractString;
     normalize_amplitude::Bool=true,
     initial_mode::Symbol=normalize_amplitude ? :normalized_overlay : :raw_voltage_overlay,
+    scale_signal_by_tag::AbstractDict=Dict{String,Float64}(),
 )
     modes_spectrum = (:raw_voltage_overlay, :normalized_overlay,
         :normalized_wide_scan_only, :normalized_fine_scan_only, :normalized_replaced)
     initial_mode in modes_spectrum ||
         throw(ArgumentError("Unknown spectrum mode $initial_mode; expected one of $modes_spectrum"))
-    traces_spectrum = spectrum_data.traces_spectrum
-    traces_fine_scan = spectrum_data.traces_fine_scan
+    spectrum_display = scale_spectrum_for_display(spectrum_data, scale_signal_by_tag)
+    traces_spectrum = spectrum_display.traces_spectrum
+    traces_fine_scan = spectrum_display.traces_fine_scan
     points_annotations = spectrum_data.points_annotations
     val_normalization_v = spectrum_data.val_normalization_v
     frequency_half_width_mhz = spectrum_data.frequency_half_width_mhz
@@ -1961,7 +1980,8 @@ function plot_calibrated_spectrum(
     for (idx_point, point) in enumerate(points_annotations)
         offset_label_y_v = point.offset_label_y_v + 0.032 * label_lane_by_point[idx_point]
         val_peak_normalized = (point.val_peak_v - point.val_ch2_baseline_v) /
-            val_normalization_v
+            val_normalization_v * parse_result_signal_scale(
+                get(scale_signal_by_tag, traces_spectrum[point.idx_spectrum].tag, 1), "Spectrum peak")
         idx_fine = findfirst(trace -> trace.idx_spectrum == point.idx_spectrum &&
             abs(point.freq_peak_mhz - trace.target_frequency_mhz) <=
             frequency_half_width_mhz, traces_fine_scan)
@@ -2007,7 +2027,7 @@ function plot_calibrated_spectrum(
             if selected_mode == :raw_voltage_overlay
                 "Fine-scan detail · dashed: coarse scan · solid: fine scan (50% opacity)"
             elseif selected_mode == :normalized_overlay
-                "Fine-scan detail · dashed: full scan · solid: fine scan; each group has a shared 1.0 peak"
+                "Fine-scan detail · dashed: full scan · solid: fine scan; normalized and scaled"
             elseif selected_mode == :normalized_wide_scan_only
                 "Fine-scan detail · normalized wide scan only"
             elseif selected_mode == :normalized_fine_scan_only
@@ -2065,6 +2085,14 @@ function plot_calibrated_spectrum(
     return fig
 end
 
+function parse_result_signal_scale(value, context::AbstractString)::Float64
+    scale = value isa Real ? Float64(value) :
+        value isa AbstractString ? tryparse(Float64, strip(value)) : nothing
+    scale isa Float64 && isfinite(scale) ||
+        throw(ArgumentError("$context scale_signal must be a finite number; got $value"))
+    return scale
+end
+
 function calc_resampled_result(
     spectrum_data::NamedTuple,
     entries_result::AbstractVector;
@@ -2102,6 +2130,7 @@ function calc_resampled_result(
         shift_config isa Real && isfinite(shift_config) ||
             throw(ArgumentError("Result shift for '$tag' must be finite; got $shift_config"))
         shift_au = Float64(shift_config)
+        scale_signal = parse_result_signal_scale(get(entry, "scale_signal", 1), "Result '$tag'")
         peaks_config = get(entry, "peaks", [])
         peaks_config isa AbstractVector ||
             throw(ArgumentError("Result peaks for '$tag' must be a list"))
@@ -2185,7 +2214,8 @@ function calc_resampled_result(
                 throw(ArgumentError("Resampling lost the exact peak at $frequency_peak_mhz MHz"))
         end
         push!(traces_resampled, (; frequency_mhz=frequency_resampled_mhz,
-            amplitude_au=signal_resampled .+ shift_au, shift_au, peaks_result,
+            amplitude_au=scale_signal .* signal_resampled .+ shift_au,
+            shift_au, scale_signal, peaks_result,
             frequency_peaks_mhz, tag, color_line=trace.color_line))
     end
     return traces_resampled
@@ -2302,6 +2332,15 @@ function resample_result_fine_scan(frequency_mhz::AbstractVector{<:Real},
     return (; frequency_mhz=frequency_resampled_mhz, amplitude_au=amplitude_resampled_au)
 end
 
+function calc_cs_dsb_fine_scan_result(trace::NamedTuple, result_data::AbstractVector)::NamedTuple
+    idx_result = findfirst(result -> result.tag == "CS-DSB", result_data)
+    scale_signal = isnothing(idx_result) ? 1.0 : result_data[idx_result].scale_signal
+    sampled = resample_result_fine_scan(trace.frequency_fine_mhz, trace.signal_fine_normalized)
+    return (; frequency_mhz=sampled.frequency_mhz,
+        amplitude_au=scale_signal .* sampled.amplitude_au,
+        color_line=trace.color_line, scale_signal)
+end
+
 function plot_cs_dsb_fine_scan_result(
     fine_scan_data::NamedTuple,
     path_png::AbstractString,
@@ -2325,8 +2364,8 @@ function plot_cs_dsb_fine_scan_result(
             xticklabelsize=6 / 0.75, yticklabelsize=6 / 0.75,
             xticks=([-2, 0, 2], ["−2", "0", "2"]),
             xminorticks=[-3, -1, 1, 3],
-            yticks=(collect(0:4:8) .* 0.0001, ["0", "4", "8"]),
-            yminorticks=collect([-2, 2, 6]) .* 0.0001,
+            yticks=([0, 1.0] .* 0.001, ["0", "1"]),
+            yminorticks=collect([2, 4, 6, 8]) .* 0.0001,
             xminorticksvisible=true, yminorticksvisible=true,
             xticksize=10 / 3, yticksize=10 / 3,
             xminorticksize=2, yminorticksize=2,
@@ -2342,12 +2381,12 @@ function plot_cs_dsb_fine_scan_result(
             color=fine_scan_data.color_line, linewidth=0.24 * px_per_mm,
             linecap=:round, joinstyle=:round)
         xlims!(ax, -3.5, 3.5)
-        ylims!(ax, -0.0002, 0.001)
+        ylims!(ax, -0.0002, 0.0012)
         resize_to_layout!(fig)
         area_axis = ax.scene.viewport[]
         text!(fig.scene, area_axis.origin[1] - 4,
             area_axis.origin[2] + area_axis.widths[2];
-            text=rich("10", superscript("−4")), space=:pixel,
+            text=rich("10", superscript("−3")), space=:pixel,
             align=(:right, :bottom), color=:black, font=font_axis, fontsize=6 / 0.75)
         mkpath(dirname(abspath(path_png)))
         CairoMakie.save(path_png, fig; px_per_unit=4)
@@ -2493,6 +2532,8 @@ function calc_result_fine_data(path_data::AbstractString, spectrum_data::NamedTu
         resampled = resample_result_fine_scan(trace.frequency_mhz, trace.amplitude_au)
         frequency_resampled_mhz = resampled.frequency_mhz
         amplitude_resampled_au = resampled.amplitude_au
+        scale_signal = parse_result_signal_scale(get(entry, "scale_signal", 1), "Result fine '$tag'")
+        amplitude_resampled_au .*= scale_signal
         height_mm = parse_result_fine_mm(entry["height"], "height")
         yoffset = parse_result_fine_number(get(entry, "yoffset", 0), "yoffset")
         yscaletype = Symbol(lowercase(String(get(entry, "yscaletype", "linear"))))
@@ -2530,7 +2571,7 @@ function calc_result_fine_data(path_data::AbstractString, spectrum_data::NamedTu
         push!(axes_data, (; tag, frequency_center_mhz, name_mat, name_case,
             frequency_mhz=frequency_resampled_mhz,
             amplitude_au=amplitude_resampled_au,
-            color_line=trace.color_line, width_mm, height_mm, yscale, exponent, yoffset, yscaletype,
+            color_line=trace.color_line, width_mm, height_mm, yscale, exponent, yoffset, yscaletype, scale_signal,
             xlimits_mhz=xlimits_relative_mhz .+ frequency_center_mhz,
             xticks_mhz=xticks_relative_mhz .+ frequency_center_mhz,
             xtick_labels=[replace(@sprintf("%.10g", frequency_center_mhz + value), '-' => '−')
@@ -2808,31 +2849,29 @@ spectrum_data = calc_calibrated_spectrum(path_data, calibrations_by_tag)
 traces_spectrum = spectrum_data.traces_spectrum
 traces_fine_scan = spectrum_data.traces_fine_scan
 points_annotations = spectrum_data.points_annotations
-fig_spectrum = plot_calibrated_spectrum(
-    spectrum_data, path_spectrum_png;
-    initial_mode=initial_spectrum_mode)
-path_result_png = joinpath(dirname(path_data), "Result",
-    "result626_normalized_replaced.png")
 entries_result = get(config, "result", nothing)
 isnothing(entries_result) && throw(ArgumentError("No 'result' section in $path_config"))
 result_data = calc_resampled_result(spectrum_data, entries_result)
+scale_signal_by_tag = Dict(trace.tag => trace.scale_signal for trace in result_data)
+fig_spectrum = plot_calibrated_spectrum(
+    spectrum_data, path_spectrum_png;
+    initial_mode=initial_spectrum_mode, scale_signal_by_tag)
+path_result_png = joinpath(dirname(path_data), "Result",
+    "result626_normalized_replaced.png")
 fig_result = plot_normalized_replaced_result(
     result_data, path_result_png)
 path_result_large_png = joinpath(dirname(path_data), "Result",
     "result626_normalized_replaced_large.png")
 fig_result_large = plot_normalized_replaced_result(
     result_data, path_result_large_png;
-    axis_width_mm=96, axis_height_mm=44)
+    axis_width_mm=84, axis_height_mm=40)
 traces_cs_dsb_center = filter(trace ->
     trace.tag == "CS-DSB" && iszero(trace.target_frequency_mhz),
     traces_fine_scan)
 length(traces_cs_dsb_center) == 1 ||
     throw(ArgumentError("Expected one CS-DSB fine scan centered at 0 MHz; found $(length(traces_cs_dsb_center))"))
 trace_cs_dsb_center = only(traces_cs_dsb_center)
-result_cs_dsb_fine_scan_data = (;
-    resample_result_fine_scan(trace_cs_dsb_center.frequency_fine_mhz,
-        trace_cs_dsb_center.signal_fine_normalized)...,
-    color_line=trace_cs_dsb_center.color_line)
+result_cs_dsb_fine_scan_data = calc_cs_dsb_fine_scan_result(trace_cs_dsb_center, result_data)
 path_result_cs_dsb_fine_scan_png = joinpath(dirname(path_data), "Result",
     "result626_cs_dsb_fine_scan.png")
 fig_result_cs_dsb_fine_scan = plot_cs_dsb_fine_scan_result(

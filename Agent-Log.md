@@ -652,3 +652,12 @@
 
 - Request: Resample the standalone central CS-DSB fine-scan result like the other fine scans, use matching power-of-ten scale notation, and retain its axis size and limits.
   Brief: Extracted a shared 0.05 MHz fine-scan resampler that preserves the original maximum and endpoint, and used it for both the standalone and configured fine-scan results. The standalone plot now uses a 10⁻⁴ marker above its y tick labels without the multiplication sign and a mathematical minus on its x ticks. Retained the 14 × 11 mm axis and existing limits. Verified against real MAT data, checked the peak and sampling, visually inspected the result, and exported the PNG/PDF to Data/Result.
+
+- Request: Apply optional `scale_signal` coefficients from `result` entries and `result_fine` plots to their normalized signals, defaulting to 1.
+  Brief: Added finite scale parsing in `multidualmot/spectral626.jl`; result traces multiply normalized signals before `shift`, and fine scans multiply before `yoffset`, with inherited common or per-plot configuration. The scale is retained in result data. Updated the workflow note, compared real scaled and unscaled result and fine-scan arrays, checked defaults and offset order, and regenerated the three result PNG/PDF pairs in Data/Result.
+
+- Request: Apply the CS-DSB result tag's `scale_signal` to the standalone central fine-scan result.
+  Brief: Added `calc_cs_dsb_fine_scan_result` to resample the central scan and apply the matching result trace's scale, defaulting to 1 if the result tag is absent. Updated the workflow note and regenerated the standalone PNG/PDF from real MAT data; verified scaling by 1.2452 and the default. The previous y limit was retained, so the scaled peak extends slightly above it.
+
+- Request: Apply result tag `scale_signal` values to the interactive spectrum figure and its PNG exports.
+  Brief: Added a scaled display-only spectrum view in `multidualmot/spectral626.jl` and pass result tag scales into `plot_calibrated_spectrum`. Normalized overview and inset traces, blended replacements, peak markers, and y limits use the configured scales; raw-voltage views and the underlying data used by result figures remain unscaled. Updated the workflow note. Verified the real-data arrays against the configured scales and defaults, visually checked the normalized replacement figure, and regenerated all five spectrum modes and fine-scan detail PNGs in the data folder.
