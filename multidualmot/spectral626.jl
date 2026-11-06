@@ -1361,6 +1361,44 @@ function calc_fine_scan_baseline(
     return mean(@view signal_v[ids_baseline])
 end
 
+function parse_fine_scan_source(source, context::AbstractString)::Tuple{String,String}
+    source isa AbstractVector && !isempty(source) &&
+        all(value -> value isa AbstractString && !isempty(strip(value)), source) ||
+        throw(ArgumentError("$context must list a MAT filename and, for layered files, a group_data field; got $source"))
+    name_mat = String(first(source))
+    is_flat = startswith(name_mat, "peak.") || startswith(name_mat, "csdsb.")
+    length(source) == (is_flat ? 1 : 2) ||
+        throw(ArgumentError("$context for '$name_mat' expects $(is_flat ? "[filename]" : "[filename, group_data field]"); got $source"))
+    return (name_mat, is_flat ? "" : String(source[2]))
+end
+
+function read_fine_scan_mat(mat_data::AbstractDict, path_mat::AbstractString,
+    name_case::AbstractString)::NamedTuple
+    name_mat = basename(path_mat)
+    is_flat = startswith(name_mat, "peak.") || startswith(name_mat, "csdsb.")
+    if is_flat
+        all(haskey(mat_data, key) for key in ("filtered_freq", "filtered_volt")) ||
+            throw(ArgumentError("$path_mat needs filtered_freq and filtered_volt variables"))
+        frequency_mhz = vec(Float64.(mat_data["filtered_freq"]))
+        signal_v = smooth_scope_channel(vec(Float64.(mat_data["filtered_volt"])))
+    else
+        haskey(mat_data, "group_data") && haskey(mat_data["group_data"], name_case) ||
+            throw(ArgumentError("$path_mat has no group_data.$name_case"))
+        case_data = mat_data["group_data"][name_case]
+        all(haskey(case_data, key) for key in ("frequency", "voltage", "absFreq0")) ||
+            throw(ArgumentError("$path_mat group_data.$name_case needs frequency, voltage and absFreq0 fields"))
+        frequency_mhz = vec(Float64.(case_data["frequency"]))
+        signal_v = smooth_scope_channel(vec(Float64.(case_data["voltage"])))
+    end
+    length(frequency_mhz) == length(signal_v) && length(frequency_mhz) >= 2 ||
+        throw(DimensionMismatch("$path_mat needs matching frequency and voltage arrays with at least two samples"))
+    all(isfinite, frequency_mhz) && all(isfinite, signal_v) ||
+        throw(ArgumentError("$path_mat contains nonfinite frequency or voltage values"))
+    center_mhz = is_flat ? sum(extrema(frequency_mhz)) / 2 : Float64(case_data["absFreq0"])
+    baseline_v = calc_fine_scan_baseline(frequency_mhz, signal_v, center_mhz)
+    return (; frequency_mhz, signal_v, baseline_v)
+end
+
 function parse_fine_scan_grid_span(value, axis_name::AbstractString)::UnitRange{Int}
     if value isa Integer && !(value isa Bool) && value > 0
         return Int(value):Int(value)
@@ -1655,33 +1693,16 @@ function calc_calibrated_spectrum(
             peak_tag = String(get(peak_config, "tag", ""))
             replace_config = get(peak_config, "replace", nothing)
             if !is_missing_config_value(replace_config)
-                replace_config isa AbstractVector && length(replace_config) == 2 &&
-                    all(value -> value isa AbstractString && !isempty(strip(value)), replace_config) ||
-                    throw(ArgumentError("$name_file peak replace must be [MAT filename, group_data field]; got $replace_config"))
-                name_mat, name_case = String.(replace_config)
+                name_mat, name_case = parse_fine_scan_source(replace_config, "$name_file peak replace")
                 path_mat = joinpath(path_data, "individual reprocess", name_mat)
                 isfile(path_mat) || throw(ArgumentError("Fine-scan MAT file does not exist: $path_mat"))
                 mat_data = get!(mat_data_by_path, path_mat) do
                     MAT.matread(path_mat)
                 end
-                haskey(mat_data, "group_data") ||
-                    throw(ArgumentError("$path_mat has no group_data structure"))
-                group_data = mat_data["group_data"]
-                haskey(group_data, name_case) ||
-                    throw(ArgumentError("$path_mat group_data has no case '$name_case'"))
-                case_data = group_data[name_case]
-                all(haskey(case_data, key) for key in ("frequency", "voltage")) ||
-                    throw(ArgumentError("$path_mat group_data.$name_case needs frequency and voltage fields"))
-                frequency_fine_mhz = vec(Float64.(case_data["frequency"]))
-                signal_fine_v = smooth_scope_channel(vec(Float64.(case_data["voltage"])))
-                length(frequency_fine_mhz) == length(signal_fine_v) && length(frequency_fine_mhz) >= 2 ||
-                    throw(DimensionMismatch("$path_mat group_data.$name_case has $(length(frequency_fine_mhz)) frequency and $(length(signal_fine_v)) voltage values; expected matching lengths of at least 2"))
-                all(isfinite, frequency_fine_mhz) && all(isfinite, signal_fine_v) ||
-                    throw(ArgumentError("$path_mat group_data.$name_case contains nonfinite values"))
-                haskey(case_data, "absFreq0") ||
-                    throw(ArgumentError("$path_mat group_data.$name_case has no absFreq0 field"))
-                val_fine_baseline_v = calc_fine_scan_baseline(frequency_fine_mhz,
-                    signal_fine_v, Float64(case_data["absFreq0"]))
+                fine_scan = read_fine_scan_mat(mat_data, path_mat, name_case)
+                frequency_fine_mhz = fine_scan.frequency_mhz
+                signal_fine_v = fine_scan.signal_v
+                val_fine_baseline_v = fine_scan.baseline_v
                 rows_grid = parse_fine_scan_grid_span(get(peak_config, "row", nothing), "row")
                 cols_grid = parse_fine_scan_grid_span(get(peak_config, "col", nothing), "col")
                 target_frequency_mhz = Float64(get(peak_config, "freq", mean(frequency_fine_mhz)))
@@ -1695,7 +1716,7 @@ function calc_calibrated_spectrum(
                     val_fine_baseline_v,
                     color_line, tag, peak_tag, target_frequency_mhz,
                     rows_grid, cols_grid, idx_spectrum, name_mat, name_case))
-                println("$name_file ($tag): overlaying $name_mat group_data.$name_case over $(round(extrema(frequency_fine_mhz)[1]; digits=3))…$(round(extrema(frequency_fine_mhz)[2]; digits=3)) MHz")
+                println("$name_file ($tag): overlaying $name_mat$(isempty(name_case) ? "" : " group_data.$name_case") over $(round(extrema(frequency_fine_mhz)[1]; digits=3))…$(round(extrema(frequency_fine_mhz)[2]; digits=3)) MHz")
             end
             is_reference = !is_joint_spline && get(peak_config, "ref", false) === true
             time_config = get(peak_config, "time", nothing)
@@ -2468,20 +2489,13 @@ function load_result_fine_source(path_data::AbstractString, spectrum_data::Named
     path_mat = joinpath(path_data, "individual reprocess", name_mat)
     isfile(path_mat) || throw(ArgumentError("Fine-scan MAT file does not exist: $path_mat"))
     mat_data = MAT.matread(path_mat)
-    haskey(mat_data, "group_data") && haskey(mat_data["group_data"], name_case) ||
-        throw(ArgumentError("$path_mat has no group_data.$name_case"))
-    case_data = mat_data["group_data"][name_case]
-    all(haskey(case_data, key) for key in ("frequency", "voltage", "absFreq0")) ||
-        throw(ArgumentError("$path_mat group_data.$name_case needs frequency, voltage and absFreq0 fields"))
-    frequency_mhz = vec(Float64.(case_data["frequency"]))
-    signal_v = smooth_scope_channel(vec(Float64.(case_data["voltage"])))
-    length(frequency_mhz) == length(signal_v) && length(frequency_mhz) >= 2 ||
-        throw(DimensionMismatch("$path_mat group_data.$name_case needs matching frequency and voltage arrays with at least two samples"))
-    all(isfinite, frequency_mhz) && all(isfinite, signal_v) ||
-        throw(ArgumentError("$path_mat group_data.$name_case contains nonfinite values"))
-    baseline_v = calc_fine_scan_baseline(frequency_mhz, signal_v, Float64(case_data["absFreq0"]))
-    amplitude_au = (signal_v .- baseline_v) ./ spectrum_data.val_fine_normalization_v
-    idx_case = findfirst(trace -> trace.name_case == name_case, spectrum_data.traces_fine_scan)
+    fine_scan = read_fine_scan_mat(mat_data, path_mat, name_case)
+    frequency_mhz = fine_scan.frequency_mhz
+    amplitude_au = (fine_scan.signal_v .- fine_scan.baseline_v) ./ spectrum_data.val_fine_normalization_v
+    tag_case = startswith(name_mat, "peak.") ? "Carrier" :
+        startswith(name_mat, "csdsb.") ? "CS-DSB" : nothing
+    idx_case = findfirst(trace -> isnothing(tag_case) ? trace.name_case == name_case : trace.tag == tag_case,
+        spectrum_data.traces_fine_scan)
     color_line = isnothing(idx_case) ? colorant"#d46262" :
         spectrum_data.traces_fine_scan[idx_case].color_line
     return (; frequency_mhz, amplitude_au, color_line)
@@ -2523,11 +2537,7 @@ function calc_result_fine_data(path_data::AbstractString, spectrum_data::NamedTu
         frequency_center_mhz = parse_result_fine_number(entry["freq_cent"], "freq_cent")
         tag = String(entry["tag"])
         isempty(strip(tag)) && throw(ArgumentError("Result fine plot tag cannot be empty"))
-        source = entry["source"]
-        source isa AbstractVector && length(source) == 2 &&
-            all(value -> value isa AbstractString && !isempty(strip(value)), source) ||
-            throw(ArgumentError("Result fine '$tag' source must be [MAT filename, group_data field]"))
-        name_mat, name_case = String.(source)
+        name_mat, name_case = parse_fine_scan_source(entry["source"], "Result fine '$tag' source")
         trace = load_result_fine_source(path_data, spectrum_data, name_mat, name_case)
         resampled = resample_result_fine_scan(trace.frequency_mhz, trace.amplitude_au)
         frequency_resampled_mhz = resampled.frequency_mhz
