@@ -116,7 +116,7 @@ plot_num_evol = dualmot_num_evol_plot_spec("MOT";
     loadcfg_plot=(:DDM, :DIS, :DCS),
     ylabel=rich(result_math_glyph("𝑁"), result_math_subscript("𝑖"),
         result_math_superscript("CMOT")))
-plot_num_evol_target = panel_target(fig_result_loading, 1;
+plot_num_evol_target = panel_target(fig_result_loading, 2;
     axis_options=axis_options_loading, limits=limits_loading,
     mask_x=mask_loading_421)
 include(joinpath(@__DIR__, "anlz_num_evol.jl"))
@@ -142,9 +142,10 @@ plot_cmpr_loadcfg = (
     fontsize=8,
 )
 plot_cmpr_loadcfg_target = (fig=fig_result_loading,
-    slot=fig_result_loading[1, 2], axis_options=axis_options_loading,
+    slot=fig_result_loading[1, 1], axis_options=axis_options_loading,
     limits=limits_loading, mask_x=mask_loading_626,
-    show_legend=false, compact_spacing=false)
+    show_legend=false, frame_options=result_axis_frame_options,
+    compact_spacing=false)
 include(joinpath(@__DIR__, "anlz_cmpr_loadcfg.jl"))
 
 # MOT loading balance.
