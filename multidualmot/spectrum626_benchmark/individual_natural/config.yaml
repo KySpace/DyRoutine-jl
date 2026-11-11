@@ -1,0 +1,110 @@
+# Calibration-only variant for benchmark_spectral626.jl.
+benchmark:
+  name: 'Individual natural cubic'
+  path_data: 'C:\Users\ky\OneDrive\Dy\DualIstpMOT\Data\spectrum 626'
+  frequency_range_mhz: [-750, 750]
+  range_reference_index: 1
+  plot_samples: 2001
+calibration:
+  - tag: common
+    model: naturalcubicspline
+    source:
+    - index: 1
+      descr: "Peak MZM off, EOM 740MHz 2dBm"
+      peaks:
+        - { freq: +740  , time: -1.368 }
+        - { freq: +441.6, time: -0.444 }
+        - { freq: +220.8, time:  0.096 }
+        - { freq: 0     , time:  0.569 }
+        - { freq: -740  , time:  1.963 }
+    - index: 2
+      descr: "Peak MZM off, EOM off"
+      peaks:
+        - { freq: +441.6, time: -0.447 }
+        - { freq: +220.8, time:  0.094 }
+        - { freq: 0     , time:  0.566 }
+    - index: 3
+      descr: "Peak MZM off, EOM 740MHz 2dBm"
+      peaks:
+        - { freq: +740  , time: -1.369 }
+        - { freq: +441.6, time: -0.445 }
+        - { freq: +220.8, time:  0.095 }
+        - { freq: 0     , time:  0.567 }
+        - { freq: -740  , time:  1.958 }
+    - index: 4
+      descr: "Peak MZM on"
+      peaks:
+        - { freq: +688.9, time: -1.183 }
+        - { freq: +662.4, time: -1.093 }
+        - { freq: +441.6, time: -0.445 }
+        - { freq: +220.8, time:  0.093 }
+        - { freq: 0     , time:  0.566 }
+        - { freq: -615.7, time:  1.737 }
+    - index: 7
+      descr: "CSDSB MZM on, EOM off"
+      peaks:
+        - { freq: +405  , time: -0.351 , tag: "+ f_MZM"}
+        - { freq: +283.9, time: -0.055 , tag: "+ FSR - 3 f_MZM"}
+        - { freq: +36.6 , time:  0.490 , tag: "+ f_TEM02 - f_MZM"}
+        - { freq: -283.9, time:  1.123 , tag: "- FSR + 3 f_MZM"}
+        - { freq: -405  , time:  1.351 , tag: "- f_MZM"}
+        - { freq: -652.3, time:  1.801 , tag: "- FSR + f_MZM + f_TEM02"}
+        - { freq:  625.8, time: -0.976 , tag: "f_MZM + f_TEM01"}
+        # - { freq:  846.6, time: -1.829 , tag: "f_MZM + f_TEM02"}
+    - index: 8
+      descr: "CSDSB MZM on, EOM 340MHz -1dBm"
+      peaks:
+        - { freq: +745  , time: -1.390 , tag: "+ f_MZM + f_EOM"}
+        - { freq: +405  , time: -0.351 , tag: "+ f_MZM"}
+        - { freq: +65   , time:  0.431 , tag: "+ f_MZM - f_EOM"}
+        - { freq: -65   , time:  0.697 , tag: "- f_MZM + f_EOM"}
+        - { freq: -405  , time:  1.352 , tag: "- f_MZM"}
+        - { freq: -745  , time:  1.966 , tag: "- f_MZM - f_EOM"}
+  - tag: endtoend
+    model: naturalcubicspline
+    source:
+    - index: 1
+      descr: "Peak MZM off, EOM 740MHz 2dBm"
+      peaks:
+        - { freq: +740  , time: -1.368 }
+        - { freq: +441.6, time: -0.444 }
+        - { freq: +220.8, time:  0.096 }
+        - { freq: 0     , time:  0.569 }
+        - { freq: -740  , time:  1.963 }
+    - index: 3
+      descr: "Peak MZM off, EOM 740MHz 2dBm"
+      peaks:
+        - { freq: +740  , time: -1.369 }
+        - { freq: +441.6, time: -0.445 }
+        - { freq: +220.8, time:  0.095 }
+        - { freq: 0     , time:  0.567 }
+        - { freq: -740  , time:  1.958 }
+    - index: 4
+      descr: "Peak MZM on"
+      peaks:
+        - { freq: +688.9, time: -1.183 }
+        - { freq: +662.4, time: -1.093 }
+        - { freq: +441.6, time: -0.445 }
+        - { freq: +220.8, time:  0.093 }
+        - { freq: 0     , time:  0.566 }
+        - { freq: -615.7, time:  1.737 }
+    - index: 7
+      descr: "CSDSB MZM on, EOM off"
+      peaks:
+        - { freq: +405  , time: -0.351 , tag: "+ f_MZM"}
+        - { freq: +283.9, time: -0.055 , tag: "+ FSR - 3 f_MZM"}
+        - { freq: +36.6 , time:  0.490 , tag: "+ f_TEM02 - f_MZM"}
+        - { freq: -283.9, time:  1.123 , tag: "- FSR + 3 f_MZM"}
+        - { freq: -405  , time:  1.351 , tag: "- f_MZM"}
+        - { freq: -652.3, time:  1.801 , tag: "- FSR + f_MZM + f_TEM02"}
+        - { freq:  625.8, time: -0.976 , tag: "f_MZM + f_TEM01"}
+        # - { freq:  846.6, time: -1.829 , tag: "f_MZM + f_TEM02"}
+    - index: 8
+      descr: "CSDSB MZM on, EOM 340MHz -1dBm"
+      peaks:
+        - { freq: +745  , time: -1.390 , tag: "+ f_MZM + f_EOM"}
+        - { freq: +405  , time: -0.351 , tag: "+ f_MZM"}
+        - { freq: +65   , time:  0.431 , tag: "+ f_MZM - f_EOM"}
+        - { freq: -65   , time:  0.697 , tag: "- f_MZM + f_EOM"}
+        - { freq: -405  , time:  1.352 , tag: "- f_MZM"}
+        - { freq: -745  , time:  1.966 , tag: "- f_MZM - f_EOM"}

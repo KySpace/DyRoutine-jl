@@ -906,7 +906,8 @@ end
 
 function fit_spline_with_offset_and_error(
     points_reference::AbstractVector, ids_file::AbstractVector{<:Integer},
-    knots_s::AbstractVector{<:Real}, regularisation::Real,
+    knots_s::AbstractVector{<:Real}, regularisation::Real;
+    fit_source_offsets::Bool=true,
 )
     length(knots_s) >= 2 && all(>(0), diff(knots_s)) ||
         throw(ArgumentError("Calibration knots must be strictly increasing; got $knots_s"))
@@ -927,11 +928,11 @@ function fit_spline_with_offset_and_error(
     n_sources = length(ids_file)
     mat_collocation = collocation_matrix(
         basis_common, val_time_s, Derivative(0), Matrix{Float64})
-    flag_source = zeros(Float64, length(points_reference), n_sources - 1)
+    flag_source = zeros(Float64, length(points_reference), fit_source_offsets ? n_sources - 1 : 0)
     for (idx_point, point) in enumerate(points_reference)
         idx_source = findfirst(==(point.id_file), ids_file)
         isnothing(idx_source) && throw(ArgumentError("Unknown calibration source $(point.id_file)"))
-        idx_source > 1 && (flag_source[idx_point, idx_source - 1] = 1.0)
+        fit_source_offsets && idx_source > 1 && (flag_source[idx_point, idx_source - 1] = 1.0)
     end
     mat_design = hcat(mat_collocation, flag_source)
     mat_curvature = Matrix(galerkin_matrix(
@@ -945,7 +946,7 @@ function fit_spline_with_offset_and_error(
     end
     all(isfinite, val_parameters) || throw(ArgumentError("Joint spline fit produced nonfinite coefficients"))
     spline_common = Spline(basis_common, val_parameters[1:n_basis])
-    offset_by_file = Dict(id_file => (idx_source == 1 ? 0.0 : val_parameters[n_basis + idx_source - 1])
+    offset_by_file = Dict(id_file => (!fit_source_offsets || idx_source == 1 ? 0.0 : val_parameters[n_basis + idx_source - 1])
         for (idx_source, id_file) in enumerate(ids_file))
     error_splines_by_file = Dict{Int,Any}()
     bounds_reference_by_file = Dict{Int,Tuple{Float64,Float64}}()
@@ -966,15 +967,17 @@ function fit_spline_with_offset_and_error(
     return (; spline_common, offset_by_file, error_splines_by_file,
         bounds_reference_by_file, residual_by_file,
         bounds_knots_s=(Float64(first(knots_s)), Float64(last(knots_s))),
-        val_parameters, mat_collocation, flag_source, mat_curvature)
+        val_parameters, mat_collocation, flag_source, mat_curvature, fit_source_offsets)
 end
 
 function plot_spline_with_offset_and_error_calibration(
     path_png::AbstractString, tag_calibration::AbstractString,
     points_reference::AbstractVector, ids_file::AbstractVector{<:Integer},
-    knots_s::AbstractVector{<:Real}, regularisation::Real,
+    knots_s::AbstractVector{<:Real}, regularisation::Real;
+    fit_source_offsets::Bool=true,
 )
-    fit = fit_spline_with_offset_and_error(points_reference, ids_file, knots_s, regularisation)
+    fit = fit_spline_with_offset_and_error(points_reference, ids_file, knots_s, regularisation;
+        fit_source_offsets)
     calibration = (; tag=String(tag_calibration), model=:spline_with_offset_and_error,
         points_reference, ids_file, fit...)
     source_uncertainty = calc_reference_source_uncertainty(calibration)
@@ -1130,22 +1133,23 @@ function plot_monotone_cubic_calibration(
         extrapolation, splines_by_file, time_zero_by_file)
 end
 
-function plot_signal_frequency_calibration(
+function load_calibration_references(
     path_data::AbstractString,
-    path_png::AbstractString,
-    entry_calibration::AbstractDict,
+    entries_source::AbstractVector;
+    source_cache::AbstractDict=Dict{Any,Any}(),
 )
-    tag_calibration = String(entry_calibration["tag"])
-    model = Symbol(lowercase(String(get(entry_calibration, "model", "p4"))))
-    model in (:p4, :cubicspline, :spline_with_offset_and_error) ||
-        throw(ArgumentError("Calibration '$tag_calibration' has unknown model '$model'; expected p4, cubicspline, or spline_with_offset_and_error"))
-    entries_source = entry_calibration["source"]
-    isempty(entries_source) && throw(ArgumentError("Calibration '$tag_calibration' has no sources"))
-
+    isempty(entries_source) && throw(ArgumentError("Calibration has no sources"))
     time_uncertainty_s = 0.001
     points_reference = NamedTuple[]
     for entry in entries_source
         id_file = Int(entry["index"])
+        key_source = (abspath(path_data), id_file,
+            Tuple((Float64(peak["freq"]), Float64(peak["time"])) for peak in entry["peaks"]))
+        if haskey(source_cache, key_source)
+            append!(points_reference, source_cache[key_source])
+            continue
+        end
+        points_source = NamedTuple[]
         name_file = "SDS$(lpad(string(id_file), 5, '0'))"
         path_jld2 = joinpath(path_data, "$name_file.jld2")
         isfile(path_jld2) || throw(ArgumentError("JLD2 cache does not exist: $path_jld2"))
@@ -1163,21 +1167,37 @@ function plot_signal_frequency_calibration(
             idx_peak = find_local_peak_near_time(ch2_v, time_aligned_s, time_config_s, time_uncertainty_s)
             time_peak_s = Float64(time_aligned_s[idx_peak])
             time_peak_raw_s = Float64(time_s[idx_peak])
-            push!(points_reference, (; id_file, freq_mhz, time_config_s, time_peak_s, time_peak_raw_s))
+            push!(points_source, (; id_file, freq_mhz, time_config_s, time_peak_s, time_peak_raw_s))
             val_prominence_v = ch2_v[idx_peak] - val_baseline_v
-            println("Calibration '$tag_calibration' $name_file: config aligned $(time_config_s) s, $(freq_mhz) MHz → detected at aligned $(round(time_peak_s; digits=6)) s (raw $(round(time_peak_raw_s; digits=6)) s; CH1 zero $(round(time_alignment_zero_s; digits=6)) s); CH2=$(round(ch2_v[idx_peak]; sigdigits=6)) V, prominence over trimmed mean=$(round(val_prominence_v; sigdigits=5)) V")
+            println("Calibration reference $name_file: config aligned $(time_config_s) s, $(freq_mhz) MHz → detected at aligned $(round(time_peak_s; digits=6)) s (raw $(round(time_peak_raw_s; digits=6)) s; CH1 zero $(round(time_alignment_zero_s; digits=6)) s); CH2=$(round(ch2_v[idx_peak]; sigdigits=6)) V, prominence over trimmed mean=$(round(val_prominence_v; sigdigits=5)) V")
         end
+        source_cache[key_source] = points_source
+        append!(points_reference, points_source)
         GC.gc()
     end
 
     ids_file = unique([point.id_file for point in points_reference])
     length(ids_file) == length(entries_source) ||
-        throw(ArgumentError("Calibration '$tag_calibration' has duplicate or empty source indices"))
+        throw(ArgumentError("Calibration has duplicate or empty source indices"))
+    return (; points_reference, ids_file)
+end
+
+function plot_signal_frequency_calibration(
+    path_data::AbstractString,
+    path_png::AbstractString,
+    entry_calibration::AbstractDict,
+)
+    tag_calibration = String(entry_calibration["tag"])
+    model = Symbol(lowercase(String(get(entry_calibration, "model", "p4"))))
+    model in (:p4, :cubicspline, :spline_with_offset_and_error) ||
+        throw(ArgumentError("Calibration '$tag_calibration' has unknown model '$model'; expected p4, cubicspline, or spline_with_offset_and_error"))
+    (; points_reference, ids_file) = load_calibration_references(path_data, entry_calibration["source"])
     if model == :spline_with_offset_and_error
         knots_s = Float64.(entry_calibration["knots"])
         regularisation = Float64(entry_calibration["regularisation"])
         return plot_spline_with_offset_and_error_calibration(
-            path_png, tag_calibration, points_reference, ids_file, knots_s, regularisation)
+            path_png, tag_calibration, points_reference, ids_file, knots_s, regularisation;
+            fit_source_offsets=get(entry_calibration, "fit_source_offsets", true))
     end
     if model == :cubicspline
         extrapolation = Symbol(lowercase(String(get(entry_calibration, "extrapolation", "linear"))))
@@ -2780,6 +2800,8 @@ function plot_ch1_signal(
     return fig
 end
 
+# Allow the benchmark to reuse the definitions without running exports.
+if !("--definitions-only" in ARGS)
 args_data = filter(!=("--skip-conversion"), ARGS)
 args_data = filter(!=("--calibration-only"), args_data)
 args_data = filter(!=("--signal-only"), args_data)
@@ -2894,4 +2916,5 @@ path_result_fine_grid_png = joinpath(dirname(path_data), "Result",
 fig_result_fine_grid = plot_result_fine_grid(result_fine_data,
     path_result_fine_grid_png)
 isinteractive() && display(fig_spectrum)
+end
 end
