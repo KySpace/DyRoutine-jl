@@ -341,9 +341,24 @@ function plot_loading_result_panel!(ax::Axis, curve_data::NamedTuple,
         any(valid) || continue
         style = dualmot_curve_style((; loadcfg, istp=isotope))
         lines!(ax, x_values[valid], y_values[valid]; style.line_options...)
-        scatter!(ax, x_values[valid], y_values[valid];
-            marker_style(style; markersize=4)...)
         append!(plotted_values, y_values[valid])
+    end
+    for loadcfg in configs, isotope in isotopes
+        curve = get(curve_data.curves, (loadcfg, isotope), nothing)
+        isnothing(curve) && continue
+        y_values = curve.nums ./ 1e7
+        valid = isfinite.(x_values) .& isfinite.(y_values)
+        any(valid) || continue
+        style = dualmot_curve_style((; loadcfg, istp=isotope))
+        x_plot = x_values[valid]
+        y_plot = y_values[valid]
+        error_plot = curve.stds[valid] ./ 1e7
+        error_mask = isfinite.(error_plot) .& (error_plot .>= 0)
+        any(error_mask) && marker_errorbars!(ax, x_plot[error_mask],
+            y_plot[error_mask], error_plot[error_mask];
+            marker_style(style; markersize=4)..., errorlinewidth=0.75)
+        any(.!error_mask) && scatter!(ax, x_plot[.!error_mask],
+            y_plot[.!error_mask]; marker_style(style; markersize=4)...)
     end
     isempty(plotted_values) && throw(ArgumentError("$pair_label: no finite loading data"))
     isnothing(y_limits) ?
